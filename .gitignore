@@ -1,0 +1,10 @@
+build/
+dist/
+*.egg-info
+*.so
+__pycache__
+*.pyc
+.ignore
+*.html
+# This gets overwritten continually by setuptools_scm - ignore it.
+src/wkp/_version.py

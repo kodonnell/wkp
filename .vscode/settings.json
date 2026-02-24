@@ -1,0 +1,31 @@
+{
+    "python-envs.defaultEnvManager": "ms-python.python:conda",
+    "python-envs.defaultPackageManager": "ms-python.python:conda",
+    "python-envs.pythonProjects": [],
+    "cSpell.words": [
+        "asarray",
+        "boundscheck",
+        "cdef",
+        "cinit",
+        "cpdef",
+        "cython",
+        "dtype",
+        "elif",
+        "geoms",
+        "isinstance",
+        "linearrings",
+        "linestring",
+        "linestrings",
+        "malloc",
+        "memcpy",
+        "multilinestring",
+        "multilinestrings",
+        "multipoint",
+        "multipoints",
+        "multipolygon",
+        "multipolygons",
+        "prevs",
+        "ssize",
+        "staticmethod"
+    ]
+}
