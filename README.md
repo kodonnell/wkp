@@ -5,7 +5,7 @@
 WKP is a simple encoding format for geometries that is:
 
 - String based (unlike WKB) which is handy for transmitting to frontend etc.
-- Smaller and fast:
+- Small and fast:
   - WKT is generally 10x larger and 20x slower[^1].
   - WKB is generally 4x larger and 1.5-2x slower[^1].
 - Based on the [Google Polyline algorithm](https://developers.google.com/maps/documentation/utilities/polylinealgorithm) but supports:
@@ -88,6 +88,7 @@ See [here](https://cython.readthedocs.io/en/latest/src/userguide/source_files_an
 
 ## TODO
 
+- javascript support and add to `npm`.
 - Make `benchmark.py` a CLI in setup.py?
 - `setuptools_scm_git_archive`?
 - Code completion with stubs?
