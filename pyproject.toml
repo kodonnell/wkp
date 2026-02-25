@@ -39,7 +39,8 @@ requires = [
     "setuptools >= 70",  # or >=77 if you want stricter modern enforcement
     "wheel >= 0.40",
     "setuptools_scm >= 8.0",
-    "Cython >= 3.0.8"
+    "Cython >= 3.0.8",
+    "packaging >= 23"
 ]
 build-backend = "setuptools.build_meta"
 
