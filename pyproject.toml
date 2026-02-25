@@ -1,6 +1,6 @@
 [project]
 name = "wkp"
-description = "Well Known Polylines - fast, compact, string geometry encoding based on Google Polylines algorithm[](https://github.com/kodonnell/wkp)"
+description = "Well Known Polylines - fast and compact encoding of geometries to strings using the Google Polylines algorithm"
 readme = "README.md"
 authors = [
     {name = "kodonnell", email = "kodonnell@users.noreply.github.com"}
