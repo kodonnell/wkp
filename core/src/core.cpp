@@ -1,5 +1,5 @@
 #include "wkp/core.h"
-#include "wkp/core.hpp"
+#include "core_internal.hpp"
 #include "wkp/_version.h"
 
 #include <cmath>
@@ -131,6 +131,284 @@ namespace
         return ranges;
     }
 
+    std::vector<double> build_uniform_factors(std::size_t dimensions, int precision)
+    {
+        std::vector<double> factors(dimensions, 1.0);
+        const double factor = std::pow(10.0, static_cast<double>(precision));
+        for (std::size_t i = 0; i < dimensions; ++i)
+        {
+            factors[i] = factor;
+        }
+        return factors;
+    }
+
+    std::string build_geometry_header(std::size_t dimensions, int precision, wkp_geometry_type geometry_type)
+    {
+        if (dimensions == 0 || dimensions > kMaxDimensions)
+        {
+            throw std::invalid_argument("dimensions must be between 1 and 16");
+        }
+        if (precision < 0 || precision > 99)
+        {
+            throw std::invalid_argument("precision must be between 0 and 99");
+        }
+
+        char buf[16];
+        std::snprintf(
+            buf,
+            sizeof(buf),
+            "%02d%02d%02d%02d",
+            kGeometryVersion,
+            precision,
+            static_cast<int>(dimensions),
+            static_cast<int>(geometry_type));
+        return std::string(buf);
+    }
+
+    void append_coords_segment(
+        std::string &out,
+        const double *coords,
+        std::size_t point_count,
+        std::size_t dimensions,
+        const std::vector<double> &factors)
+    {
+        if (coords == nullptr)
+        {
+            throw std::invalid_argument("coords pointer cannot be null");
+        }
+        append_encoded_segment(out, coords, point_count * dimensions, dimensions, factors);
+    }
+
+    std::string encode_geometry_point(
+        const double *coords,
+        std::size_t coord_value_count,
+        std::size_t dimensions,
+        int precision)
+    {
+        const std::size_t point_count = coord_value_count / dimensions;
+        if (point_count != 1)
+        {
+            throw std::invalid_argument("POINT requires exactly 1 coordinate");
+        }
+
+        const auto factors = build_uniform_factors(dimensions, precision);
+        std::string out = build_geometry_header(dimensions, precision, WKP_GEOMETRY_POINT);
+        out.reserve(8 + coord_value_count * 4 + 8);
+        append_coords_segment(out, coords, point_count, dimensions, factors);
+        return out;
+    }
+
+    std::string encode_geometry_linestring(
+        const double *coords,
+        std::size_t coord_value_count,
+        std::size_t dimensions,
+        int precision)
+    {
+        const std::size_t point_count = coord_value_count / dimensions;
+        if (point_count < 2)
+        {
+            throw std::invalid_argument("LINESTRING requires at least 2 coordinates");
+        }
+
+        const auto factors = build_uniform_factors(dimensions, precision);
+        std::string out = build_geometry_header(dimensions, precision, WKP_GEOMETRY_LINESTRING);
+        out.reserve(8 + coord_value_count * 4 + 8);
+        append_coords_segment(out, coords, point_count, dimensions, factors);
+        return out;
+    }
+
+    std::string encode_geometry_polygon(
+        const double *coords,
+        std::size_t coord_value_count,
+        std::size_t dimensions,
+        int precision,
+        const std::size_t *ring_point_counts,
+        std::size_t ring_count)
+    {
+        if (ring_point_counts == nullptr)
+        {
+            throw std::invalid_argument("ring_point_counts is required");
+        }
+        if (ring_count == 0)
+        {
+            throw std::invalid_argument("POLYGON requires at least one ring");
+        }
+
+        std::size_t total_points = 0;
+        for (std::size_t i = 0; i < ring_count; ++i)
+        {
+            total_points += ring_point_counts[i];
+        }
+        if (total_points * dimensions != coord_value_count)
+        {
+            throw std::invalid_argument("ring point counts do not match coord_value_count");
+        }
+
+        const auto factors = build_uniform_factors(dimensions, precision);
+        std::string out = build_geometry_header(dimensions, precision, WKP_GEOMETRY_POLYGON);
+        out.reserve(8 + coord_value_count * 4 + ring_count + 8);
+
+        std::size_t offset = 0;
+        for (std::size_t i = 0; i < ring_count; ++i)
+        {
+            if (i > 0)
+            {
+                out.push_back(kSepRing);
+            }
+            const std::size_t point_count = ring_point_counts[i];
+            append_coords_segment(out, coords + offset, point_count, dimensions, factors);
+            offset += point_count * dimensions;
+        }
+
+        return out;
+    }
+
+    std::string encode_geometry_multipoint(
+        const double *coords,
+        std::size_t coord_value_count,
+        std::size_t dimensions,
+        int precision,
+        std::size_t point_count)
+    {
+        if (point_count * dimensions != coord_value_count)
+        {
+            throw std::invalid_argument("point_count does not match coord_value_count");
+        }
+
+        const auto factors = build_uniform_factors(dimensions, precision);
+        std::string out = build_geometry_header(dimensions, precision, WKP_GEOMETRY_MULTIPOINT);
+        out.reserve(8 + coord_value_count * 4 + point_count + 8);
+
+        std::size_t offset = 0;
+        for (std::size_t i = 0; i < point_count; ++i)
+        {
+            if (i > 0)
+            {
+                out.push_back(kSepMulti);
+            }
+            append_coords_segment(out, coords + offset, 1, dimensions, factors);
+            offset += dimensions;
+        }
+
+        return out;
+    }
+
+    std::string encode_geometry_multilinestring(
+        const double *coords,
+        std::size_t coord_value_count,
+        std::size_t dimensions,
+        int precision,
+        const std::size_t *linestring_point_counts,
+        std::size_t linestring_count)
+    {
+        if (linestring_point_counts == nullptr)
+        {
+            throw std::invalid_argument("linestring_point_counts is required");
+        }
+
+        std::size_t total_points = 0;
+        for (std::size_t i = 0; i < linestring_count; ++i)
+        {
+            if (linestring_point_counts[i] < 2)
+            {
+                throw std::invalid_argument("Each MULTILINESTRING part must contain at least two coordinates");
+            }
+            total_points += linestring_point_counts[i];
+        }
+        if (total_points * dimensions != coord_value_count)
+        {
+            throw std::invalid_argument("linestring point counts do not match coord_value_count");
+        }
+
+        const auto factors = build_uniform_factors(dimensions, precision);
+        std::string out = build_geometry_header(dimensions, precision, WKP_GEOMETRY_MULTILINESTRING);
+        out.reserve(8 + coord_value_count * 4 + linestring_count + 8);
+
+        std::size_t offset = 0;
+        for (std::size_t i = 0; i < linestring_count; ++i)
+        {
+            if (i > 0)
+            {
+                out.push_back(kSepMulti);
+            }
+            const std::size_t point_count = linestring_point_counts[i];
+            append_coords_segment(out, coords + offset, point_count, dimensions, factors);
+            offset += point_count * dimensions;
+        }
+
+        return out;
+    }
+
+    std::string encode_geometry_multipolygon(
+        const double *coords,
+        std::size_t coord_value_count,
+        std::size_t dimensions,
+        int precision,
+        const std::size_t *polygon_ring_counts,
+        std::size_t polygon_count,
+        const std::size_t *ring_point_counts,
+        std::size_t ring_count)
+    {
+        if (polygon_ring_counts == nullptr || ring_point_counts == nullptr)
+        {
+            throw std::invalid_argument("polygon_ring_counts and ring_point_counts are required");
+        }
+
+        std::size_t ring_total = 0;
+        for (std::size_t i = 0; i < polygon_count; ++i)
+        {
+            ring_total += polygon_ring_counts[i];
+        }
+        if (ring_total != ring_count)
+        {
+            throw std::invalid_argument("polygon_ring_counts must sum to ring_count");
+        }
+
+        std::size_t total_points = 0;
+        for (std::size_t i = 0; i < ring_count; ++i)
+        {
+            total_points += ring_point_counts[i];
+        }
+        if (total_points * dimensions != coord_value_count)
+        {
+            throw std::invalid_argument("ring_point_counts do not match coord_value_count");
+        }
+
+        const auto factors = build_uniform_factors(dimensions, precision);
+        std::string out = build_geometry_header(dimensions, precision, WKP_GEOMETRY_MULTIPOLYGON);
+        out.reserve(8 + coord_value_count * 4 + ring_count + polygon_count + 8);
+
+        std::size_t coord_offset = 0;
+        std::size_t ring_offset = 0;
+        for (std::size_t poly_idx = 0; poly_idx < polygon_count; ++poly_idx)
+        {
+            if (poly_idx > 0)
+            {
+                out.push_back(kSepMulti);
+            }
+
+            const std::size_t poly_ring_count = polygon_ring_counts[poly_idx];
+            if (poly_ring_count == 0)
+            {
+                throw std::invalid_argument("Each MULTIPOLYGON part requires at least one ring");
+            }
+
+            for (std::size_t ring_idx = 0; ring_idx < poly_ring_count; ++ring_idx)
+            {
+                if (ring_idx > 0)
+                {
+                    out.push_back(kSepRing);
+                }
+
+                const std::size_t point_count = ring_point_counts[ring_offset++];
+                append_coords_segment(out, coords + coord_offset, point_count, dimensions, factors);
+                coord_offset += point_count * dimensions;
+            }
+        }
+
+        return out;
+    }
+
 } // namespace
 
 namespace wkp::core
@@ -253,193 +531,6 @@ namespace wkp::core
         return frame;
     }
 
-    GeometryEncoder::GeometryEncoder(int precision, int dimensions, std::size_t initial_capacity)
-        : precision_(precision), dimensions_(dimensions), factors_(std::size_t(dimensions), 1.0), header_prefix_(), work_()
-    {
-        if (dimensions <= 0 || dimensions > static_cast<int>(kMaxDimensions))
-        {
-            throw std::invalid_argument("dimensions must be between 1 and 16");
-        }
-
-        for (int i = 0; i < dimensions_; ++i)
-        {
-            factors_[std::size_t(i)] = std::pow(10.0, static_cast<double>(precision_));
-        }
-
-        header_prefix_.reserve(6);
-        {
-            char buf[16];
-            std::snprintf(buf, sizeof(buf), "%02d%02d%02d", kGeometryVersion, precision_, dimensions_);
-            header_prefix_ = buf;
-        }
-
-        if (initial_capacity < 64)
-        {
-            initial_capacity = 64;
-        }
-        work_.reserve(initial_capacity);
-    }
-
-    int GeometryEncoder::precision() const noexcept { return precision_; }
-    int GeometryEncoder::dimensions() const noexcept { return dimensions_; }
-
-    void GeometryEncoder::reset_with_header(EncodedGeometryType geometry_type)
-    {
-        work_.clear();
-        work_.append(header_prefix_);
-        char buf[4];
-        std::snprintf(buf, sizeof(buf), "%02d", static_cast<int>(geometry_type));
-        work_.append(buf);
-    }
-
-    void GeometryEncoder::append_separator(char sep) { work_.push_back(sep); }
-
-    void GeometryEncoder::append_coords_segment(const double *coords, std::size_t point_count)
-    {
-        if (coords == nullptr)
-        {
-            throw std::invalid_argument("coords pointer cannot be null");
-        }
-        const std::size_t value_count = point_count * static_cast<std::size_t>(dimensions_);
-        append_encoded_segment(work_, coords, value_count, static_cast<std::size_t>(dimensions_), factors_);
-    }
-
-    std::string GeometryEncoder::encode_point(const double *coords, std::size_t point_count)
-    {
-        if (point_count != 1)
-        {
-            throw std::invalid_argument("POINT requires exactly 1 coordinate");
-        }
-        reset_with_header(EncodedGeometryType::POINT);
-        append_coords_segment(coords, point_count);
-        return work_;
-    }
-
-    std::string GeometryEncoder::encode_linestring(const double *coords, std::size_t point_count)
-    {
-        if (point_count < 2)
-        {
-            throw std::invalid_argument("LINESTRING requires at least 2 coordinates");
-        }
-        reset_with_header(EncodedGeometryType::LINESTRING);
-        append_coords_segment(coords, point_count);
-        return work_;
-    }
-
-    std::string GeometryEncoder::encode_polygon(
-        const std::vector<const double *> &ring_coords,
-        const std::vector<std::size_t> &ring_point_counts)
-    {
-        if (ring_coords.size() != ring_point_counts.size())
-        {
-            throw std::invalid_argument("ring_coords and ring_point_counts size mismatch");
-        }
-        if (ring_coords.empty())
-        {
-            throw std::invalid_argument("POLYGON requires at least one ring");
-        }
-
-        reset_with_header(EncodedGeometryType::POLYGON);
-        for (std::size_t i = 0; i < ring_coords.size(); ++i)
-        {
-            if (i > 0)
-            {
-                append_separator(kSepRing);
-            }
-            append_coords_segment(ring_coords[i], ring_point_counts[i]);
-        }
-        return work_;
-    }
-
-    std::string GeometryEncoder::encode_multipoint(
-        const std::vector<const double *> &point_coords,
-        const std::vector<std::size_t> &point_counts)
-    {
-        if (point_coords.size() != point_counts.size())
-        {
-            throw std::invalid_argument("point_coords and point_counts size mismatch");
-        }
-        reset_with_header(EncodedGeometryType::MULTIPOINT);
-        for (std::size_t i = 0; i < point_coords.size(); ++i)
-        {
-            if (point_counts[i] != 1)
-            {
-                throw std::invalid_argument("Each MULTIPOINT part must contain exactly one coordinate");
-            }
-            if (i > 0)
-            {
-                append_separator(kSepMulti);
-            }
-            append_coords_segment(point_coords[i], point_counts[i]);
-        }
-        return work_;
-    }
-
-    std::string GeometryEncoder::encode_multilinestring(
-        const std::vector<const double *> &linestring_coords,
-        const std::vector<std::size_t> &linestring_point_counts)
-    {
-        if (linestring_coords.size() != linestring_point_counts.size())
-        {
-            throw std::invalid_argument("linestring_coords and linestring_point_counts size mismatch");
-        }
-        reset_with_header(EncodedGeometryType::MULTILINESTRING);
-        for (std::size_t i = 0; i < linestring_coords.size(); ++i)
-        {
-            if (linestring_point_counts[i] < 2)
-            {
-                throw std::invalid_argument("Each MULTILINESTRING part must contain at least two coordinates");
-            }
-            if (i > 0)
-            {
-                append_separator(kSepMulti);
-            }
-            append_coords_segment(linestring_coords[i], linestring_point_counts[i]);
-        }
-        return work_;
-    }
-
-    std::string GeometryEncoder::encode_multipolygon(
-        const std::vector<std::vector<const double *>> &polygon_ring_coords,
-        const std::vector<std::vector<std::size_t>> &polygon_ring_point_counts)
-    {
-        if (polygon_ring_coords.size() != polygon_ring_point_counts.size())
-        {
-            throw std::invalid_argument("polygon ring coordinate/count size mismatch");
-        }
-
-        reset_with_header(EncodedGeometryType::MULTIPOLYGON);
-        for (std::size_t poly_idx = 0; poly_idx < polygon_ring_coords.size(); ++poly_idx)
-        {
-            const auto &rings = polygon_ring_coords[poly_idx];
-            const auto &counts = polygon_ring_point_counts[poly_idx];
-            if (rings.size() != counts.size())
-            {
-                throw std::invalid_argument("polygon ring coordinate/count size mismatch");
-            }
-            if (rings.empty())
-            {
-                throw std::invalid_argument("Each MULTIPOLYGON part requires at least one ring");
-            }
-
-            if (poly_idx > 0)
-            {
-                append_separator(kSepMulti);
-            }
-
-            for (std::size_t ring_idx = 0; ring_idx < rings.size(); ++ring_idx)
-            {
-                if (ring_idx > 0)
-                {
-                    append_separator(kSepRing);
-                }
-                append_coords_segment(rings[ring_idx], counts[ring_idx]);
-            }
-        }
-
-        return work_;
-    }
-
     std::string encode_f64(
         const double *values,
         std::size_t value_count,
@@ -514,6 +605,68 @@ namespace wkp::core
     }
 
 } // namespace wkp::core
+
+namespace
+{
+
+    wkp_status encode_string_result(
+        const std::string &encoded,
+        wkp_u8_buffer *out_encoded,
+        char *error_message,
+        size_t error_message_capacity)
+    {
+        auto *data = static_cast<uint8_t *>(::operator new(encoded.size(), std::nothrow));
+        if (data == nullptr)
+        {
+            set_error(error_message, error_message_capacity, "Allocation failed");
+            return WKP_STATUS_ALLOCATION_FAILED;
+        }
+
+        std::memcpy(data, encoded.data(), encoded.size());
+        out_encoded->data = data;
+        out_encoded->size = encoded.size();
+        return WKP_STATUS_OK;
+    }
+
+    bool validate_geometry_inputs(
+        const double *coords,
+        size_t coord_value_count,
+        size_t dimensions,
+        wkp_u8_buffer *out_encoded,
+        char *error_message,
+        size_t error_message_capacity)
+    {
+        if (out_encoded == nullptr)
+        {
+            set_error(error_message, error_message_capacity, "out_encoded is required");
+            return false;
+        }
+
+        out_encoded->data = nullptr;
+        out_encoded->size = 0;
+
+        if (coords == nullptr)
+        {
+            set_error(error_message, error_message_capacity, "coords is required");
+            return false;
+        }
+
+        if (dimensions == 0)
+        {
+            set_error(error_message, error_message_capacity, "dimensions must be greater than 0");
+            return false;
+        }
+
+        if ((coord_value_count % dimensions) != 0)
+        {
+            set_error(error_message, error_message_capacity, "coord_value_count must be divisible by dimensions");
+            return false;
+        }
+
+        return true;
+    }
+
+} // namespace
 
 extern "C"
 {
@@ -634,6 +787,253 @@ extern "C"
                 return WKP_STATUS_MALFORMED_INPUT;
             }
             set_error(error_message, error_message_capacity, message);
+            return WKP_STATUS_INVALID_ARGUMENT;
+        }
+        catch (const std::exception &ex)
+        {
+            set_error(error_message, error_message_capacity, ex.what());
+            return WKP_STATUS_INTERNAL_ERROR;
+        }
+    }
+
+    wkp_status wkp_encode_point_f64(
+        const double *coords,
+        size_t coord_value_count,
+        size_t dimensions,
+        int precision,
+        wkp_u8_buffer *out_encoded,
+        char *error_message,
+        size_t error_message_capacity)
+    {
+        if (!validate_geometry_inputs(coords, coord_value_count, dimensions, out_encoded, error_message, error_message_capacity))
+        {
+            return WKP_STATUS_INVALID_ARGUMENT;
+        }
+
+        try
+        {
+            const std::string encoded = encode_geometry_point(coords, coord_value_count, dimensions, precision);
+            return encode_string_result(encoded, out_encoded, error_message, error_message_capacity);
+        }
+        catch (const std::bad_alloc &)
+        {
+            set_error(error_message, error_message_capacity, "Allocation failed");
+            return WKP_STATUS_ALLOCATION_FAILED;
+        }
+        catch (const std::invalid_argument &ex)
+        {
+            set_error(error_message, error_message_capacity, ex.what());
+            return WKP_STATUS_INVALID_ARGUMENT;
+        }
+        catch (const std::exception &ex)
+        {
+            set_error(error_message, error_message_capacity, ex.what());
+            return WKP_STATUS_INTERNAL_ERROR;
+        }
+    }
+
+    wkp_status wkp_encode_linestring_f64(
+        const double *coords,
+        size_t coord_value_count,
+        size_t dimensions,
+        int precision,
+        wkp_u8_buffer *out_encoded,
+        char *error_message,
+        size_t error_message_capacity)
+    {
+        if (!validate_geometry_inputs(coords, coord_value_count, dimensions, out_encoded, error_message, error_message_capacity))
+        {
+            return WKP_STATUS_INVALID_ARGUMENT;
+        }
+
+        try
+        {
+            const std::string encoded = encode_geometry_linestring(coords, coord_value_count, dimensions, precision);
+            return encode_string_result(encoded, out_encoded, error_message, error_message_capacity);
+        }
+        catch (const std::bad_alloc &)
+        {
+            set_error(error_message, error_message_capacity, "Allocation failed");
+            return WKP_STATUS_ALLOCATION_FAILED;
+        }
+        catch (const std::invalid_argument &ex)
+        {
+            set_error(error_message, error_message_capacity, ex.what());
+            return WKP_STATUS_INVALID_ARGUMENT;
+        }
+        catch (const std::exception &ex)
+        {
+            set_error(error_message, error_message_capacity, ex.what());
+            return WKP_STATUS_INTERNAL_ERROR;
+        }
+    }
+
+    wkp_status wkp_encode_polygon_f64(
+        const double *coords,
+        size_t coord_value_count,
+        size_t dimensions,
+        int precision,
+        const size_t *ring_point_counts,
+        size_t ring_count,
+        wkp_u8_buffer *out_encoded,
+        char *error_message,
+        size_t error_message_capacity)
+    {
+        if (!validate_geometry_inputs(coords, coord_value_count, dimensions, out_encoded, error_message, error_message_capacity))
+        {
+            return WKP_STATUS_INVALID_ARGUMENT;
+        }
+        try
+        {
+            const std::string encoded = encode_geometry_polygon(
+                coords,
+                coord_value_count,
+                dimensions,
+                precision,
+                ring_point_counts,
+                ring_count);
+            return encode_string_result(encoded, out_encoded, error_message, error_message_capacity);
+        }
+        catch (const std::bad_alloc &)
+        {
+            set_error(error_message, error_message_capacity, "Allocation failed");
+            return WKP_STATUS_ALLOCATION_FAILED;
+        }
+        catch (const std::invalid_argument &ex)
+        {
+            set_error(error_message, error_message_capacity, ex.what());
+            return WKP_STATUS_INVALID_ARGUMENT;
+        }
+        catch (const std::exception &ex)
+        {
+            set_error(error_message, error_message_capacity, ex.what());
+            return WKP_STATUS_INTERNAL_ERROR;
+        }
+    }
+
+    wkp_status wkp_encode_multipoint_f64(
+        const double *coords,
+        size_t coord_value_count,
+        size_t dimensions,
+        int precision,
+        size_t point_count,
+        wkp_u8_buffer *out_encoded,
+        char *error_message,
+        size_t error_message_capacity)
+    {
+        if (!validate_geometry_inputs(coords, coord_value_count, dimensions, out_encoded, error_message, error_message_capacity))
+        {
+            return WKP_STATUS_INVALID_ARGUMENT;
+        }
+
+        try
+        {
+            const std::string encoded = encode_geometry_multipoint(
+                coords,
+                coord_value_count,
+                dimensions,
+                precision,
+                point_count);
+            return encode_string_result(encoded, out_encoded, error_message, error_message_capacity);
+        }
+        catch (const std::bad_alloc &)
+        {
+            set_error(error_message, error_message_capacity, "Allocation failed");
+            return WKP_STATUS_ALLOCATION_FAILED;
+        }
+        catch (const std::invalid_argument &ex)
+        {
+            set_error(error_message, error_message_capacity, ex.what());
+            return WKP_STATUS_INVALID_ARGUMENT;
+        }
+        catch (const std::exception &ex)
+        {
+            set_error(error_message, error_message_capacity, ex.what());
+            return WKP_STATUS_INTERNAL_ERROR;
+        }
+    }
+
+    wkp_status wkp_encode_multilinestring_f64(
+        const double *coords,
+        size_t coord_value_count,
+        size_t dimensions,
+        int precision,
+        const size_t *linestring_point_counts,
+        size_t linestring_count,
+        wkp_u8_buffer *out_encoded,
+        char *error_message,
+        size_t error_message_capacity)
+    {
+        if (!validate_geometry_inputs(coords, coord_value_count, dimensions, out_encoded, error_message, error_message_capacity))
+        {
+            return WKP_STATUS_INVALID_ARGUMENT;
+        }
+        try
+        {
+            const std::string encoded = encode_geometry_multilinestring(
+                coords,
+                coord_value_count,
+                dimensions,
+                precision,
+                linestring_point_counts,
+                linestring_count);
+            return encode_string_result(encoded, out_encoded, error_message, error_message_capacity);
+        }
+        catch (const std::bad_alloc &)
+        {
+            set_error(error_message, error_message_capacity, "Allocation failed");
+            return WKP_STATUS_ALLOCATION_FAILED;
+        }
+        catch (const std::invalid_argument &ex)
+        {
+            set_error(error_message, error_message_capacity, ex.what());
+            return WKP_STATUS_INVALID_ARGUMENT;
+        }
+        catch (const std::exception &ex)
+        {
+            set_error(error_message, error_message_capacity, ex.what());
+            return WKP_STATUS_INTERNAL_ERROR;
+        }
+    }
+
+    wkp_status wkp_encode_multipolygon_f64(
+        const double *coords,
+        size_t coord_value_count,
+        size_t dimensions,
+        int precision,
+        const size_t *polygon_ring_counts,
+        size_t polygon_count,
+        const size_t *ring_point_counts,
+        size_t ring_count,
+        wkp_u8_buffer *out_encoded,
+        char *error_message,
+        size_t error_message_capacity)
+    {
+        if (!validate_geometry_inputs(coords, coord_value_count, dimensions, out_encoded, error_message, error_message_capacity))
+        {
+            return WKP_STATUS_INVALID_ARGUMENT;
+        }
+        try
+        {
+            const std::string encoded = encode_geometry_multipolygon(
+                coords,
+                coord_value_count,
+                dimensions,
+                precision,
+                polygon_ring_counts,
+                polygon_count,
+                ring_point_counts,
+                ring_count);
+            return encode_string_result(encoded, out_encoded, error_message, error_message_capacity);
+        }
+        catch (const std::bad_alloc &)
+        {
+            set_error(error_message, error_message_capacity, "Allocation failed");
+            return WKP_STATUS_ALLOCATION_FAILED;
+        }
+        catch (const std::invalid_argument &ex)
+        {
+            set_error(error_message, error_message_capacity, ex.what());
             return WKP_STATUS_INVALID_ARGUMENT;
         }
         catch (const std::exception &ex)

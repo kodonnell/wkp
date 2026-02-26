@@ -29,6 +29,16 @@ extern "C"
         size_t size;
     } wkp_f64_buffer;
 
+    typedef enum wkp_geometry_type
+    {
+        WKP_GEOMETRY_POINT = 1,
+        WKP_GEOMETRY_LINESTRING = 2,
+        WKP_GEOMETRY_POLYGON = 3,
+        WKP_GEOMETRY_MULTIPOINT = 4,
+        WKP_GEOMETRY_MULTILINESTRING = 5,
+        WKP_GEOMETRY_MULTIPOLYGON = 6
+    } wkp_geometry_type;
+
     wkp_status wkp_encode_f64(
         const double *values,
         size_t value_count,
@@ -46,6 +56,69 @@ extern "C"
         const int *precisions,
         size_t precision_count,
         wkp_f64_buffer *out_values,
+        char *error_message,
+        size_t error_message_capacity);
+
+    wkp_status wkp_encode_point_f64(
+        const double *coords,
+        size_t coord_value_count,
+        size_t dimensions,
+        int precision,
+        wkp_u8_buffer *out_encoded,
+        char *error_message,
+        size_t error_message_capacity);
+
+    wkp_status wkp_encode_linestring_f64(
+        const double *coords,
+        size_t coord_value_count,
+        size_t dimensions,
+        int precision,
+        wkp_u8_buffer *out_encoded,
+        char *error_message,
+        size_t error_message_capacity);
+
+    wkp_status wkp_encode_polygon_f64(
+        const double *coords,
+        size_t coord_value_count,
+        size_t dimensions,
+        int precision,
+        const size_t *ring_point_counts,
+        size_t ring_count,
+        wkp_u8_buffer *out_encoded,
+        char *error_message,
+        size_t error_message_capacity);
+
+    wkp_status wkp_encode_multipoint_f64(
+        const double *coords,
+        size_t coord_value_count,
+        size_t dimensions,
+        int precision,
+        size_t point_count,
+        wkp_u8_buffer *out_encoded,
+        char *error_message,
+        size_t error_message_capacity);
+
+    wkp_status wkp_encode_multilinestring_f64(
+        const double *coords,
+        size_t coord_value_count,
+        size_t dimensions,
+        int precision,
+        const size_t *linestring_point_counts,
+        size_t linestring_count,
+        wkp_u8_buffer *out_encoded,
+        char *error_message,
+        size_t error_message_capacity);
+
+    wkp_status wkp_encode_multipolygon_f64(
+        const double *coords,
+        size_t coord_value_count,
+        size_t dimensions,
+        int precision,
+        const size_t *polygon_ring_counts,
+        size_t polygon_count,
+        const size_t *ring_point_counts,
+        size_t ring_count,
+        wkp_u8_buffer *out_encoded,
         char *error_message,
         size_t error_message_capacity);
 

@@ -1,0 +1,22 @@
+{
+  "name": "@wkp/javascript-bindings",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "sync:version": "node ./scripts/sync-version.mjs --write",
+    "check:version": "node ./scripts/sync-version.mjs --check",
+    "build": "npm run -ws build",
+    "build:node": "npm --workspace @wkp/node run build",
+    "build:web": "npm --workspace @wkp/web run build",
+    "benchmark:node": "npm --workspace @wkp/node run benchmark",
+    "benchmark:web:node": "npm --workspace @wkp/web run benchmark",
+    "benchmark:web:serve": "npm --workspace @wkp/web run benchmark:serve",
+    "clean": "npm run -ws clean"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

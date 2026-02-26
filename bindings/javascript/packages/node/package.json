@@ -1,0 +1,32 @@
+{
+  "name": "@wkp/node",
+  "version": "0.1.0",
+  "description": "Node.js bindings for WKP core via Node-API",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "gypfile": true,
+  "files": [
+    "index.js",
+    "index.d.ts",
+    "binding.gyp",
+    "src"
+  ],
+  "scripts": {
+    "build": "node-gyp rebuild",
+    "clean": "node-gyp clean || exit 0",
+    "benchmark": "node ./benchmark/benchmark.js"
+  },
+  "dependencies": {
+    "node-addon-api": "^8.3.0",
+    "node-gyp-build": "^4.8.4"
+  },
+  "devDependencies": {
+    "node-gyp": "^12.2.0"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

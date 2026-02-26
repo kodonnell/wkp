@@ -1,45 +1,64 @@
 # WKP Core (C++)
 
-This directory contains the C++ implementation of WKP encoding/decoding.
+`core/` is the shared native engine for all bindings.
+
+## Responsibilities
+
+- Implements encoding/decoding algorithms
+- Exposes the public C ABI (`include/wkp/core.h`)
+- Owns ABI-level tests (`tests/test_c_api.cpp`)
+
+## Boundaries
+
+- Core is **binding-agnostic**.
+- Binding-specific C++ wrappers live under `bindings/cpp`.
+- Python/Node/Web all consume the same C ABI.
 
 ## Layout
 
-- `include/wkp/core.hpp`: C++ API
-- `include/wkp/core.h`: C ABI
+- `include/wkp/core.h`: stable C ABI
+- `include/wkp/_version.h`: shared version source
 - `src/core.cpp`: implementation
-- `tests/`: C++ tests (doctest + CTest discovery)
-- `bench/benchmark_core.cpp`: standalone C++ benchmark executable
+- `tests/test_c_api.cpp`: ABI-focused tests
 
-## Versioning
+## Version source of truth
 
-Core uses a hard-coded version header at `core/include/wkp/_version.h`.
+`core/include/wkp/_version.h` is the single version source for:
 
-- C++ reads it directly via `wkp/_version.h`.
-- Python packaging reads the same header value from `bindings/python/setup.py`.
+- C ABI/C++ core runtime version
+- CMake project version (`project(wkp_native VERSION ...)`)
+- Python package version
+- JavaScript package versions (via workspace sync/check scripts)
+
+## Dependencies
+
+- CMake >= 3.18
+- C++17 compiler
+- doctest (fetched by CMake when tests are enabled)
 
 ## Build
+
+From repo root:
 
 ```sh
 cmake -S . -B build/core -DCMAKE_BUILD_TYPE=Release -DWKP_BUILD_TESTS=ON -DWKP_BUILD_BENCHMARKS=ON
 cmake --build build/core --config Release
 ```
 
-## Run tests
+## Test
 
 ```sh
 ctest --test-dir build/core -C Release --output-on-failure
 ```
 
-List discovered test cases:
+List discovered tests:
 
 ```sh
 ctest -N --test-dir build/core -C Release
 ```
 
-## Run benchmark
+## Related artifacts
 
-No Python build wrapper is required.
-
-```sh
-build/core/Release/wkp_core_benchmark 200000 2 5 20
-```
+- Static library: `wkp_core_static`
+- Shared library: `wkp_core`
+- C++ benchmark executable: `wkp_cpp_benchmark` (from `bindings/cpp/bench`)

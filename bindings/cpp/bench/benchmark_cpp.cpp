@@ -107,7 +107,7 @@ int main(int argc, char **argv)
     const double decode_ms = decode_ms_total / static_cast<double>(iterations);
 
     std::cout << std::fixed << std::setprecision(3);
-    std::cout << "WKP C++ core benchmark\n";
+    std::cout << "WKP C++ binding benchmark\n";
     std::cout << "points=" << point_count
               << " dimensions=" << dimensions
               << " precision=" << precision

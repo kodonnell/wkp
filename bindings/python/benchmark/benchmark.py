@@ -118,7 +118,7 @@ def load_realistic_geometry(num_points):
     Source: https://data-niwa.opendata.arcgis.com/datasets/NIWA::coastline/explore
     Grabbed the North Island then simplified as `.simplify(tolerance=0.001, preserve_topology=False)`
     """
-    with open(Path(__file__).parent.parent / "data" / "nz-north-island-coastline-simp-0.001.bin", "rb") as f:
+    with open(Path(__file__).parents[3] / "data" / "nz-north-island-coastline-simp-0.001.bin", "rb") as f:
         wkb = f.read()
     geom = shapely.wkb.loads(wkb)
     assert isinstance(geom, shapely.geometry.LineString)
