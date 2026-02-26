@@ -1,4 +1,4 @@
-# @wkp/node
+# @wkpjs/node
 
 Node.js native bindings for WKP core using Node-API.
 
@@ -22,7 +22,7 @@ From `bindings/javascript`:
 
 ```sh
 npm install
-npm --workspace @wkp/node run build
+npm --workspace @wkpjs/node run build
 ```
 
 ## Smoke test
@@ -36,7 +36,7 @@ node -e "const w=require('./bindings/javascript/packages/node'); const b=w.encod
 From `bindings/javascript`:
 
 ```sh
-npm --workspace @wkp/node run benchmark -- --points=10000 --precision=5 --iterations=200
+npm --workspace @wkpjs/node run benchmark -- --points=10000 --precision=5 --iterations=200
 ```
 
 ## Publish

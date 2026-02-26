@@ -89,8 +89,8 @@ jobs:
         working-directory: bindings/javascript
         run: |
           mkdir -p ../../artifacts/npm
-          npm --workspace @wkp/node pack --pack-destination ../../artifacts/npm
-          npm --workspace @wkp/web pack --pack-destination ../../artifacts/npm
+          npm --workspace @wkpjs/node pack --pack-destination ../../artifacts/npm
+          npm --workspace @wkpjs/web pack --pack-destination ../../artifacts/npm
 
       - name: Upload JavaScript artifacts
         uses: actions/upload-artifact@v4

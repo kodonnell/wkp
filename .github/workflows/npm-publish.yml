@@ -52,12 +52,12 @@ jobs:
         if: github.event_name == 'workflow_dispatch' && inputs.dry_run
         working-directory: bindings/javascript
         run: |
-          npm --workspace @wkp/node publish --access public --provenance --dry-run
-          npm --workspace @wkp/web publish --access public --provenance --dry-run
+          npm --workspace @wkpjs/node publish --access public --provenance --dry-run
+          npm --workspace @wkpjs/web publish --access public --provenance --dry-run
 
       - name: Publish
         if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && !inputs.dry_run)
         working-directory: bindings/javascript
         run: |
-          npm --workspace @wkp/node publish --access public --provenance
-          npm --workspace @wkp/web publish --access public --provenance
+          npm --workspace @wkpjs/node publish --access public --provenance
+          npm --workspace @wkpjs/web publish --access public --provenance

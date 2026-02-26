@@ -4,8 +4,8 @@ Monorepo workspace for JavaScript bindings over the shared WKP C ABI.
 
 ## Packages
 
-- `@wkp/node`: Node-API native addon (`packages/node`)
-- `@wkp/web`: Emscripten/WebAssembly module (`packages/web`)
+- `@wkpjs/node`: Node-API native addon (`packages/node`)
+- `@wkpjs/web`: Emscripten/WebAssembly module (`packages/web`)
 
 ## Architecture
 
@@ -17,8 +17,8 @@ Monorepo workspace for JavaScript bindings over the shared WKP C ABI.
 
 - Node.js >= 18
 - npm workspaces
-- native build toolchain for `node-gyp` (`@wkp/node`)
-- Emscripten (`emcc`) for `@wkp/web`
+- native build toolchain for `node-gyp` (`@wkpjs/node`)
+- Emscripten (`emcc`) for `@wkpjs/web`
 
 ## Versioning
 
@@ -64,7 +64,7 @@ Then open `http://localhost:8080/benchmark/index.html` for browser benchmarking.
 
 ### Trusted publishing setup (npm)
 
-1. In npm, create packages `@wkp/node` and `@wkp/web` (or first publish manually once if needed).
+1. In npm, create packages `@wkpjs/node` and `@wkpjs/web` (or first publish manually once if needed).
 2. In npm package settings, add a **Trusted Publisher** for this GitHub repo/workflow:
 	- Repository: `kodonnell/wkp`
 	- Workflow: `.github/workflows/npm-publish.yml`

@@ -1,5 +1,5 @@
 {
-  "name": "@wkp/web",
+  "name": "@wkpjs/web",
   "version": "0.1.0",
   "description": "WebAssembly bindings for WKP core",
   "type": "module",

@@ -1,4 +1,4 @@
-# @wkp/web
+# @wkpjs/web
 
 Browser/Node WebAssembly bindings for WKP core built with Emscripten.
 
@@ -23,7 +23,7 @@ From `bindings/javascript`:
 
 ```sh
 npm install
-npm --workspace @wkp/web run build
+npm --workspace @wkpjs/web run build
 ```
 
 ## Benchmark
@@ -33,7 +33,7 @@ npm --workspace @wkp/web run build
 From `bindings/javascript`:
 
 ```sh
-npm --workspace @wkp/web run benchmark -- --points=10000 --precision=5 --iterations=200
+npm --workspace @wkpjs/web run benchmark -- --points=10000 --precision=5 --iterations=200
 ```
 
 ### Run benchmark in Browser
@@ -41,7 +41,7 @@ npm --workspace @wkp/web run benchmark -- --points=10000 --precision=5 --iterati
 From `bindings/javascript`:
 
 ```sh
-npm --workspace @wkp/web run benchmark:serve
+npm --workspace @wkpjs/web run benchmark:serve
 ```
 
 or manually from `bindings/javascript/packages/web`:
@@ -62,7 +62,7 @@ Package publishing is automated by `.github/workflows/npm-publish.yml`.
 ## Example
 
 ```js
-import { createWkp } from '@wkp/web';
+import { createWkp } from '@wkpjs/web';
 
 const wkp = await createWkp();
 const encoded = wkp.encodeF64([1.0, 2.0, 3.0, 4.0], 2, [5]);

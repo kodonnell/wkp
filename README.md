@@ -31,8 +31,8 @@ This repository is structured around a single native engine and thin language bi
 - `core/`: C++ engine + C ABI tests
 - `bindings/python/`: nanobind Python package (`wkp` on PyPI)
 - `bindings/cpp/`: C++ convenience API + C++ tests/benchmarks
-- `bindings/javascript/packages/node/`: Node-API addon (`@wkp/node`)
-- `bindings/javascript/packages/web/`: Emscripten/WASM package (`@wkp/web`)
+- `bindings/javascript/packages/node/`: Node-API addon (`@wkpjs/node`)
+- `bindings/javascript/packages/web/`: Emscripten/WASM package (`@wkpjs/web`)
 
 ## Dependencies
 
@@ -51,8 +51,8 @@ This repository is structured around a single native engine and thin language bi
 ### JavaScript bindings
 
 - Node.js >= 18
-- `node-gyp` toolchain for `@wkp/node`
-- Emscripten (`emcc`) for `@wkp/web`
+- `node-gyp` toolchain for `@wkpjs/node`
+- Emscripten (`emcc`) for `@wkpjs/web`
 
 ## Quick start (Python)
 
@@ -90,15 +90,15 @@ The script performs:
 
 1. C++ configure/build (and optional CTest)
 2. Python editable install + tests
-3. JavaScript workspace install + build (`@wkp/node`, `@wkp/web`)
+3. JavaScript workspace install + build (`@wkpjs/node`, `@wkpjs/web`)
 
 ## Benchmarks
 
 - Python: `python bindings/python/benchmark/benchmark.py --linestring-points=10000 --precisions=5`
 - C++: `build/core/Release/wkp_cpp_benchmark 200000 2 5 20`
-- Node addon: `npm --prefix bindings/javascript --workspace @wkp/node run benchmark -- --points=10000 --precision=5 --iterations=200`
-- Web (WASM in Node): `npm --prefix bindings/javascript --workspace @wkp/web run benchmark -- --points=10000 --precision=5 --iterations=200`
-- Web (browser): run `npm --prefix bindings/javascript --workspace @wkp/web run benchmark:serve`, then open `http://localhost:8080/benchmark/index.html`
+- Node addon: `npm --prefix bindings/javascript --workspace @wkpjs/node run benchmark -- --points=10000 --precision=5 --iterations=200`
+- Web (WASM in Node): `npm --prefix bindings/javascript --workspace @wkpjs/web run benchmark -- --points=10000 --precision=5 --iterations=200`
+- Web (browser): run `npm --prefix bindings/javascript --workspace @wkpjs/web run benchmark:serve`, then open `http://localhost:8080/benchmark/index.html`
 
 ## CI / Release model
 

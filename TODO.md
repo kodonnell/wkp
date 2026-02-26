@@ -1,0 +1,5 @@
+- javascript:
+  - expose full C ABI api e.g. encode_polygon etc.
+  - current encodeFP64 is weird as takes precisions as argument (array) not int.
+- c++ - not sure how to distribute. Code is probably fine.
+- add binding/csharp/ and publish to nuget.

@@ -1,5 +1,5 @@
 {
-  "name": "@wkp/node",
+  "name": "@wkpjs/node",
   "version": "0.1.0",
   "description": "Node.js bindings for WKP core via Node-API",
   "main": "index.js",
