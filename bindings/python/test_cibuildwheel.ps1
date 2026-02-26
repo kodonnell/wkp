@@ -37,7 +37,7 @@ function Invoke-Checked {
 function Ensure-NoIsolationBuildDeps {
     $check = @(
         "-c",
-        "import build, setuptools_scm, Cython, packaging; print('ok')"
+        "import build, packaging; print('ok')"
     )
 
     try {
@@ -47,7 +47,7 @@ function Ensure-NoIsolationBuildDeps {
         Write-Host "Installing missing local build dependencies into active 'wkp' environment..." -ForegroundColor Yellow
         Invoke-Checked -Command "python" -Arguments @(
             "-m", "pip", "install", "-U",
-            "build", "setuptools", "wheel", "setuptools_scm", "Cython", "packaging"
+            "build", "setuptools", "wheel", "packaging"
         )
     }
 }
@@ -78,7 +78,7 @@ try {
     if ($NoIsolation) {
         Ensure-NoIsolationBuildDeps
         Write-Host "`nRunning local wheel build (no isolated env)..." -ForegroundColor Green
-        Invoke-Checked -Command "python" -Arguments @("-m", "build", "--wheel", "--no-isolation", "--outdir", "wheelhouse")
+        Invoke-Checked -Command "python" -Arguments @("-m", "build", ".", "--wheel", "--no-isolation", "--outdir", "wheelhouse")
 
         if ($RunLocalTests) {
             $wheel = Get-ChildItem "wheelhouse\*.whl" | Sort-Object LastWriteTime -Descending | Select-Object -First 1
@@ -94,7 +94,7 @@ try {
             }
             else {
                 Write-Host "Running local tests against installed wheel..." -ForegroundColor Green
-                Invoke-Checked -Command "pytest" -Arguments @("-ra", "-v", "--import-mode=importlib", "-o", "pythonpath=", "tests")
+                Invoke-Checked -Command "pytest" -Arguments @("-ra", "-v", "--import-mode=importlib", "-o", "pythonpath=src", "tests")
             }
         }
     }
@@ -120,7 +120,7 @@ try {
         }
 
         Write-Host "`nRunning cibuildwheel..." -ForegroundColor Green
-        $cibwArguments = @("--platform", "windows")
+        $cibwArguments = @("--platform", "windows", ".")
         if ($CibwArgs) {
             $cibwArguments += $CibwArgs
         }

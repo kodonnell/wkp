@@ -34,20 +34,20 @@ print(encoder.encode(linestring)) # 01050202_ibE_seK_seK_seK_seK_seK
 
 ## (Single-threaded) Benchmarks
 
-From `python .\benchmark\benchmark.py --linestring-points=10000`
+From `python .\benchmark\benchmark.py --linestring-points=10000 --precisions=5`
 
 | Method          | Source   | WKB (kb) | Encode (ms) | Encode (kb) | Decode (ms) | Total (ms) |
 | --------------- | -------- | -------- | ----------- | ----------- | ----------- | ---------- |
-| shapely_wkb     | nz-coast | 156.3    | 0.600       | 156.3       | 0.121       | 0.721      |
-| shapely_wkt     | nz-coast | 156.3    | 2.088       | 379.7       | 6.153       | 8.241      |
-| shapely_wkt_5dp | nz-coast | 156.3    | 1.386       | 202.8       | 2.940       | 4.326      |
-| wkp-5p-bytes    | nz-coast | 156.3    | 0.256       | 42.9        | 0.200       | 0.456      |
-| wkp-5p-str      | nz-coast | 156.3    | 0.257       | 42.9        | 0.188       | 0.445      |
-| shapely_wkb     | random   | 156.3    | 0.560       | 156.3       | 0.107       | 0.667      |
-| shapely_wkt     | random   | 156.3    | 2.046       | 378.4       | 5.636       | 7.682      |
-| shapely_wkt_5dp | random   | 156.3    | 2.015       | 163.9       | 3.870       | 5.885      |
-| wkp-5p-bytes    | random   | 156.3    | 0.369       | 72.0        | 0.271       | 0.640      |
-| wkp-5p-str      | random   | 156.3    | 0.313       | 72.0        | 0.241       | 0.554      |
+| shapely_wkb     | nz-coast | 156.3    | 0.568       | 156.3       | 0.126       | 0.694      |
+| shapely_wkt     | nz-coast | 156.3    | 1.900       | 379.7       | 5.459       | 7.359      |
+| shapely_wkt_5dp | nz-coast | 156.3    | 1.421       | 202.8       | 3.126       | 4.547      |
+| wkp-5p-bytes    | nz-coast | 156.3    | 0.275       | 42.9        | 0.157       | 0.432      |
+| wkp-5p-str      | nz-coast | 156.3    | 0.247       | 42.9        | 0.160       | 0.407      |
+| shapely_wkb     | random   | 156.3    | 0.495       | 156.3       | 0.095       | 0.590      |
+| shapely_wkt     | random   | 156.3    | 1.840       | 378.4       | 5.037       | 6.877      |
+| shapely_wkt_5dp | random   | 156.3    | 1.464       | 163.8       | 2.801       | 4.265      |
+| wkp-5p-bytes    | random   | 156.3    | 0.309       | 72.0        | 0.182       | 0.491      |
+| wkp-5p-str      | random   | 156.3    | 0.307       | 72.0        | 0.161       | 0.468      |
 
 ## Other features
 
@@ -58,17 +58,43 @@ From `python .\benchmark\benchmark.py --linestring-points=10000`
 
 ```sh
 git clone --recursive https://github.com/kodonnell/wkp/
-USE_CYTHON=1 pip install -e .[dev]
-pytest .
+pip install -e ./bindings/python[dev]
+pytest bindings/python/tests
 ```
 
 We use `cibuildwheel` to build all the wheels, which runs in a Github action. If you want to check this succeeds locally, you can try (untested):
 
 ```sh
-cibuildwheel --platform linux .
+cibuildwheel --platform linux bindings/python
 ```
 
 Finally, when you're happy, submit a PR.
+
+## C++ core
+
+The repo now includes a standalone C++ core under `core/` with:
+
+- `wkp_core_static` static library + `wkp_core` shared library
+- C++ API (`core/include/wkp/core.hpp`)
+- C ABI for future bindings (`core/include/wkp/core.h`)
+- Cross-platform tests via CTest (`core/tests/test_vectors.cpp`, `core/tests/test_c_api.cpp`, `core/tests/test_errors.cpp`)
+- Benchmark executable (`core/bench/benchmark_core.cpp`)
+
+See `core/README.md` for complete core build, test, and benchmark documentation.
+
+Build + test:
+
+```sh
+cmake -S . -B build/core -DCMAKE_BUILD_TYPE=Release -DWKP_BUILD_TESTS=ON -DWKP_BUILD_BENCHMARKS=ON
+cmake --build build/core --config Release
+ctest --test-dir build/core -C Release --output-on-failure
+```
+
+Run benchmark executable directly:
+
+```sh
+build/core/Release/wkp_core_benchmark 200000 2 5 20
+```
 
 ### Publishing
 
@@ -82,13 +108,18 @@ When you're on `main` on your local, `git tag vX.X.X` then `git push origin vX.X
 
 See [here](https://hynek.me/articles/testing-packaging/) and [here](https://blog.ionelmc.ro/2014/05/25/python-packaging/#the-structure). I didn't read all of it, but yeh, `import wkp` is annoying when there's also a folder called `wkp`.
 
-### `USE_CYTHON=1`?
+## Stubs
 
-See [here](https://cython.readthedocs.io/en/latest/src/userguide/source_files_and_compilation.html#distributing-cython-modules). Fair point.
+Generate stubs for the compiled core extension:
+
+```sh
+wkp-stubgen
+```
+
+This writes `bindings/python/src/wkp/_core.pyi`.
 
 ## TODO
 
 - javascript support and add to `npm`.
-- Make `benchmark.py` a CLI in setup.py?
-- `setuptools_scm_git_archive`?
+- Make `benchmark.py` a CLI in bindings/python/setup.py?
 - Code completion with stubs?

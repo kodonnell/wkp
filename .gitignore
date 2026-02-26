@@ -8,5 +8,5 @@ __pycache__
 *.html
 wheelhouse
 *.whl
-# This gets overwritten continually by setuptools_scm - ignore it.
-src/wkp/_version.py
+.pytest_cache
+*cache*

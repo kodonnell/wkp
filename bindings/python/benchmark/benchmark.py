@@ -1,13 +1,13 @@
 import random
 import time
-from dataclasses import asdict, dataclass, fields
+from collections import OrderedDict
+from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import List, OrderedDict
+from typing import List
 
 import shapely
 import shapely.wkb
 import shapely.wkt
-
 from wkp import GeometryEncoder
 
 
@@ -118,7 +118,7 @@ def load_realistic_geometry(num_points):
     Source: https://data-niwa.opendata.arcgis.com/datasets/NIWA::coastline/explore
     Grabbed the North Island then simplified as `.simplify(tolerance=0.001, preserve_topology=False)`
     """
-    with open(Path(__file__).parent / "data" / "nz-north-island-coastline-simp-0.001.bin", "rb") as f:
+    with open(Path(__file__).parent.parent / "data" / "nz-north-island-coastline-simp-0.001.bin", "rb") as f:
         wkb = f.read()
     geom = shapely.wkb.loads(wkb)
     assert isinstance(geom, shapely.geometry.LineString)

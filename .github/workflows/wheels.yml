@@ -17,7 +17,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # Optional, use if you use setuptools_scm https://stackoverflow.com/a/68959339
+          fetch-depth: 0
           submodules: true # Optional, use if you have submodules
 
       - name: Set up Python 3.9
@@ -29,7 +29,7 @@ jobs:
         run: pip install build
 
       - name: Build sdist *and* wheel (even though we ignore it) to check we can confirm wheels from source.
-        run: USE_CYTHON=1 python -m build
+        run: python -m build bindings/python
 
       - uses: actions/upload-artifact@v4
         with:
@@ -45,7 +45,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # Optional, use if you use setuptools_scm https://stackoverflow.com/a/68959339
+          fetch-depth: 0
 
       - name: Cache Docker images (Linux)
         if: matrix.os == 'ubuntu-latest'
@@ -72,10 +72,10 @@ jobs:
         run: python -m pip install cibuildwheel==3.3.1
 
       - name: Build wheels
-        run: python -m cibuildwheel --output-dir wheelhouse
+        run: python -m cibuildwheel bindings/python --output-dir wheelhouse
         env:
           CIBW_BUILD_VERBOSITY: "1"
-        # All cibuildwheel configuration is in pyproject.toml
+        # All cibuildwheel configuration is in bindings/python/pyproject.toml
 
       - name: Save vcpkg cache (Windows always)
         if: always() && matrix.os == 'windows-latest'
