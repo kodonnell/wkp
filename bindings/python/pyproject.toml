@@ -1,0 +1,75 @@
+[project]
+name = "wkp"
+description = "Well Known Polylines - fast and compact encoding of geometries to strings using the Google Polylines algorithm"
+readme = "README.md"
+authors = [
+    {name = "kodonnell", email = "kodonnell@users.noreply.github.com"}
+]
+license = "MIT"
+version = "0.2.0"
+requires-python = ">=3.8"
+dependencies = [
+    "numpy",
+    "shapely",
+]
+keywords = [
+    "wkp",
+    "google polyline",
+    "geometry encoding",
+    "geospatial",
+    "geospatial encoding",
+    "geospatial compression",
+    "geospatial data",
+    "geospatial processing",
+    "geospatial analysis",
+    "geospatial visualization",
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+    "Topic :: Scientific/Engineering :: GIS",
+]
+
+[project.urls]
+Homepage = "https://github.com/kodonnell/wkp"
+"Bug Tracker" = "https://github.com/kodonnell/wkp/issues"
+
+[build-system]
+requires = [
+    "setuptools >= 70",
+    "wheel >= 0.40",
+    "packaging >= 23",
+    "nanobind >= 2.12.0",
+    "typing_extensions >= 4.0; python_version < '3.11'"
+]
+build-backend = "setuptools.build_meta"
+
+[project.optional-dependencies]
+dev = [
+    "shapely",
+    "pytest",
+    "build",
+    "twine",
+    "polyline",
+    "nanobind >= 2.12.0"
+]
+
+[tool.setuptools]
+include-package-data = true
+zip-safe = false
+
+[tool.setuptools.packages.find]
+where = ["src"]
+namespaces = false
+
+[tool.setuptools.package-data]
+"wkp" = ["*.pyi", "py.typed"]
+
+[tool.cibuildwheel]
+build = "cp39-* cp310-* cp311-* cp312-* cp313-*"
+skip = "*-musllinux_* *s390x* *ppc64le* *i686*"
+dependency-versions = "latest"
+test-requires = ["pytest", "polyline"]
+test-command = "pytest -ra -v --import-mode=importlib {package}/tests"
+build-frontend = "pip"
+environment = {}

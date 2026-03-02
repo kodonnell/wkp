@@ -2,26 +2,63 @@
 
 # WKP - Well Known Polylines
 
-WKP is a simple encoding format for geometries that is:
+WKP is a compact string-based geometry encoding format inspired by Google Polyline, but extended for:
 
-- String based (unlike WKB) which is handy for transmitting to frontend etc.
-- Small and fast:
-  - WKT is generally 10x larger and 20x slower[^1].
-  - WKB is generally 4x larger and 1.5-2x slower[^1].
-- Based on the [Google Polyline algorithm](https://developers.google.com/maps/documentation/utilities/polylinealgorithm) but supports:
-  - More coordinates e.g. Z.
-  - Customisable precision whereas polylines only supports 5 d.p. This allows using coordinate systems other than WGS84.
-  - Encoding polygons (as sequences of polylines).
+- configurable precision
+- arbitrary dimensions (for example XYZ)
+- polygon and multi-geometry support
 
-[^1]: From `python .\benchmark\benchmark.py --linestring-points=10000` the realistic data from the `nz-coast` source has WKB: .72ms / 156kb, WKT (full precision): 8.24ms / 380kb, WKP: .45ms / 43kb. This assumes 5dp encoding (standard for Google Polyline) and that the WKT is exported at full-precision *not* truncated to 5dp (because this is the default behaviour when you just call `geom.wkt` in shapely).
+Compared to WKT/WKB, WKP is typically smaller on the wire and competitive or faster for encode/decode in common line/polygon workloads.
 
-## Install
+## Architecture (ABI-first)
+
+This repository is structured around a single native engine and thin language bindings.
+
+- `core/` is the canonical implementation.
+- `core/include/wkp/core.h` is the stable C ABI contract.
+- all language packages call that C ABI.
+- `bindings/cpp` is treated as a binding layer (not core internals).
+
+### Key design decisions
+
+1. **C ABI is source-of-truth** for cross-language stability.
+2. **No binding-specific C++ classes in core internals** (for cleaner boundaries and lower coupling).
+3. **Enum/value drift prevention** via explicit C↔C++ mapping and compile-time checks.
+4. **One algorithm implementation** shared by Python/Node/Web/C++ bindings.
+
+## Repository layout
+
+- `core/`: C++ engine + C ABI tests
+- `bindings/python/`: nanobind Python package (`wkp` on PyPI)
+- `bindings/cpp/`: C++ convenience API + C++ tests/benchmarks
+- `bindings/javascript/packages/node/`: Node-API addon (`@wkpjs/node`)
+- `bindings/javascript/packages/web/`: Emscripten/WASM package (`@wkpjs/web`)
+
+## Dependencies
+
+### Core/C++
+
+- CMake >= 3.18
+- C++17 toolchain
+- doctest (fetched by CMake for tests)
+
+### Python binding
+
+- Python >= 3.8
+- `setuptools`, `wheel`, `nanobind`
+- runtime: `numpy`, `shapely`
+
+### JavaScript bindings
+
+- Node.js >= 18
+- `node-gyp` toolchain for `@wkpjs/node`
+- Emscripten (`emcc`) for `@wkpjs/web`
+
+## Quick start (Python)
 
 ```sh
 pip install wkp
 ```
-
-## Example
 
 ```python
 from shapely import LineString
@@ -29,66 +66,28 @@ from wkp import GeometryEncoder
 
 linestring = LineString([(1, 2), (3, 4), (5, 6)])
 encoder = GeometryEncoder(dimensions=2, precision=5)
-print(encoder.encode(linestring)) # 01050202_ibE_seK_seK_seK_seK_seK
+print(encoder.encode(linestring))
 ```
 
-## (Single-threaded) Benchmarks
+## Benchmarks
 
-From `python .\benchmark\benchmark.py --linestring-points=10000`
-
-| Method          | Source   | WKB (kb) | Encode (ms) | Encode (kb) | Decode (ms) | Total (ms) |
-| --------------- | -------- | -------- | ----------- | ----------- | ----------- | ---------- |
-| shapely_wkb     | nz-coast | 156.3    | 0.600       | 156.3       | 0.121       | 0.721      |
-| shapely_wkt     | nz-coast | 156.3    | 2.088       | 379.7       | 6.153       | 8.241      |
-| shapely_wkt_5dp | nz-coast | 156.3    | 1.386       | 202.8       | 2.940       | 4.326      |
-| wkp-5p-bytes    | nz-coast | 156.3    | 0.256       | 42.9        | 0.200       | 0.456      |
-| wkp-5p-str      | nz-coast | 156.3    | 0.257       | 42.9        | 0.188       | 0.445      |
-| shapely_wkb     | random   | 156.3    | 0.560       | 156.3       | 0.107       | 0.667      |
-| shapely_wkt     | random   | 156.3    | 2.046       | 378.4       | 5.636       | 7.682      |
-| shapely_wkt_5dp | random   | 156.3    | 2.015       | 163.9       | 3.870       | 5.885      |
-| wkp-5p-bytes    | random   | 156.3    | 0.369       | 72.0        | 0.271       | 0.640      |
-| wkp-5p-str      | random   | 156.3    | 0.313       | 72.0        | 0.241       | 0.554      |
-
-## Other features
-
-- Slightly faster `encode_bytes` path. Useful if you're e.g. writing straight to a file you can open as `wb` instead of opening as `w` and then `.decode('ascii')` before writing.
-- Utilising functions like `wkp.encode_floats` - these can be used to encode non-geometry data e.g. encode waypoints with timestamps i.e. `wkp.encode_floats([(x0, y0, t0), (x1, y1, t1), ...])`.
+- Python: `python bindings/python/benchmark/benchmark.py --linestring-points=10000 --precisions=5 --max-iterations=1000 --max-duration=1`
+- C++: `build/core/Release/wkp_cpp_benchmark 10000 2 5 1000`
+- Node addon: `npm --prefix bindings/javascript --workspace @wkpjs/node run benchmark -- --points=10000 --precision=5 --iterations=1000`
+- Web (WASM in Node): `npm --prefix bindings/javascript --workspace @wkpjs/web run benchmark -- --points=10000 --precision=5 --iterations=1000`
+- Web (browser): run `npm --prefix bindings/javascript --workspace @wkpjs/web run benchmark:serve`, then open `http://localhost:8080/benchmark/index.html`
 
 ## Developing
 
-```sh
-git clone --recursive https://github.com/kodonnell/wkp/
-USE_CYTHON=1 pip install -e .[dev]
-pytest .
+```
+python ./build_all.py
 ```
 
-We use `cibuildwheel` to build all the wheels, which runs in a Github action. If you want to check this succeeds locally, you can try (untested):
+## Detailed docs
 
-```sh
-cibuildwheel --platform linux .
-```
-
-Finally, when you're happy, submit a PR.
-
-### Publishing
-
-When you're on `main` on your local, `git tag vX.X.X` then `git push origin vX.X.X`. This pushes the tag which triggers the full GitHub Action and:
-
-- Builds source distribution and wheels (for various platforms)
-- Pushes to PyPI
-- Creates a new release with the appropriate artifacts attached.
-
-### What's up with `./src`?
-
-See [here](https://hynek.me/articles/testing-packaging/) and [here](https://blog.ionelmc.ro/2014/05/25/python-packaging/#the-structure). I didn't read all of it, but yeh, `import wkp` is annoying when there's also a folder called `wkp`.
-
-### `USE_CYTHON=1`?
-
-See [here](https://cython.readthedocs.io/en/latest/src/userguide/source_files_and_compilation.html#distributing-cython-modules). Fair point.
-
-## TODO
-
-- javascript support and add to `npm`.
-- Make `benchmark.py` a CLI in setup.py?
-- `setuptools_scm_git_archive`?
-- Code completion with stubs?
+- Core: `core/README.md`
+- C++ binding: `bindings/cpp/README.md`
+- Python binding: `bindings/python/README.md`
+- JavaScript workspace: `bindings/javascript/README.md`
+- Node binding: `bindings/javascript/packages/node/README.md`
+- Web binding: `bindings/javascript/packages/web/README.md`

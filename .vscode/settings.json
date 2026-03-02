@@ -2,8 +2,24 @@
     "python-envs.defaultEnvManager": "ms-python.python:conda",
     "python-envs.defaultPackageManager": "ms-python.python:conda",
     "python-envs.pythonProjects": [],
+    "python.analysis.extraPaths": [
+        "bindings/python/src"
+    ],
+    "python.autoComplete.extraPaths": [
+        "bindings/python/src"
+    ],
+    "python.analysis.exclude": [
+        "**/.ignore/**"
+    ],
+    "search.exclude": {
+        "**/.ignore": true
+    },
+    "files.exclude": {
+        "**/.ignore": true
+    },
     "cSpell.words": [
         "asarray",
+        "ascontiguousarray",
         "boundscheck",
         "cdef",
         "cinit",

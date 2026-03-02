@@ -1,0 +1,26 @@
+{
+  "name": "@wkpjs/web",
+  "version": "0.2.0",
+  "wkpCoreCompatibility": "0.2.x",
+  "description": "WebAssembly bindings for WKP core",
+  "type": "module",
+  "main": "src/index.js",
+  "files": [
+    "src",
+    "dist",
+    "scripts"
+  ],
+  "scripts": {
+    "build": "node ./scripts/build-wasm.mjs",
+    "clean": "node -e \"const fs=require('fs'); for (const f of ['dist/wkp_core.js','dist/wkp_core.wasm']) { if (fs.existsSync(f)) fs.unlinkSync(f); }\"",
+    "benchmark": "node ./scripts/benchmark-node.mjs",
+    "benchmark:serve": "node ./scripts/serve-benchmark.mjs",
+    "test": "node --test ./tests/test-geometry-encoder.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

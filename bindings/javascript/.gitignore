@@ -1,0 +1,6 @@
+node_modules/
+packages/*/build/
+packages/*/dist/*.wasm
+packages/*/dist/*.js
+!packages/*/dist/.gitkeep
+npm-debug.log*
