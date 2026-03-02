@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { GeometryEncoder, EncodedGeometryType } = require('..');
+const { GeometryEncoder, EncodedGeometryType, encodeF64, decodeF64 } = require('..');
 
 function assertGeometryClose(actual, expected, epsilon = 1e-6) {
     assert.equal(actual.type, expected.type);
@@ -72,4 +72,50 @@ test('GeometryEncoder enforces dimensions', () => {
         () => encoder.encode({ type: 'Point', coordinates: [174.776, -41.289, 123.4] }),
         /array of 2 numbers/i
     );
+});
+
+test('known polyline vectors match expected encodings', () => {
+    const vectors = [
+        {
+            values: [1.0, 1.1, 1.2, 2.1, 2.2, 2.3],
+            dimensions: 3,
+            precisions: [3, 3, 3],
+            expected: 'o}@wcA_jAwcAwcAwcA'
+        },
+        {
+            values: [1.0, 1.1, 1.2, 2.1, 2.2, 2.3],
+            dimensions: 3,
+            precisions: [3],
+            expected: 'o}@wcA_jAwcAwcAwcA'
+        },
+        {
+            values: [4.712723, 7.846801, 36.651759, 9.693021],
+            dimensions: 2,
+            precisions: [5],
+            expected: 'omw[oq{n@_b}aE{qgJ'
+        },
+        {
+            values: [38.5, -120.2, 40.7, -120.95, 43.252, -126.453],
+            dimensions: 2,
+            precisions: [5],
+            expected: '_p~iF~ps|U_ulLnnqC_mqNvxq`@'
+        }
+    ];
+
+    for (const vector of vectors) {
+        const encodedBytes = encodeF64(Float64Array.from(vector.values), vector.dimensions, vector.precisions);
+        const encoded = Buffer.from(encodedBytes).toString('ascii');
+        assert.equal(encoded, vector.expected);
+    }
+});
+
+test('known 3d mixed precision value decodes without overflow', () => {
+    const values = [175.26025, -37.79209, 1677818753];
+    const precisions = [6, 6, 0];
+    const encodedBytes = encodeF64(Float64Array.from(values), 3, precisions);
+    const decoded = decodeF64(encodedBytes, 3, precisions);
+
+    assert.ok(Math.abs(decoded[0] - values[0]) <= 1e-9);
+    assert.ok(Math.abs(decoded[1] - values[1]) <= 1e-9);
+    assert.ok(Math.abs(decoded[2] - values[2]) <= 1e-9);
 });

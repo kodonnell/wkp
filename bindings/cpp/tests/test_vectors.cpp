@@ -77,6 +77,24 @@ TEST_CASE("known 3d vector case 2")
     CHECK(encoded == expected);
 }
 
+TEST_CASE("known 3d mixed precision single point")
+{
+    const std::vector<double> values = {
+        175.26025,
+        -37.79209,
+        1677818753.0,
+    };
+    std::string encoded;
+    wkp::core::encode_f64_into(values.data(), values.size(), 3, {6, 6, 0}, encoded);
+
+    std::vector<double> decoded;
+    wkp::core::decode_f64_into(encoded, 3, {6, 6, 0}, decoded);
+    REQUIRE(decoded.size() == values.size());
+    CHECK(almost_equal(decoded[0], values[0], 1e-9));
+    CHECK(almost_equal(decoded[1], values[1], 1e-9));
+    CHECK(almost_equal(decoded[2], values[2], 1e-9));
+}
+
 TEST_CASE("roundtrip 2d")
 {
     const std::vector<double> values = {
