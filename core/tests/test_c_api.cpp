@@ -23,6 +23,60 @@ namespace
         return (a - '0') * 10 + (b - '0');
     }
 
+    template <typename EncodeFn>
+    wkp_status encode_retry_u8(
+        std::vector<uint8_t> &storage,
+        wkp_u8_buffer &out,
+        char *error,
+        std::size_t error_capacity,
+        EncodeFn &&encode_fn)
+    {
+        if (storage.empty())
+        {
+            storage.resize(64);
+        }
+
+        for (;;)
+        {
+            out.data = storage.data();
+            out.size = storage.size();
+            const wkp_status status = encode_fn(&out, error, error_capacity);
+            if (status == WKP_STATUS_BUFFER_TOO_SMALL)
+            {
+                storage.resize(out.size);
+                continue;
+            }
+            return status;
+        }
+    }
+
+    template <typename DecodeFn>
+    wkp_status decode_retry_f64(
+        std::vector<double> &storage,
+        wkp_f64_buffer &out,
+        char *error,
+        std::size_t error_capacity,
+        DecodeFn &&decode_fn)
+    {
+        if (storage.empty())
+        {
+            storage.resize(16);
+        }
+
+        for (;;)
+        {
+            out.data = storage.data();
+            out.size = storage.size();
+            const wkp_status status = decode_fn(&out, error, error_capacity);
+            if (status == WKP_STATUS_BUFFER_TOO_SMALL)
+            {
+                storage.resize(out.size);
+                continue;
+            }
+            return status;
+        }
+    }
+
     TEST_CASE("c api roundtrip")
     {
         const std::vector<double> values = {
@@ -35,33 +89,51 @@ namespace
         };
         const int precisions[] = {6, 6, 0};
 
+        std::vector<uint8_t> encoded_storage;
         wkp_u8_buffer encoded{};
         char error[256] = {0};
 
-        const wkp_status s1 = wkp_encode_f64(
-            values.data(),
-            values.size(),
-            3,
-            precisions,
-            3,
-            &encoded,
+        const wkp_status s1 = encode_retry_u8(
+            encoded_storage,
+            encoded,
             error,
-            sizeof(error));
+            sizeof(error),
+            [&](wkp_u8_buffer *out, char *err, std::size_t err_cap)
+            {
+                return wkp_encode_f64_into(
+                    values.data(),
+                    values.size(),
+                    3,
+                    precisions,
+                    3,
+                    out,
+                    err,
+                    err_cap);
+            });
         INFO(error);
         REQUIRE(s1 == WKP_STATUS_OK);
         REQUIRE(encoded.data != nullptr);
         REQUIRE(encoded.size > 0);
 
+        std::vector<double> decoded_storage;
         wkp_f64_buffer decoded{};
-        const wkp_status s2 = wkp_decode_f64(
-            encoded.data,
-            encoded.size,
-            3,
-            precisions,
-            3,
-            &decoded,
+        const wkp_status s2 = decode_retry_f64(
+            decoded_storage,
+            decoded,
             error,
-            sizeof(error));
+            sizeof(error),
+            [&](wkp_f64_buffer *out, char *err, std::size_t err_cap)
+            {
+                return wkp_decode_f64_into(
+                    encoded.data,
+                    encoded.size,
+                    3,
+                    precisions,
+                    3,
+                    out,
+                    err,
+                    err_cap);
+            });
         INFO(error);
         REQUIRE(s2 == WKP_STATUS_OK);
         REQUIRE(decoded.size == values.size());
@@ -95,13 +167,31 @@ namespace
 
         for (int i = 0; i < 100; ++i)
         {
+            std::vector<uint8_t> encoded_storage;
             wkp_u8_buffer encoded{};
+            std::vector<double> decoded_storage;
             wkp_f64_buffer decoded{};
 
-            const auto s1 = wkp_encode_f64(values.data(), values.size(), 2, precisions, 2, &encoded, error, sizeof(error));
+            const auto s1 = encode_retry_u8(
+                encoded_storage,
+                encoded,
+                error,
+                sizeof(error),
+                [&](wkp_u8_buffer *out, char *err, std::size_t err_cap)
+                {
+                    return wkp_encode_f64_into(values.data(), values.size(), 2, precisions, 2, out, err, err_cap);
+                });
             REQUIRE(s1 == WKP_STATUS_OK);
 
-            const auto s2 = wkp_decode_f64(encoded.data, encoded.size, 2, precisions, 2, &decoded, error, sizeof(error));
+            const auto s2 = decode_retry_f64(
+                decoded_storage,
+                decoded,
+                error,
+                sizeof(error),
+                [&](wkp_f64_buffer *out, char *err, std::size_t err_cap)
+                {
+                    return wkp_decode_f64_into(encoded.data, encoded.size, 2, precisions, 2, out, err, err_cap);
+                });
             REQUIRE(s2 == WKP_STATUS_OK);
 
             wkp_free_u8_buffer(&encoded);
@@ -121,15 +211,24 @@ namespace
         };
         char error[256] = {0};
 
+        std::vector<uint8_t> encoded_storage;
         wkp_u8_buffer encoded{};
-        const wkp_status s1 = wkp_encode_linestring_f64(
-            coords.data(),
-            coords.size(),
-            2,
-            5,
-            &encoded,
+        const wkp_status s1 = encode_retry_u8(
+            encoded_storage,
+            encoded,
             error,
-            sizeof(error));
+            sizeof(error),
+            [&](wkp_u8_buffer *out, char *err, std::size_t err_cap)
+            {
+                return wkp_encode_linestring_f64_into(
+                    coords.data(),
+                    coords.size(),
+                    2,
+                    5,
+                    out,
+                    err,
+                    err_cap);
+            });
         INFO(error);
         REQUIRE(s1 == WKP_STATUS_OK);
 
@@ -142,16 +241,25 @@ namespace
 
         const int precisions[] = {5, 5};
         const std::string payload = encoded_string.substr(8);
+        std::vector<double> decoded_storage;
         wkp_f64_buffer decoded{};
-        const wkp_status s2 = wkp_decode_f64(
-            reinterpret_cast<const uint8_t *>(payload.data()),
-            payload.size(),
-            2,
-            precisions,
-            2,
-            &decoded,
+        const wkp_status s2 = decode_retry_f64(
+            decoded_storage,
+            decoded,
             error,
-            sizeof(error));
+            sizeof(error),
+            [&](wkp_f64_buffer *out, char *err, std::size_t err_cap)
+            {
+                return wkp_decode_f64_into(
+                    reinterpret_cast<const uint8_t *>(payload.data()),
+                    payload.size(),
+                    2,
+                    precisions,
+                    2,
+                    out,
+                    err,
+                    err_cap);
+            });
         INFO(error);
         REQUIRE(s2 == WKP_STATUS_OK);
         REQUIRE(decoded.size == coords.size());
@@ -188,17 +296,26 @@ namespace
         const size_t ring_counts[] = {4, 4};
         char error[256] = {0};
 
+        std::vector<uint8_t> encoded_storage;
         wkp_u8_buffer encoded{};
-        const wkp_status s = wkp_encode_polygon_f64(
-            coords.data(),
-            coords.size(),
-            2,
-            5,
-            ring_counts,
-            2,
-            &encoded,
+        const wkp_status s = encode_retry_u8(
+            encoded_storage,
+            encoded,
             error,
-            sizeof(error));
+            sizeof(error),
+            [&](wkp_u8_buffer *out, char *err, std::size_t err_cap)
+            {
+                return wkp_encode_polygon_f64_into(
+                    coords.data(),
+                    coords.size(),
+                    2,
+                    5,
+                    ring_counts,
+                    2,
+                    out,
+                    err,
+                    err_cap);
+            });
         INFO(error);
         REQUIRE(s == WKP_STATUS_OK);
 

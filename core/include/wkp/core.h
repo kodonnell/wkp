@@ -14,6 +14,7 @@ extern "C"
         WKP_STATUS_INVALID_ARGUMENT = 1,
         WKP_STATUS_MALFORMED_INPUT = 2,
         WKP_STATUS_ALLOCATION_FAILED = 3,
+        WKP_STATUS_BUFFER_TOO_SMALL = 4,
         WKP_STATUS_INTERNAL_ERROR = 255
     } wkp_status;
 
@@ -39,7 +40,7 @@ extern "C"
         WKP_GEOMETRY_MULTIPOLYGON = 6
     } wkp_geometry_type;
 
-    wkp_status wkp_encode_f64(
+    wkp_status wkp_encode_f64_into(
         const double *values,
         size_t value_count,
         size_t dimensions,
@@ -49,7 +50,7 @@ extern "C"
         char *error_message,
         size_t error_message_capacity);
 
-    wkp_status wkp_decode_f64(
+    wkp_status wkp_decode_f64_into(
         const uint8_t *encoded,
         size_t encoded_size,
         size_t dimensions,
@@ -59,7 +60,17 @@ extern "C"
         char *error_message,
         size_t error_message_capacity);
 
-    wkp_status wkp_encode_point_f64(
+    wkp_status wkp_decode_geometry_header(
+        const uint8_t *encoded,
+        size_t encoded_size,
+        int *out_version,
+        int *out_precision,
+        int *out_dimensions,
+        int *out_geometry_type,
+        char *error_message,
+        size_t error_message_capacity);
+
+    wkp_status wkp_encode_point_f64_into(
         const double *coords,
         size_t coord_value_count,
         size_t dimensions,
@@ -68,7 +79,7 @@ extern "C"
         char *error_message,
         size_t error_message_capacity);
 
-    wkp_status wkp_encode_linestring_f64(
+    wkp_status wkp_encode_linestring_f64_into(
         const double *coords,
         size_t coord_value_count,
         size_t dimensions,
@@ -77,7 +88,7 @@ extern "C"
         char *error_message,
         size_t error_message_capacity);
 
-    wkp_status wkp_encode_polygon_f64(
+    wkp_status wkp_encode_polygon_f64_into(
         const double *coords,
         size_t coord_value_count,
         size_t dimensions,
@@ -88,7 +99,7 @@ extern "C"
         char *error_message,
         size_t error_message_capacity);
 
-    wkp_status wkp_encode_multipoint_f64(
+    wkp_status wkp_encode_multipoint_f64_into(
         const double *coords,
         size_t coord_value_count,
         size_t dimensions,
@@ -98,7 +109,7 @@ extern "C"
         char *error_message,
         size_t error_message_capacity);
 
-    wkp_status wkp_encode_multilinestring_f64(
+    wkp_status wkp_encode_multilinestring_f64_into(
         const double *coords,
         size_t coord_value_count,
         size_t dimensions,
@@ -109,7 +120,7 @@ extern "C"
         char *error_message,
         size_t error_message_capacity);
 
-    wkp_status wkp_encode_multipolygon_f64(
+    wkp_status wkp_encode_multipolygon_f64_into(
         const double *coords,
         size_t coord_value_count,
         size_t dimensions,

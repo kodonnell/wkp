@@ -80,8 +80,6 @@ def main() -> int:
 
     if not args.skip_js:
         js_root = repo / "bindings" / "javascript"
-        run([npm, "run", "sync:version"], js_root)
-        run([npm, "run", "check:version"], js_root)
         run([npm, "install"], js_root)
 
         run([npm, "run", "build:node"], js_root)
@@ -90,6 +88,7 @@ def main() -> int:
         if args.emcc:
             env["EMCC"] = args.emcc
         run([npm, "run", "build:web"], js_root, env=env)
+        run([npm, "run", "check:runtime-compatibility"], js_root)
 
     print("[ok] build_all complete")
     return 0

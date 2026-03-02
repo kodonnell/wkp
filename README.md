@@ -69,29 +69,6 @@ encoder = GeometryEncoder(dimensions=2, precision=5)
 print(encoder.encode(linestring))
 ```
 
-## Build everything locally
-
-Use the root helper script:
-
-```sh
-python scripts/build_all.py
-```
-
-Useful flags:
-
-```sh
-python scripts/build_all.py --help
-python scripts/build_all.py --skip-python
-python scripts/build_all.py --skip-js
-python scripts/build_all.py --skip-cpp-tests
-```
-
-The script performs:
-
-1. C++ configure/build (and optional CTest)
-2. Python editable install + tests
-3. JavaScript workspace install + build (`@wkpjs/node`, `@wkpjs/web`)
-
 ## Benchmarks
 
 - Python: `python bindings/python/benchmark/benchmark.py --linestring-points=10000 --precisions=5`
@@ -99,20 +76,6 @@ The script performs:
 - Node addon: `npm --prefix bindings/javascript --workspace @wkpjs/node run benchmark -- --points=10000 --precision=5 --iterations=200`
 - Web (WASM in Node): `npm --prefix bindings/javascript --workspace @wkpjs/web run benchmark -- --points=10000 --precision=5 --iterations=200`
 - Web (browser): run `npm --prefix bindings/javascript --workspace @wkpjs/web run benchmark:serve`, then open `http://localhost:8080/benchmark/index.html`
-
-## CI / Release model
-
-- `.github/workflows/wheels.yml`: Python wheels + PyPI publish
-- `.github/workflows/native-js-artifacts.yml`: C++ + JavaScript cross-platform artifact builds
-- `.github/workflows/npm-publish.yml`: npm trusted publishing workflow (manual/tag-driven)
-
-### Versioning and publishing
-
-- `core/include/wkp/_version.h` is the single version source for core/C++/Python/JavaScript.
-- Python package version is read from `core/include/wkp/_version.h`.
-- JavaScript workspace/package versions are checked/synced to the same value.
-- Python release remains tag-driven (`vX.Y.Z`) via `wheels.yml`.
-- npm release is handled separately via trusted publishing (OIDC, `workflow_dispatch` or `npm-v*` tags).
 
 ## Detailed docs
 

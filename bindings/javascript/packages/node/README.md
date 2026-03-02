@@ -1,22 +1,13 @@
 # @wkpjs/node
 
-Node.js native bindings for WKP core using Node-API.
+Node-API native bindings for WKP core.
 
 ## Dependencies
 
 - Node.js >= 18
-- npm workspace install from `bindings/javascript`
-- C++ build toolchain compatible with `node-gyp`
+- Native build toolchain for `node-gyp` (C/C++ compiler and Python)
 
-## API
-
-- `encodeF64(values, dimensions, precisions) -> Buffer`
-- `decodeF64(encoded, dimensions, precisions) -> Float64Array`
-
-`values` can be `Float64Array` or `number[]`.
-`encoded` can be `Buffer`, `Uint8Array`, or `string`.
-
-## Build
+## Install / build
 
 From `bindings/javascript`:
 
@@ -25,10 +16,12 @@ npm install
 npm --workspace @wkpjs/node run build
 ```
 
-## Smoke test
+## Test
+
+From `bindings/javascript`:
 
 ```sh
-node -e "const w=require('./bindings/javascript/packages/node'); const b=w.encodeF64([1,2,3,4],2,[5]); const d=w.decodeF64(b,2,[5]); console.log(b.length, d.length)"
+npm --workspace @wkpjs/node run test
 ```
 
 ## Benchmark
@@ -41,4 +34,28 @@ npm --workspace @wkpjs/node run benchmark -- --points=10000 --precision=5 --iter
 
 ## Publish
 
-Package publishing is automated by `.github/workflows/npm-publish.yml`.
+`@wkpjs/node` is published by `.github/workflows/npm-publish.yml` (manual `workflow_dispatch` or `npm-v*` tag trigger).
+
+### Manual publish from GitHub
+
+1. Open Actions -> `Publish JavaScript packages to npm`.
+2. Run with `dry_run=true` first.
+3. Re-run with `dry_run=false` to publish.
+
+## Example
+
+```js
+const { GeometryEncoder } = require('@wkpjs/node');
+
+const encoder = new GeometryEncoder(6, 2);
+const geometry = {
+  type: 'LineString',
+  coordinates: [[174.776, -41.289], [174.777, -41.290]],
+};
+
+const encoded = encoder.encode(geometry);
+const decoded = GeometryEncoder.decode(encoded);
+
+console.log(encoded);
+console.log(decoded.geometry);
+```

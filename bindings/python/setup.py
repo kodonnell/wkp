@@ -1,26 +1,70 @@
 import os
 import re
+import subprocess
 import sys
 from pathlib import Path
 
 import nanobind
 from setuptools import Extension, setup
+from setuptools.command.build_ext import build_ext
 
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def read_version_from_header() -> str:
-    header = ROOT / "core" / "include" / "wkp" / "_version.h"
-    content = header.read_text(encoding="utf-8")
-    match = re.search(r'#define\s+WKP_CORE_VERSION\s+"([^"]+)"', content)
+def read_binding_version_from_pyproject() -> str:
+    pyproject = Path(__file__).resolve().parent / "pyproject.toml"
+    content = pyproject.read_text(encoding="utf-8")
+    match = re.search(r'^version\s*=\s*"([^"]+)"', content, flags=re.MULTILINE)
     if not match:
-        raise RuntimeError(f"Could not parse WKP_CORE_VERSION from {header}")
+        raise RuntimeError(f"Could not parse [project].version from {pyproject}")
     return match.group(1)
 
 
-shared_version = read_version_from_header()
+binding_version = read_binding_version_from_pyproject()
 
-define_macros = [("WKP_VERSION", f'"{shared_version}"')]
+
+class BuildExtWithNanobindStubs(build_ext):
+    def run(self):
+        super().run()
+        self._generate_nanobind_stubs()
+
+    def _generate_nanobind_stubs(self):
+        build_lib = Path(self.build_lib).resolve()
+        out_dir = build_lib / "wkp"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        extension_dir = out_dir
+
+        env = os.environ.copy()
+        pythonpath_entries = [
+            str(extension_dir),
+            str(build_lib),
+            str((Path(__file__).resolve().parent / "src").resolve()),
+        ]
+        existing_pythonpath = env.get("PYTHONPATH")
+        if existing_pythonpath:
+            pythonpath_entries.append(existing_pythonpath)
+        env["PYTHONPATH"] = os.pathsep.join(pythonpath_entries)
+
+        cmd = [
+            sys.executable,
+            "-m",
+            "nanobind.stubgen",
+            "-m",
+            "_core",
+            "-O",
+            str(out_dir),
+        ]
+
+        result = subprocess.run(cmd, env=env, check=False)
+        if result.returncode != 0:
+            raise RuntimeError("nanobind stub generation failed for module 'wkp._core'")
+
+        generated_stub = out_dir / "_core.pyi"
+        if not generated_stub.exists():
+            raise RuntimeError(f"nanobind stub generation did not create expected file: {generated_stub}")
+
+
+define_macros = [("WKP_VERSION", f'"{binding_version}"')]
 if sys.version_info > (3, 13, 0) and hasattr(sys, "_is_gil_enabled") and not sys._is_gil_enabled():
     define_macros.append(("Py_GIL_DISABLED", "1"))
 
@@ -58,6 +102,7 @@ extensions.append(
 )
 
 setup(
-    version=shared_version,
+    version=binding_version,
     ext_modules=extensions,
+    cmdclass={"build_ext": BuildExtWithNanobindStubs},
 )

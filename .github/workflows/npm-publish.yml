@@ -38,15 +38,19 @@ jobs:
         working-directory: bindings/javascript
         run: npm ci
 
-      - name: Check JS versions match core version
-        working-directory: bindings/javascript
-        run: npm run check:version
-
       - name: Build packages
         working-directory: bindings/javascript
         run: |
           npm run build:node
           npm run build:web
+
+      - name: Run JavaScript tests
+        working-directory: bindings/javascript
+        run: npm run test
+
+      - name: Verify runtime compatibility
+        working-directory: bindings/javascript
+        run: npm run check:runtime-compatibility
 
       - name: Publish (dry run)
         if: github.event_name == 'workflow_dispatch' && inputs.dry_run

@@ -6,11 +6,13 @@
     "packages/*"
   ],
   "scripts": {
-    "sync:version": "node ./scripts/sync-version.mjs --write",
-    "check:version": "node ./scripts/sync-version.mjs --check",
+    "check:runtime-compatibility": "node ./scripts/assert-runtime-version.mjs",
     "build": "npm run -ws build",
     "build:node": "npm --workspace @wkpjs/node run build",
     "build:web": "npm --workspace @wkpjs/web run build",
+    "test:node": "npm --workspace @wkpjs/node run test",
+    "test:web": "npm --workspace @wkpjs/web run test",
+    "test": "npm run test:node && npm run test:web",
     "benchmark:node": "npm --workspace @wkpjs/node run benchmark",
     "benchmark:web:node": "npm --workspace @wkpjs/web run benchmark",
     "benchmark:web:serve": "npm --workspace @wkpjs/web run benchmark:serve",

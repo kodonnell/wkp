@@ -22,13 +22,13 @@ Monorepo workspace for JavaScript bindings over the shared WKP C ABI.
 
 ## Versioning
 
-All JavaScript package versions are pinned to `core/include/wkp/_version.h`.
+Node/Web package versions are managed independently (currently `0.1.0`).
+Both runtimes enforce WKP core compatibility at runtime (`0.1.x`).
 
 From `bindings/javascript`:
 
 ```sh
-npm run check:version
-npm run sync:version
+npm run check:runtime-compatibility
 ```
 
 ## Install
@@ -39,35 +39,41 @@ From `bindings/javascript`:
 npm install
 ```
 
-## Build
+## Build / publish docs
 
-```sh
-npm run build:node
-npm run build:web
+- Node package: `packages/node/README.md`
+- Web package: `packages/web/README.md`
+
+## Quick examples
+
+### Node (`@wkpjs/node`)
+
+```js
+const { GeometryEncoder } = require('@wkpjs/node');
+
+const encoder = new GeometryEncoder(6, 2);
+const geom = {
+    type: 'LineString',
+    coordinates: [
+        [174.776, -41.289],
+        [174.777, -41.290],
+        [174.778, -41.291],
+    ],
+};
+
+const encoded = encoder.encode(geom);
+const decoded = GeometryEncoder.decode(encoded);
+console.log(encoded, decoded.geometry.type);
 ```
 
-## Benchmark
+### Web (`@wkpjs/web`)
 
-```sh
-npm run benchmark:node -- --points=10000 --precision=5 --iterations=200
-npm run benchmark:web:node -- --points=10000 --precision=5 --iterations=200
-npm run benchmark:web:serve
+```js
+import { createWkp } from '@wkpjs/web';
+
+const wkp = await createWkp();
+const encoder = new wkp.GeometryEncoder(6, 2);
+const encoded = encoder.encode({ type: 'Point', coordinates: [174.776, -41.289] });
+const decoded = wkp.GeometryEncoder.decode(encoded);
+console.log(decoded.geometry);
 ```
-
-Then open `http://localhost:8080/benchmark/index.html` for browser benchmarking.
-
-## Publishing
-
-- npm publishing automation lives in `.github/workflows/npm-publish.yml`
-- designed for manual publish first (`workflow_dispatch`), with optional tag-trigger use
-- uses npm trusted publishing (GitHub OIDC), so no long-lived `NPM_TOKEN` is required
-
-### Trusted publishing setup (npm)
-
-1. In npm, create packages `@wkpjs/node` and `@wkpjs/web` (or first publish manually once if needed).
-2. In npm package settings, add a **Trusted Publisher** for this GitHub repo/workflow:
-	- Repository: `kodonnell/wkp`
-	- Workflow: `.github/workflows/npm-publish.yml`
-	- Environment (if configured): `npm`
-3. In GitHub, keep workflow permission `id-token: write`.
-4. Run workflow manually with `dry_run=true` first, then run again with `dry_run=false`.

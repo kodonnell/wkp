@@ -28,13 +28,17 @@ const args = [
     '-s', 'ALLOW_MEMORY_GROWTH=1',
     '-s', 'FILESYSTEM=0',
     '-s', 'EXPORTED_RUNTIME_METHODS=["cwrap"]',
-    '-s', 'EXPORTED_FUNCTIONS=["_malloc","_free","_wkp_wasm_encode_f64","_wkp_wasm_decode_f64","_wkp_wasm_free_u8","_wkp_wasm_free_f64"]',
+    '-s', 'EXPORTED_FUNCTIONS=["_malloc","_free","_wkp_wasm_encode_f64","_wkp_wasm_decode_f64","_wkp_wasm_decode_geometry_header","_wkp_wasm_free_u8","_wkp_wasm_free_f64","_wkp_wasm_core_version","_wkp_wasm_geometry_point","_wkp_wasm_geometry_linestring","_wkp_wasm_geometry_polygon","_wkp_wasm_geometry_multipoint","_wkp_wasm_geometry_multilinestring","_wkp_wasm_geometry_multipolygon"]',
     '-o', outJs
 ];
 
 const result = spawnSync(emcc, args, {
     cwd: pkgRoot,
     stdio: 'inherit',
+    env: {
+        ...process.env,
+        EM_NODE_JS: process.env.EM_NODE_JS || process.execPath
+    },
     shell: process.platform === 'win32'
 });
 

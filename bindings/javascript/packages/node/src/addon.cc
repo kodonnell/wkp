@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 
+#include "wkp/_version.h"
 #include "wkp/core.h"
 
 namespace
@@ -112,6 +113,10 @@ namespace
         {
             throw Napi::TypeError::New(env, msg);
         }
+        if (status == WKP_STATUS_BUFFER_TOO_SMALL)
+        {
+            throw Napi::RangeError::New(env, msg);
+        }
 
         throw Napi::Error::New(env, msg);
     }
@@ -135,24 +140,31 @@ namespace
 
         std::vector<int> precisions = to_precisions(env, info[2]);
 
-        wkp_u8_buffer out{};
         char error_message[512] = {0};
+        std::vector<uint8_t> scratch(4096);
 
-        const wkp_status status = wkp_encode_f64(
-            values.data(),
-            values.size(),
-            dimensions,
-            precisions.data(),
-            precisions.size(),
-            &out,
-            error_message,
-            sizeof(error_message));
+        while (true)
+        {
+            wkp_u8_buffer out{scratch.data(), scratch.size()};
+            const wkp_status status = wkp_encode_f64_into(
+                values.data(),
+                values.size(),
+                dimensions,
+                precisions.data(),
+                precisions.size(),
+                &out,
+                error_message,
+                sizeof(error_message));
 
-        throw_for_status(env, status, error_message);
+            if (status == WKP_STATUS_BUFFER_TOO_SMALL)
+            {
+                scratch.resize(out.size);
+                continue;
+            }
 
-        Napi::Buffer<uint8_t> result = Napi::Buffer<uint8_t>::Copy(env, out.data, out.size);
-        wkp_free_u8_buffer(&out);
-        return result;
+            throw_for_status(env, status, error_message);
+            return Napi::Buffer<uint8_t>::Copy(env, scratch.data(), out.size);
+        }
     }
 
     Napi::Value DecodeF64(const Napi::CallbackInfo &info)
@@ -174,26 +186,69 @@ namespace
 
         std::vector<int> precisions = to_precisions(env, info[2]);
 
-        wkp_f64_buffer out{};
+        char error_message[512] = {0};
+        std::vector<double> scratch(std::max<size_t>(dimensions, 64));
+
+        while (true)
+        {
+            wkp_f64_buffer out{scratch.data(), scratch.size()};
+            const wkp_status status = wkp_decode_f64_into(
+                encoded.data(),
+                encoded.size(),
+                dimensions,
+                precisions.data(),
+                precisions.size(),
+                &out,
+                error_message,
+                sizeof(error_message));
+
+            if (status == WKP_STATUS_BUFFER_TOO_SMALL)
+            {
+                scratch.resize(out.size);
+                continue;
+            }
+
+            throw_for_status(env, status, error_message);
+            Napi::ArrayBuffer buffer = Napi::ArrayBuffer::New(env, out.size * sizeof(double));
+            std::memcpy(buffer.Data(), scratch.data(), out.size * sizeof(double));
+            return Napi::Float64Array::New(env, out.size, buffer, 0, napi_float64_array);
+        }
+    }
+
+    Napi::Value DecodeGeometryHeader(const Napi::CallbackInfo &info)
+    {
+        Napi::Env env = info.Env();
+        if (info.Length() < 1)
+        {
+            throw Napi::TypeError::New(env, "decodeGeometryHeader(encoded) expects 1 argument");
+        }
+
+        std::vector<uint8_t> encoded = to_encoded_bytes(env, info[0]);
+
+        int version = 0;
+        int precision = 0;
+        int dimensions = 0;
+        int geometry_type = 0;
         char error_message[512] = {0};
 
-        const wkp_status status = wkp_decode_f64(
+        const wkp_status status = wkp_decode_geometry_header(
             encoded.data(),
             encoded.size(),
-            dimensions,
-            precisions.data(),
-            precisions.size(),
-            &out,
+            &version,
+            &precision,
+            &dimensions,
+            &geometry_type,
             error_message,
             sizeof(error_message));
 
         throw_for_status(env, status, error_message);
 
-        Napi::ArrayBuffer buffer = Napi::ArrayBuffer::New(env, out.size * sizeof(double));
-        std::memcpy(buffer.Data(), out.data, out.size * sizeof(double));
-        wkp_free_f64_buffer(&out);
-
-        return Napi::Float64Array::New(env, out.size, buffer, 0, napi_float64_array);
+        Napi::Array out = Napi::Array::New(env, 4);
+        out.Set(static_cast<uint32_t>(0), Napi::Number::New(env, version));
+        out.Set(static_cast<uint32_t>(1), Napi::Number::New(env, precision));
+        out.Set(static_cast<uint32_t>(2), Napi::Number::New(env, dimensions));
+        out.Set(static_cast<uint32_t>(3), Napi::Number::New(env, geometry_type));
+        return out;
     }
 
 } // namespace
@@ -202,6 +257,19 @@ Napi::Object Init(Napi::Env env, Napi::Object exports)
 {
     exports.Set("encodeF64", Napi::Function::New(env, EncodeF64));
     exports.Set("decodeF64", Napi::Function::New(env, DecodeF64));
+    exports.Set("decodeGeometryHeader", Napi::Function::New(env, DecodeGeometryHeader));
+    exports.Set("coreVersion", Napi::Function::New(env, [](const Napi::CallbackInfo &info)
+                                                   { return Napi::String::New(info.Env(), WKP_CORE_VERSION); }));
+
+    Napi::Object geometryType = Napi::Object::New(env);
+    geometryType.Set("POINT", Napi::Number::New(env, WKP_GEOMETRY_POINT));
+    geometryType.Set("LINESTRING", Napi::Number::New(env, WKP_GEOMETRY_LINESTRING));
+    geometryType.Set("POLYGON", Napi::Number::New(env, WKP_GEOMETRY_POLYGON));
+    geometryType.Set("MULTIPOINT", Napi::Number::New(env, WKP_GEOMETRY_MULTIPOINT));
+    geometryType.Set("MULTILINESTRING", Napi::Number::New(env, WKP_GEOMETRY_MULTILINESTRING));
+    geometryType.Set("MULTIPOLYGON", Napi::Number::New(env, WKP_GEOMETRY_MULTIPOLYGON));
+    exports.Set("EncodedGeometryType", geometryType);
+
     return exports;
 }
 

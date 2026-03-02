@@ -41,20 +41,17 @@ namespace wkp::core
     GeometryHeader decode_geometry_header(std::string_view encoded);
     GeometryFrame decode_geometry_frame(std::string_view encoded);
 
-    std::string encode_f64(
+    void encode_f64_into(
         const double *values,
         std::size_t value_count,
         std::size_t dimensions,
-        const std::vector<int> &precisions);
+        const std::vector<int> &precisions,
+        std::string &out_encoded);
 
-    std::string encode_f64(
-        const std::vector<double> &values,
-        std::size_t dimensions,
-        const std::vector<int> &precisions);
-
-    std::vector<double> decode_f64(
+    void decode_f64_into(
         std::string_view encoded,
         std::size_t dimensions,
-        const std::vector<int> &precisions);
+        const std::vector<int> &precisions,
+        std::vector<double> &out_values);
 
 } // namespace wkp::core

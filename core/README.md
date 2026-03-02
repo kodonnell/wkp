@@ -21,14 +21,29 @@
 - `src/core.cpp`: implementation
 - `tests/test_c_api.cpp`: ABI-focused tests
 
+## C ABI output buffer contract
+
+For C ABI encode/decode `_into` functions, the caller owns output buffers.
+
+- Set `out_encoded.data` / `out_values.data` to your buffer pointer.
+- Set `out_encoded.size` / `out_values.size` to buffer capacity (bytes for `u8`, element count for `f64`).
+- On success (`WKP_STATUS_OK`), `size` is updated to the number of bytes/elements written.
+- If buffer is too small, status is `WKP_STATUS_BUFFER_TOO_SMALL` and `size` is updated to the required capacity.
+- Bindings (Python/Node/Web) follow this contract by retrying with a larger buffer.
+
+`wkp_free_u8_buffer` / `wkp_free_f64_buffer` are retained for ABI compatibility and are no-op reset helpers in this model.
+
+Note: this no-allocation guarantee applies to the C ABI encode/decode entry points. Internal C++ helpers under `wkp::core` still use `std::string` / `std::vector` and may allocate.
+
 ## Version source of truth
 
-`core/include/wkp/_version.h` is the single version source for:
+`core/include/wkp/_version.h` is the version source for:
 
 - C ABI/C++ core runtime version
 - CMake project version (`project(wkp_native VERSION ...)`)
-- Python package version
-- JavaScript package versions (via workspace sync/check scripts)
+
+Binding package versions are managed independently in each binding package.
+Bindings enforce core compatibility at runtime.
 
 ## Dependencies
 

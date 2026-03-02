@@ -26,7 +26,8 @@ TEST_CASE("known google polyline")
         -126.453,
     };
     const std::string expected = "_p~iF~ps|U_ulLnnqC_mqNvxq`@";
-    const std::string encoded = wkp::core::encode_f64(values, 2, {5});
+    std::string encoded;
+    wkp::core::encode_f64_into(values.data(), values.size(), 2, {5}, encoded);
     CHECK(encoded == expected);
 }
 
@@ -41,7 +42,8 @@ TEST_CASE("known 3d vector")
         2.3,
     };
     const std::string expected = "o}@wcA_jAwcAwcAwcA";
-    const std::string encoded = wkp::core::encode_f64(values, 3, {3, 3, 3});
+    std::string encoded;
+    wkp::core::encode_f64_into(values.data(), values.size(), 3, {3, 3, 3}, encoded);
     CHECK(encoded == expected);
 }
 
@@ -54,7 +56,8 @@ TEST_CASE("known 2d vector case 1")
         9.693021,
     };
     const std::string expected = "omw[oq{n@_b}aE{qgJ";
-    const std::string encoded = wkp::core::encode_f64(values, 2, {5, 5});
+    std::string encoded;
+    wkp::core::encode_f64_into(values.data(), values.size(), 2, {5, 5}, encoded);
     CHECK(encoded == expected);
 }
 
@@ -69,7 +72,8 @@ TEST_CASE("known 3d vector case 2")
         2.3,
     };
     const std::string expected = "o}@wcA_jAwcAwcAwcA";
-    const std::string encoded = wkp::core::encode_f64(values, 3, {3});
+    std::string encoded;
+    wkp::core::encode_f64_into(values.data(), values.size(), 3, {3}, encoded);
     CHECK(encoded == expected);
 }
 
@@ -83,8 +87,10 @@ TEST_CASE("roundtrip 2d")
         100.55555,
         -200.44444,
     };
-    const auto encoded = wkp::core::encode_f64(values, 2, {5});
-    const auto decoded = wkp::core::decode_f64(encoded, 2, {5});
+    std::string encoded;
+    wkp::core::encode_f64_into(values.data(), values.size(), 2, {5}, encoded);
+    std::vector<double> decoded;
+    wkp::core::decode_f64_into(encoded, 2, {5}, decoded);
     REQUIRE(decoded.size() == values.size());
     for (std::size_t i = 0; i < values.size(); ++i)
     {
@@ -103,8 +109,10 @@ TEST_CASE("roundtrip 3d mixed precision")
         1677818754.0,
     };
     const std::vector<int> precisions = {6, 6, 0};
-    const auto encoded = wkp::core::encode_f64(values, 3, precisions);
-    const auto decoded = wkp::core::decode_f64(encoded, 3, precisions);
+    std::string encoded;
+    wkp::core::encode_f64_into(values.data(), values.size(), 3, precisions, encoded);
+    std::vector<double> decoded;
+    wkp::core::decode_f64_into(encoded, 3, precisions, decoded);
     REQUIRE(decoded.size() == values.size());
     for (std::size_t i = 0; i < values.size(); ++i)
     {
@@ -133,8 +141,10 @@ TEST_CASE("roundtrip 3d multi values mixed precision")
     };
 
     const std::vector<int> precisions = {2, 3, 4};
-    const auto encoded = wkp::core::encode_f64(values, 3, precisions);
-    const auto decoded = wkp::core::decode_f64(encoded, 3, precisions);
+    std::string encoded;
+    wkp::core::encode_f64_into(values.data(), values.size(), 3, precisions, encoded);
+    std::vector<double> decoded;
+    wkp::core::decode_f64_into(encoded, 3, precisions, decoded);
 
     REQUIRE(decoded.size() == values.size());
     for (std::size_t i = 0; i < values.size(); ++i)

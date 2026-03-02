@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-const { encodeF64, decodeF64 } = require('..');
+const { GeometryEncoder } = require('..');
 
 function parseIntArg(flag, defaultValue) {
     const arg = process.argv.find((v) => v.startsWith(`${flag}=`));
@@ -15,12 +15,17 @@ function parseIntArg(flag, defaultValue) {
 }
 
 function makeLineString(pointCount) {
-    const values = new Float64Array(pointCount * 2);
+    const coordinates = new Array(pointCount);
     for (let i = 0; i < pointCount; i += 1) {
-        values[i * 2] = i * 0.00123;
-        values[i * 2 + 1] = Math.sin(i * 0.0007) * 90.0;
+        coordinates[i] = [
+            i * 0.00123,
+            Math.sin(i * 0.0007) * 90.0
+        ];
     }
-    return values;
+    return {
+        type: 'LineString',
+        coordinates
+    };
 }
 
 function measureMs(fn) {
@@ -50,22 +55,22 @@ function main() {
     const precision = parseIntArg('--precision', 5);
     const iterations = parseIntArg('--iterations', 200);
 
-    const values = makeLineString(points);
-    const precisions = [precision];
+    const geometry = makeLineString(points);
+    const encoder = new GeometryEncoder(precision, 2);
 
-    const warmEncoded = encodeF64(values, 2, precisions);
-    decodeF64(warmEncoded, 2, precisions);
+    const warmEncoded = encoder.encode(geometry);
+    encoder.decodeStr(warmEncoded);
 
     const encodeTimes = [];
     const decodeTimes = [];
     let encodedBytes = warmEncoded.length;
 
     for (let i = 0; i < iterations; i += 1) {
-        const encodeRun = measureMs(() => encodeF64(values, 2, precisions));
+        const encodeRun = measureMs(() => encoder.encode(geometry));
         encodedBytes = encodeRun.result.length;
         encodeTimes.push(encodeRun.elapsedMs);
 
-        const decodeRun = measureMs(() => decodeF64(encodeRun.result, 2, precisions));
+        const decodeRun = measureMs(() => encoder.decodeStr(encodeRun.result));
         decodeTimes.push(decodeRun.elapsedMs);
     }
 

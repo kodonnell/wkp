@@ -1,5 +1,6 @@
 - javascript:
-  - expose full C ABI api e.g. encode_polygon etc.
-  - current encodeFP64 is weird as takes precisions as argument (array) not int.
+  - add some more expected tests, like python.
+- benchmarks:
+  - port the north island file so that can be used in C++/JS tests too.
 - c++ - not sure how to distribute. Code is probably fine.
 - add binding/csharp/ and publish to nuget.

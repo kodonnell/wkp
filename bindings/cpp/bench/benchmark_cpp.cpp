@@ -78,27 +78,27 @@ int main(int argc, char **argv)
     const std::vector<int> precisions(dimensions, precision);
 
     std::string encoded;
+    std::vector<double> decoded;
     for (int i = 0; i < warmup; ++i)
     {
-        encoded = wkp::core::encode_f64(values, dimensions, precisions);
-        static_cast<void>(wkp::core::decode_f64(encoded, dimensions, precisions));
+        wkp::core::encode_f64_into(values.data(), values.size(), dimensions, precisions, encoded);
+        wkp::core::decode_f64_into(encoded, dimensions, precisions, decoded);
     }
 
     double encode_ms_total = 0.0;
     for (int i = 0; i < iterations; ++i)
     {
         const auto start = std::chrono::steady_clock::now();
-        encoded = wkp::core::encode_f64(values, dimensions, precisions);
+        wkp::core::encode_f64_into(values.data(), values.size(), dimensions, precisions, encoded);
         const auto stop = std::chrono::steady_clock::now();
         encode_ms_total += elapsed_ms(start, stop);
     }
 
     double decode_ms_total = 0.0;
-    std::vector<double> decoded;
     for (int i = 0; i < iterations; ++i)
     {
         const auto start = std::chrono::steady_clock::now();
-        decoded = wkp::core::decode_f64(encoded, dimensions, precisions);
+        wkp::core::decode_f64_into(encoded, dimensions, precisions, decoded);
         const auto stop = std::chrono::steady_clock::now();
         decode_ms_total += elapsed_ms(start, stop);
     }

@@ -1,4 +1,4 @@
-name: Build native and JavaScript artifacts
+name: Build native and JavaScript artifacts (CI)
 
 on:
   push:
@@ -73,10 +73,6 @@ jobs:
         working-directory: bindings/javascript
         run: npm ci
 
-      - name: Check JS versions match core version
-        working-directory: bindings/javascript
-        run: npm run check:version
-
       - name: Build Node addon
         working-directory: bindings/javascript
         run: npm run build:node
@@ -84,6 +80,14 @@ jobs:
       - name: Build WebAssembly package
         working-directory: bindings/javascript
         run: npm run build:web
+
+      - name: Run JavaScript tests
+        working-directory: bindings/javascript
+        run: npm run test
+
+      - name: Verify runtime compatibility
+        working-directory: bindings/javascript
+        run: npm run check:runtime-compatibility
 
       - name: Pack npm tarballs
         working-directory: bindings/javascript

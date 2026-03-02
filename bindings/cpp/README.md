@@ -38,5 +38,5 @@ ctest --test-dir build/core -C Release --output-on-failure
 ## Benchmark
 
 ```sh
-build/core/Release/wkp_cpp_benchmark 200000 2 5 20
+build/core/Release/wkp_cpp_benchmark 10000 2 5 1000
 ```

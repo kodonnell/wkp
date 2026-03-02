@@ -16,7 +16,9 @@ namespace
         bool raised = false;
         try
         {
-            static_cast<void>(wkp::core::encode_f64({1.0, 2.0}, 0, {5}));
+            const std::vector<double> values = {1.0, 2.0};
+            std::string encoded;
+            wkp::core::encode_f64_into(values.data(), values.size(), 0, {5}, encoded);
         }
         catch (const std::invalid_argument &)
         {
@@ -30,7 +32,9 @@ namespace
         bool raised = false;
         try
         {
-            static_cast<void>(wkp::core::encode_f64({1.0, 2.0, 3.0, 4.0}, 2, {1, 2, 3}));
+            const std::vector<double> values = {1.0, 2.0, 3.0, 4.0};
+            std::string encoded;
+            wkp::core::encode_f64_into(values.data(), values.size(), 2, {1, 2, 3}, encoded);
         }
         catch (const std::invalid_argument &)
         {
@@ -44,7 +48,8 @@ namespace
         bool raised = false;
         try
         {
-            static_cast<void>(wkp::core::decode_f64("_p~iF~ps|", 2, {5}));
+            std::vector<double> decoded;
+            wkp::core::decode_f64_into("_p~iF~ps|", 2, {5}, decoded);
         }
         catch (const std::invalid_argument &)
         {
@@ -58,13 +63,13 @@ namespace
         char error[256] = {0};
         wkp_u8_buffer out_encoded{};
 
-        const auto s1 = wkp_encode_f64(nullptr, 0, 2, nullptr, 0, &out_encoded, error, sizeof(error));
+        const auto s1 = wkp_encode_f64_into(nullptr, 0, 2, nullptr, 0, &out_encoded, error, sizeof(error));
         CHECK(s1 == WKP_STATUS_INVALID_ARGUMENT);
 
         const uint8_t encoded[] = {'~'};
         const int precisions[] = {5, 5};
         wkp_f64_buffer out_values{};
-        const auto s2 = wkp_decode_f64(encoded, sizeof(encoded), 2, precisions, 2, &out_values, error, sizeof(error));
+        const auto s2 = wkp_decode_f64_into(encoded, sizeof(encoded), 2, precisions, 2, &out_values, error, sizeof(error));
         const bool decode_failed_as_expected = (s2 == WKP_STATUS_MALFORMED_INPUT || s2 == WKP_STATUS_INVALID_ARGUMENT);
         CHECK_MESSAGE(
             decode_failed_as_expected,
