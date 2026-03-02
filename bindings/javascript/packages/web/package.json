@@ -3,6 +3,14 @@
   "version": "0.2.0",
   "wkpCoreCompatibility": "0.2.x",
   "description": "WebAssembly bindings for WKP core",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kodonnell/wkp.git"
+  },
+  "homepage": "https://github.com/kodonnell/wkp",
+  "bugs": {
+    "url": "https://github.com/kodonnell/wkp/issues"
+  },
   "type": "module",
   "main": "src/index.js",
   "files": [
