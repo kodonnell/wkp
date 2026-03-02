@@ -1,5 +1,2 @@
 *.pyd
-*.cpp
-*.c
-*.html
 *.egg-info
