@@ -14,8 +14,11 @@ on:
           - pypi
           - both
   push:
+    branches: [main]
     tags:
       - "python-v*.*.*"
+  pull_request:
+    branches: [main]
 
 jobs:
   validate-tag:
@@ -25,6 +28,10 @@ jobs:
       - name: Check tag format
         if: github.event_name == 'push'
         run: |
+          if [[ "${GITHUB_REF}" != refs/tags/* ]]; then
+            echo "Branch push detected; skipping tag format validation."
+            exit 0
+          fi
           TAG="${GITHUB_REF_NAME}"
           if [[ ! "$TAG" =~ ^python-v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             echo "Invalid Python tag '$TAG'. Expected format: python-vX.Y.Z"
