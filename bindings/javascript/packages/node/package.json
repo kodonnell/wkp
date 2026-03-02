@@ -1,7 +1,7 @@
 {
   "name": "@wkpjs/node",
-  "version": "0.1.0",
-  "wkpCoreCompatibility": "0.1.x",
+  "version": "0.2.0",
+  "wkpCoreCompatibility": "0.2.x",
   "description": "Node.js bindings for WKP core via Node-API",
   "main": "index.js",
   "types": "index.d.ts",

@@ -13,7 +13,7 @@ from shapely.geometry import Point
 from . import _core
 
 __core_version__ = _core.core_version()
-__core_compatibility__ = "0.1.x"
+__core_compatibility__ = "0.2.x"
 
 __all__ = [
     "__version__",
@@ -59,8 +59,15 @@ def _parse_semver_major_minor(version: str) -> tuple[int, int]:
         raise RuntimeError(f"Invalid semantic version: {version}") from exc
 
 
+def _parse_core_compatibility(compatibility: str) -> tuple[int, int]:
+    match = re.fullmatch(r"(\d+)\.(\d+)\.x", compatibility)
+    if not match:
+        raise RuntimeError(f"Invalid core compatibility format: {compatibility}")
+    return int(match.group(1)), int(match.group(2))
+
+
 def _assert_core_compatibility() -> None:
-    required_major, required_minor = 0, 1
+    required_major, required_minor = _parse_core_compatibility(__core_compatibility__)
     core_major, core_minor = _parse_semver_major_minor(__core_version__)
     if (core_major, core_minor) != (required_major, required_minor):
         raise RuntimeError(
