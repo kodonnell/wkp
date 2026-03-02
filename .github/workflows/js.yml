@@ -1,0 +1,144 @@
+name: Build JavaScript artifacts (CI)
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Run npm publish in dry-run mode"
+        required: false
+        default: true
+        type: boolean
+  push:
+    tags:
+      - "npm-v*.*.*"
+
+jobs:
+  validate-tag:
+    name: Validate release tag format
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check tag format
+        if: github.event_name == 'push'
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          if [[ ! "$TAG" =~ ^npm-v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Invalid npm tag '$TAG'. Expected format: npm-vX.Y.Z"
+            exit 1
+          fi
+
+  js-build:
+    needs: validate-tag
+    name: JavaScript build (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: bindings/javascript/package-lock.json
+
+      - name: Setup Emscripten
+        uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: 3.1.58
+
+      - name: Install JS dependencies
+        working-directory: bindings/javascript
+        run: npm ci
+
+      - name: Build Node addon
+        working-directory: bindings/javascript
+        run: npm run build:node
+
+      - name: Build WebAssembly package
+        working-directory: bindings/javascript
+        run: npm run build:web
+
+      - name: Run JavaScript tests
+        working-directory: bindings/javascript
+        run: npm run test
+
+      - name: Verify runtime compatibility
+        working-directory: bindings/javascript
+        run: npm run check:runtime-compatibility
+
+      - name: Pack npm tarballs
+        working-directory: bindings/javascript
+        run: |
+          mkdir -p ../../artifacts/npm
+          npm --workspace @wkpjs/node pack --pack-destination ../../artifacts/npm
+          npm --workspace @wkpjs/web pack --pack-destination ../../artifacts/npm
+
+      - name: Upload JavaScript artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: js-artifacts-${{ matrix.os }}
+          path: |
+            bindings/javascript/packages/node/build/Release/*.node
+            bindings/javascript/packages/web/dist/wkp_core.js
+            bindings/javascript/packages/web/dist/wkp_core.wasm
+            artifacts/npm/*.tgz
+
+  npm-publish:
+    name: Publish JavaScript packages
+    needs: js-build
+    if: startsWith(github.ref, 'refs/tags/npm-v') || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    environment: npm
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: https://registry.npmjs.org
+
+      - name: Setup Emscripten
+        uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: 3.1.58
+
+      - name: Install dependencies
+        working-directory: bindings/javascript
+        run: npm ci
+
+      - name: Build packages
+        working-directory: bindings/javascript
+        run: |
+          npm run build:node
+          npm run build:web
+
+      - name: Run JavaScript tests
+        working-directory: bindings/javascript
+        run: npm run test
+
+      - name: Verify runtime compatibility
+        working-directory: bindings/javascript
+        run: npm run check:runtime-compatibility
+
+      - name: Publish (dry run)
+        if: github.event_name == 'workflow_dispatch' && inputs.dry_run
+        working-directory: bindings/javascript
+        run: |
+          npm --workspace @wkpjs/node publish --access public --provenance --dry-run
+          npm --workspace @wkpjs/web publish --access public --provenance --dry-run
+
+      - name: Publish
+        if: startsWith(github.ref, 'refs/tags/npm-v') || (github.event_name == 'workflow_dispatch' && !inputs.dry_run)
+        working-directory: bindings/javascript
+        run: |
+          npm --workspace @wkpjs/node publish --access public --provenance
+          npm --workspace @wkpjs/web publish --access public --provenance

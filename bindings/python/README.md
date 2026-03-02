@@ -74,13 +74,15 @@ python bindings/python/benchmark/benchmark.py
 
 ## Packaging / release
 
-- Wheels are built in `.github/workflows/wheels.yml` using `cibuildwheel`.
-- Manual release/publish is available via `workflow_dispatch` in `.github/workflows/wheels.yml`.
+- Wheels are built in `.github/workflows/python.yml` using `cibuildwheel`.
+- Manual release/publish is available via `workflow_dispatch` in `.github/workflows/python.yml`.
 - Select `publish_to` as `none`, `testpypi`, `pypi`, or `both` when running manually.
-- Tag pushes matching `vX.Y.Z` also trigger release + publish flow.
+- Tag publish (recommended): push a tag in the exact format `python-vX.Y.Z` (for example `python-v0.1.0`).
 
 ### Manual publish from GitHub
 
 1. Open Actions -> `Build and upload to PyPI`.
 2. Run with `publish_to=none` to validate builds only.
 3. Run with `publish_to=testpypi` (or `both`) before final PyPI publish.
+
+If you only publish via git tags, manual dispatch is optional and can be removed.

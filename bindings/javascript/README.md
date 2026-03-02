@@ -44,6 +44,17 @@ npm install
 - Node package: `packages/node/README.md`
 - Web package: `packages/web/README.md`
 
+## Publishing
+
+GitHub Actions workflow: `.github/workflows/js.yml`.
+
+- Tag publish (recommended): push a tag in the exact format `npm-vX.Y.Z` (for example `npm-v0.1.0`).
+- Manual publish: run the workflow from Actions using `workflow_dispatch`.
+    - `dry_run=true` validates packaging without publishing.
+    - `dry_run=false` performs real publish.
+
+If you only publish via git tags, manual dispatch is optional and can be removed.
+
 ## Quick examples
 
 ### Node (`@wkpjs/node`)
