@@ -39,7 +39,8 @@ requires = [
     "setuptools >= 70",
     "wheel >= 0.40",
     "packaging >= 23",
-    "nanobind >= 2.12.0"
+    "nanobind >= 2.12.0",
+    "typing_extensions >= 4.0; python_version < '3.11'"
 ]
 build-backend = "setuptools.build_meta"
 
