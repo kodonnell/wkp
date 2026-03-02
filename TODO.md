@@ -4,3 +4,4 @@
   - port the north island file so that can be used in C++/JS tests too.
 - c++ - not sure how to distribute. Code is probably fine.
 - add binding/csharp/ and publish to nuget.
+- add releases?

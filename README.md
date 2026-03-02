@@ -1,4 +1,6 @@
 [![PyPI version fury.io](https://badge.fury.io/py/wkp.svg)](https://pypi.python.org/pypi/wkp/)
+[![npm version @wkpjs/node](https://badge.fury.io/js/%40wkpjs%2Fnode.svg)](https://badge.fury.io/js/%40wkpjs%2Fnode)
+[![npm version @wkpjs/web](https://badge.fury.io/js/%40wkpjs%2Fweb.svg)](https://badge.fury.io/js/%40wkpjs%2Fweb)
 
 # WKP - Well Known Polylines
 
