@@ -71,11 +71,17 @@ print(encoder.encode(linestring))
 
 ## Benchmarks
 
-- Python: `python bindings/python/benchmark/benchmark.py --linestring-points=10000 --precisions=5`
-- C++: `build/core/Release/wkp_cpp_benchmark 200000 2 5 20`
-- Node addon: `npm --prefix bindings/javascript --workspace @wkpjs/node run benchmark -- --points=10000 --precision=5 --iterations=200`
-- Web (WASM in Node): `npm --prefix bindings/javascript --workspace @wkpjs/web run benchmark -- --points=10000 --precision=5 --iterations=200`
+- Python: `python bindings/python/benchmark/benchmark.py --linestring-points=10000 --precisions=5 --max-iterations=1000 --max-duration=1`
+- C++: `build/core/Release/wkp_cpp_benchmark 10000 2 5 1000`
+- Node addon: `npm --prefix bindings/javascript --workspace @wkpjs/node run benchmark -- --points=10000 --precision=5 --iterations=1000`
+- Web (WASM in Node): `npm --prefix bindings/javascript --workspace @wkpjs/web run benchmark -- --points=10000 --precision=5 --iterations=1000`
 - Web (browser): run `npm --prefix bindings/javascript --workspace @wkpjs/web run benchmark:serve`, then open `http://localhost:8080/benchmark/index.html`
+
+## Developing
+
+```
+python ./build_all.py
+```
 
 ## Detailed docs
 

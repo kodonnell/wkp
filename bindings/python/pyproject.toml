@@ -70,5 +70,5 @@ skip = "*-musllinux_* *s390x* *ppc64le* *i686*"
 dependency-versions = "latest"
 test-requires = ["pytest", "polyline"]
 test-command = "pytest -ra -v --import-mode=importlib -o pythonpath= {project}/src {project}/tests"
-build-frontend = "build"
+build-frontend = "pip"
 environment = {}
