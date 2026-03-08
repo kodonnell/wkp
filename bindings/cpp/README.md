@@ -40,3 +40,35 @@ ctest --test-dir build/core -C Release --output-on-failure
 ```sh
 build/core/Release/wkp_cpp_benchmark 10000 2 5 1000
 ```
+
+## Workspace API example
+
+```cpp
+#include <vector>
+#include <wkp/core.hpp>
+
+std::vector<double> line = {
+	174.776, -41.289,
+	174.777, -41.290,
+	174.778, -41.291,
+};
+
+wkp::core::Workspace workspace;
+std::string encoded = wkp::core::encode_linestring(line.data(), 3, 2, 6, &workspace);
+auto frame = wkp::core::decode(encoded, &workspace);
+```
+
+Convenience path (no workspace):
+
+```cpp
+#include <vector>
+#include <wkp/core.hpp>
+
+std::string encoded;
+wkp::core::encode_f64_into(line.data(), line.size(), 2, {6, 6}, encoded);
+
+std::vector<double> decoded;
+wkp::core::decode_f64_into(encoded, 2, {6, 6}, decoded);
+```
+
+No-workspace calls are simpler, but reusing `Workspace` is faster in repeated encode/decode workloads.

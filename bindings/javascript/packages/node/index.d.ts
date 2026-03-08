@@ -54,26 +54,23 @@ export declare const EncodedGeometryType: {
     readonly MULTIPOLYGON: 6;
 };
 
-export declare class GeometryEncoder {
-    constructor(precision: number, dimensions: number, initialCapacity?: number);
-    readonly precision: number;
-    readonly dimensions: number;
+export declare class Workspace {
+    constructor(initialCapacity?: number);
     readonly initialCapacity: number;
-
-    encodeBytes(geometry: Geometry): Buffer;
-    encode(geometry: Geometry): string;
-    encodeStr(geometry: Geometry): string;
-
-    decodeBytes(encoded: string | Buffer | Uint8Array): DecodedGeometry;
-    decodeStr(encoded: string): DecodedGeometry;
-
-    static decodeHeader(encoded: string | Buffer | Uint8Array): [number, number, number, number];
-    static decode(encoded: string | Buffer | Uint8Array): DecodedGeometry;
+    encodeF64(values: readonly number[] | Float64Array, dimensions: number, precisions: readonly number[]): Buffer;
+    decodeF64(encoded: string | Buffer | Uint8Array, dimensions: number, precisions: readonly number[]): Float64Array;
 }
 
-export function encodeF64(values: readonly number[] | Float64Array, dimensions: number, precisions: readonly number[]): Buffer;
-export function decodeF64(encoded: string | Buffer | Uint8Array, dimensions: number, precisions: readonly number[]): Float64Array;
-export function decodeGeometryHeader(encoded: string | Buffer | Uint8Array): [number, number, number, number];
+export function decodeHeader(encoded: string | Buffer | Uint8Array): [number, number, number, number];
+export function decode(encoded: string | Buffer | Uint8Array, workspace?: Workspace): DecodedGeometry;
+export function encodePoint(geometry: PointGeometry, precision: number, workspace?: Workspace): string;
+export function encodeLineString(geometry: LineStringGeometry, precision: number, workspace?: Workspace): string;
+export function encodePolygon(geometry: PolygonGeometry, precision: number, workspace?: Workspace): string;
+export function encodeMultiPoint(geometry: MultiPointGeometry, precision: number, workspace?: Workspace): string;
+export function encodeMultiLineString(geometry: MultiLineStringGeometry, precision: number, workspace?: Workspace): string;
+export function encodeMultiPolygon(geometry: MultiPolygonGeometry, precision: number, workspace?: Workspace): string;
+export function encodeF64(values: readonly number[] | Float64Array, dimensions: number, precisions: readonly number[], workspace?: Workspace): Buffer;
+export function decodeF64(encoded: string | Buffer | Uint8Array, dimensions: number, precisions: readonly number[], workspace?: Workspace): Float64Array;
 export function coreVersion(): string;
 export const bindingVersion: string;
 export const coreCompatibility: string;

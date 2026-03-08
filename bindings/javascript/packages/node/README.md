@@ -2,12 +2,12 @@
 
 Node-API native bindings for WKP core.
 
-## Dependencies
+## Requirements
 
 - Node.js >= 18
 - Native build toolchain for `node-gyp` (C/C++ compiler and Python)
 
-## Install / build
+## Build
 
 From `bindings/javascript`:
 
@@ -32,30 +32,46 @@ From `bindings/javascript`:
 npm --workspace @wkpjs/node run benchmark -- --points=10000 --precision=5 --iterations=200
 ```
 
-## Publish
+## API
 
-`@wkpjs/node` is published by `.github/workflows/npm-publish.yml` (manual `workflow_dispatch` or `npm-v*` tag trigger).
+Exports:
 
-### Manual publish from GitHub
-
-1. Open Actions -> `Publish JavaScript packages to npm`.
-2. Run with `dry_run=true` first.
-3. Re-run with `dry_run=false` to publish.
+- `Workspace`
+- `decodeHeader(encoded)`
+- `decode(encoded, workspace?)`
+- `encodePoint/encodeLineString/encodePolygon/encodeMultiPoint/encodeMultiLineString/encodeMultiPolygon`
+- `encodeF64(values, dimensions, precisions, workspace?)`
+- `decodeF64(encoded, dimensions, precisions, workspace?)`
 
 ## Example
 
 ```js
-const { GeometryEncoder } = require('@wkpjs/node');
+const { Workspace, decode, encodeLineString } = require('@wkpjs/node');
 
-const encoder = new GeometryEncoder(6, 2);
+const workspace = new Workspace();
 const geometry = {
   type: 'LineString',
-  coordinates: [[174.776, -41.289], [174.777, -41.290]],
+  coordinates: [[174.776, -41.289], [174.777, -41.290], [174.778, -41.291]],
 };
 
-const encoded = encoder.encode(geometry);
-const decoded = GeometryEncoder.decode(encoded);
+const encoded = encodeLineString(geometry, 6, workspace);
+const decoded = decode(encoded, workspace);
 
 console.log(encoded);
 console.log(decoded.geometry);
 ```
+
+Convenience path (no workspace):
+
+```js
+const { decode, encodeLineString } = require('@wkpjs/node');
+
+const encoded = encodeLineString({ type: 'LineString', coordinates: [[0, 0], [1, 1]] }, 6);
+const decoded = decode(encoded);
+```
+
+Omitting `workspace` is simpler, but slower for repeated operations because buffers are not reused as effectively.
+
+## Publishing
+
+Publishing is shared across JS packages and documented in `bindings/javascript/README.md`.

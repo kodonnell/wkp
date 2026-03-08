@@ -23,17 +23,32 @@
 
 ## C ABI output buffer contract
 
-For C ABI encode/decode `_into` functions, the caller owns output buffers.
+The low-level `_into` APIs use strict caller-owned buffers.
 
-- Set `out_encoded.data` / `out_values.data` to your buffer pointer.
-- Set `out_encoded.size` / `out_values.size` to buffer capacity (bytes for `u8`, element count for `f64`).
-- On success (`WKP_STATUS_OK`), `size` is updated to the number of bytes/elements written.
-- If buffer is too small, status is `WKP_STATUS_BUFFER_TOO_SMALL` and `size` is updated to the required capacity.
-- Bindings (Python/Node/Web) follow this contract by retrying with a larger buffer.
+- `wkp_u8_buffer` and `wkp_f64_buffer` are still just pointer + size.
+- Set `data`/`size` to caller-managed storage.
+- If too small, status is `WKP_STATUS_BUFFER_TOO_SMALL` and `size` is updated to required capacity.
+- On success (`WKP_STATUS_OK`), `size` is updated to bytes/elements written.
+- `wkp_free_u8_buffer` / `wkp_free_f64_buffer` are no-op reset helpers for compatibility.
 
-`wkp_free_u8_buffer` / `wkp_free_f64_buffer` are retained for ABI compatibility and are no-op reset helpers in this model.
+Workspace APIs provide the auto-resize fast path:
 
-Note: this no-allocation guarantee applies to the C ABI encode/decode entry points. Internal C++ helpers under `wkp::core` still use `std::string` / `std::vector` and may allocate.
+- `wkp_workspace_create` / `wkp_workspace_destroy`
+- `wkp_workspace_encode_f64` / `wkp_workspace_decode_f64`
+- Geometry workspace encoders:
+- `wkp_workspace_encode_point_f64`
+- `wkp_workspace_encode_linestring_f64`
+- `wkp_workspace_encode_polygon_f64`
+- `wkp_workspace_encode_multipoint_f64`
+- `wkp_workspace_encode_multilinestring_f64`
+- `wkp_workspace_encode_multipolygon_f64`
+- Workspace functions grow internal buffers automatically and avoid `WKP_STATUS_BUFFER_TOO_SMALL` retry loops.
+- Optional `max_size` limits are enforced; overflow returns `WKP_STATUS_LIMIT_EXCEEDED`.
+- Use `-1` for unlimited max size.
+
+For geometry-specific `_into` encode functions (for example `wkp_encode_linestring_f64_into`), `size` is treated as capacity on input and required/written size on output.
+
+Note: internal C++ helpers under `wkp::core` still use `std::string` / `std::vector` and may allocate.
 
 ## Version source of truth
 

@@ -15,6 +15,7 @@ extern "C"
         WKP_STATUS_MALFORMED_INPUT = 2,
         WKP_STATUS_ALLOCATION_FAILED = 3,
         WKP_STATUS_BUFFER_TOO_SMALL = 4,
+        WKP_STATUS_LIMIT_EXCEEDED = 5,
         WKP_STATUS_INTERNAL_ERROR = 255
     } wkp_status;
 
@@ -29,6 +30,8 @@ extern "C"
         double *data;
         size_t size;
     } wkp_f64_buffer;
+
+    typedef struct wkp_workspace wkp_workspace;
 
     typedef enum wkp_geometry_type
     {
@@ -57,6 +60,116 @@ extern "C"
         const int *precisions,
         size_t precision_count,
         wkp_f64_buffer *out_values,
+        char *error_message,
+        size_t error_message_capacity);
+
+    wkp_status wkp_workspace_create(
+        size_t initial_u8_capacity,
+        size_t initial_f64_capacity,
+        int64_t max_u8_capacity,
+        int64_t max_f64_capacity,
+        wkp_workspace **out_workspace,
+        char *error_message,
+        size_t error_message_capacity);
+
+    void wkp_workspace_destroy(wkp_workspace *workspace);
+
+    wkp_status wkp_workspace_encode_f64(
+        wkp_workspace *workspace,
+        const double *values,
+        size_t value_count,
+        size_t dimensions,
+        const int *precisions,
+        size_t precision_count,
+        const uint8_t **out_data,
+        size_t *out_size,
+        char *error_message,
+        size_t error_message_capacity);
+
+    wkp_status wkp_workspace_decode_f64(
+        wkp_workspace *workspace,
+        const uint8_t *encoded,
+        size_t encoded_size,
+        size_t dimensions,
+        const int *precisions,
+        size_t precision_count,
+        const double **out_data,
+        size_t *out_size,
+        char *error_message,
+        size_t error_message_capacity);
+
+    wkp_status wkp_workspace_encode_point_f64(
+        wkp_workspace *workspace,
+        const double *coords,
+        size_t coord_value_count,
+        size_t dimensions,
+        int precision,
+        const uint8_t **out_data,
+        size_t *out_size,
+        char *error_message,
+        size_t error_message_capacity);
+
+    wkp_status wkp_workspace_encode_linestring_f64(
+        wkp_workspace *workspace,
+        const double *coords,
+        size_t coord_value_count,
+        size_t dimensions,
+        int precision,
+        const uint8_t **out_data,
+        size_t *out_size,
+        char *error_message,
+        size_t error_message_capacity);
+
+    wkp_status wkp_workspace_encode_polygon_f64(
+        wkp_workspace *workspace,
+        const double *coords,
+        size_t coord_value_count,
+        size_t dimensions,
+        int precision,
+        const size_t *ring_point_counts,
+        size_t ring_count,
+        const uint8_t **out_data,
+        size_t *out_size,
+        char *error_message,
+        size_t error_message_capacity);
+
+    wkp_status wkp_workspace_encode_multipoint_f64(
+        wkp_workspace *workspace,
+        const double *coords,
+        size_t coord_value_count,
+        size_t dimensions,
+        int precision,
+        size_t point_count,
+        const uint8_t **out_data,
+        size_t *out_size,
+        char *error_message,
+        size_t error_message_capacity);
+
+    wkp_status wkp_workspace_encode_multilinestring_f64(
+        wkp_workspace *workspace,
+        const double *coords,
+        size_t coord_value_count,
+        size_t dimensions,
+        int precision,
+        const size_t *linestring_point_counts,
+        size_t linestring_count,
+        const uint8_t **out_data,
+        size_t *out_size,
+        char *error_message,
+        size_t error_message_capacity);
+
+    wkp_status wkp_workspace_encode_multipolygon_f64(
+        wkp_workspace *workspace,
+        const double *coords,
+        size_t coord_value_count,
+        size_t dimensions,
+        int precision,
+        const size_t *polygon_ring_counts,
+        size_t polygon_count,
+        const size_t *ring_point_counts,
+        size_t ring_count,
+        const uint8_t **out_data,
+        size_t *out_size,
         char *error_message,
         size_t error_message_capacity);
 

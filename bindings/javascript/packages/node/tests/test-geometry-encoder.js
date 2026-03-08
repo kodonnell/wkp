@@ -1,7 +1,20 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { GeometryEncoder, EncodedGeometryType, encodeF64, decodeF64 } = require('..');
+const {
+    Workspace,
+    decode,
+    decodeHeader,
+    encodePoint,
+    encodeLineString,
+    encodePolygon,
+    encodeMultiPoint,
+    encodeMultiLineString,
+    encodeMultiPolygon,
+    EncodedGeometryType,
+    encodeF64,
+    decodeF64
+} = require('..');
 
 function assertGeometryClose(actual, expected, epsilon = 1e-6) {
     assert.equal(actual.type, expected.type);
@@ -21,57 +34,47 @@ function assertGeometryClose(actual, expected, epsilon = 1e-6) {
     walk(actual.coordinates, expected.coordinates);
 }
 
-test('GeometryEncoder roundtrip for all geometry types', () => {
-    const encoder = new GeometryEncoder(6, 2);
+test('workspace roundtrip for all geometry types', () => {
+    const workspace = new Workspace();
     const geometries = [
-        { type: 'Point', coordinates: [174.776, -41.289] },
-        { type: 'LineString', coordinates: [[174.776, -41.289], [174.777, -41.29], [174.778, -41.291]] },
-        { type: 'Polygon', coordinates: [[[0, 0], [1, 0], [1, 1], [0, 1], [0, 0]]] },
-        { type: 'MultiPoint', coordinates: [[0, 0], [1, 1]] },
-        { type: 'MultiLineString', coordinates: [[[0, 0], [1, 1]], [[2, 2], [3, 3]]] },
+        { type: 'Point', coordinates: [174.776, -41.289], fn: encodePoint },
+        { type: 'LineString', coordinates: [[174.776, -41.289], [174.777, -41.29], [174.778, -41.291]], fn: encodeLineString },
+        { type: 'Polygon', coordinates: [[[0, 0], [1, 0], [1, 1], [0, 1], [0, 0]]], fn: encodePolygon },
+        { type: 'MultiPoint', coordinates: [[0, 0], [1, 1]], fn: encodeMultiPoint },
+        { type: 'MultiLineString', coordinates: [[[0, 0], [1, 1]], [[2, 2], [3, 3]]], fn: encodeMultiLineString },
         {
             type: 'MultiPolygon',
             coordinates: [
                 [[[0, 0], [1, 0], [1, 1], [0, 1], [0, 0]]],
                 [[[2, 2], [3, 2], [3, 3], [2, 3], [2, 2]]]
-            ]
+            ],
+            fn: encodeMultiPolygon
         }
     ];
 
-    for (const geometry of geometries) {
-        const encoded = encoder.encode(geometry);
-        const decoded = GeometryEncoder.decode(encoded);
+    for (const item of geometries) {
+        const encoded = item.fn(item, 6, workspace);
+        const decoded = decode(encoded, workspace);
 
         assert.equal(decoded.version, 1);
         assert.equal(decoded.precision, 6);
         assert.equal(decoded.dimensions, 2);
-        assertGeometryClose(decoded.geometry, geometry);
+        assertGeometryClose(decoded.geometry, item);
     }
 });
 
-test('GeometryEncoder header and bytes helpers', () => {
-    const encoder = new GeometryEncoder(6, 2);
+test('decodeHeader and convenience no-workspace path', () => {
     const geometry = { type: 'LineString', coordinates: [[0.1, 0.2], [1.1, 1.2], [2.1, 2.2]] };
 
-    const encodedBytes = encoder.encodeBytes(geometry);
-    assert.ok(Buffer.isBuffer(encodedBytes));
-
-    const [version, precision, dimensions, geometryType] = GeometryEncoder.decodeHeader(encodedBytes);
+    const encoded = encodeLineString(geometry, 6);
+    const [version, precision, dimensions, geometryType] = decodeHeader(encoded);
     assert.equal(version, 1);
     assert.equal(precision, 6);
     assert.equal(dimensions, 2);
     assert.equal(geometryType, EncodedGeometryType.LINESTRING);
 
-    const decoded = encoder.decodeBytes(encodedBytes);
+    const decoded = decode(encoded);
     assertGeometryClose(decoded.geometry, geometry);
-});
-
-test('GeometryEncoder enforces dimensions', () => {
-    const encoder = new GeometryEncoder(6, 2);
-    assert.throws(
-        () => encoder.encode({ type: 'Point', coordinates: [174.776, -41.289, 123.4] }),
-        /array of 2 numbers/i
-    );
 });
 
 test('known polyline vectors match expected encodings', () => {

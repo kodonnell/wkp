@@ -8,7 +8,7 @@ from typing import List
 import shapely
 import shapely.wkb
 import shapely.wkt
-from wkp import GeometryEncoder
+from wkp import Workspace, decode, encode_linestring
 
 
 @dataclass
@@ -68,33 +68,27 @@ def timeit_with_pool(pool, f, warmup=3, max_iterations=10, max_duration=None):
 
 
 def bench_wkp(geom, dimensions, precision, warmup=3, max_iterations=10, max_duration=None, as_bytes=False):
-    encoder = GeometryEncoder(precision=precision, dimensions=dimensions)
+    if dimensions != 2:
+        raise ValueError("benchmark currently supports only 2D linestring geometry")
+    workspace = Workspace()
     geom_pool = make_geom_pool(geom, warmup + max_iterations)
-    if as_bytes:
-        encode_ms, payload, encode_iters = timeit_with_pool(
-            geom_pool,
-            lambda g: encoder.encode_bytes(g),
-            warmup=warmup,
-            max_iterations=max_iterations,
-            max_duration=max_duration,
-        )
-    else:
-        encode_ms, payload, encode_iters = timeit_with_pool(
-            geom_pool,
-            lambda g: encoder.encode(g),
-            warmup=warmup,
-            max_iterations=max_iterations,
-            max_duration=max_duration,
-        )
+    encode_ms, payload, encode_iters = timeit_with_pool(
+        geom_pool,
+        lambda g: encode_linestring(g, precision=precision, workspace=workspace),
+        warmup=warmup,
+        max_iterations=max_iterations,
+        max_duration=max_duration,
+    )
 
     if as_bytes:
-        decode_ms, decoded, decode_iters = timeit(
-            lambda: encoder.decode_bytes(payload), warmup=warmup, max_iterations=encode_iters, max_duration=max_duration
-        )
-    else:
-        decode_ms, decoded, decode_iters = timeit(
-            lambda: encoder.decode(payload), warmup=warmup, max_iterations=encode_iters, max_duration=max_duration
-        )
+        payload = payload.encode("ascii")
+
+    decode_ms, decoded, decode_iters = timeit(
+        lambda: decode(payload, workspace=workspace),
+        warmup=warmup,
+        max_iterations=encode_iters,
+        max_duration=max_duration,
+    )
 
     assert decoded.geometry.equals_exact(geom, tolerance=10 ** (-precision)), (
         f"Decoded geometry does not match original for test wkp-{dimensions}d-{precision}p"

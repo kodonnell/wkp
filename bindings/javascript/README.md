@@ -22,8 +22,8 @@ Monorepo workspace for JavaScript bindings over the shared WKP C ABI.
 
 ## Versioning
 
-Node/Web package versions are managed independently (currently `0.1.0`).
-Both runtimes enforce WKP core compatibility at runtime (`0.1.x`).
+Node/Web package versions are managed independently (currently `0.2.0`).
+Both runtimes enforce WKP core compatibility at runtime (`0.2.x`).
 
 From `bindings/javascript`:
 
@@ -39,12 +39,34 @@ From `bindings/javascript`:
 npm install
 ```
 
-## Build / publish docs
+## Package docs
 
 - Node package: `packages/node/README.md`
 - Web package: `packages/web/README.md`
 
-## Publishing
+## Common commands
+
+From `bindings/javascript`:
+
+```sh
+npm run build
+npm run test
+```
+
+Run package-specific benchmarks:
+
+```sh
+npm run benchmark:node -- --points=10000 --precision=5 --iterations=200
+npm run benchmark:web:node -- --points=10000 --precision=5 --iterations=200
+```
+
+Run web benchmark in browser:
+
+```sh
+npm run benchmark:web:serve
+```
+
+## Publishing (shared)
 
 GitHub Actions workflow: `.github/workflows/js.yml`.
 
@@ -55,14 +77,16 @@ GitHub Actions workflow: `.github/workflows/js.yml`.
 
 If you only publish via git tags, manual dispatch is optional and can be removed.
 
+All JS packages in this workspace (`@wkpjs/node` and `@wkpjs/web`) use this same publish flow.
+
 ## Quick examples
 
 ### Node (`@wkpjs/node`)
 
 ```js
-const { GeometryEncoder } = require('@wkpjs/node');
+const { Workspace, decode, encodeLineString } = require('@wkpjs/node');
 
-const encoder = new GeometryEncoder(6, 2);
+const workspace = new Workspace();
 const geom = {
     type: 'LineString',
     coordinates: [
@@ -72,10 +96,21 @@ const geom = {
     ],
 };
 
-const encoded = encoder.encode(geom);
-const decoded = GeometryEncoder.decode(encoded);
+const encoded = encodeLineString(geom, 6, workspace);
+const decoded = decode(encoded, workspace);
 console.log(encoded, decoded.geometry.type);
 ```
+
+Convenience path (no workspace):
+
+```js
+const { decode, encodeLineString } = require('@wkpjs/node');
+
+const encoded = encodeLineString({ type: 'LineString', coordinates: [[0, 0], [1, 1]] }, 6);
+const decoded = decode(encoded);
+```
+
+Omitting `workspace` is simpler, but slower for repeated encode/decode workloads.
 
 ### Web (`@wkpjs/web`)
 
@@ -83,8 +118,8 @@ console.log(encoded, decoded.geometry.type);
 import { createWkp } from '@wkpjs/web';
 
 const wkp = await createWkp();
-const encoder = new wkp.GeometryEncoder(6, 2);
-const encoded = encoder.encode({ type: 'Point', coordinates: [174.776, -41.289] });
-const decoded = wkp.GeometryEncoder.decode(encoded);
-console.log(decoded.geometry);
+const workspace = new wkp.Workspace();
+const encoded = wkp.encodeLineString({ type: 'LineString', coordinates: [[0, 0], [1, 1]] }, 6, workspace);
+const decoded = wkp.decode(encoded, workspace);
+console.log(decoded.geometry.type);
 ```

@@ -152,6 +152,273 @@ namespace
         CHECK(decoded.size == 0);
     }
 
+    TEST_CASE("c api encode/decode reuse working buffers")
+    {
+        const std::vector<double> small_values = {
+            0.1,
+            0.2,
+            1.1,
+            1.2,
+        };
+        const std::vector<double> large_values = {
+            0.1,
+            0.2,
+            1.1,
+            1.2,
+            2.1,
+            2.2,
+            3.1,
+            3.2,
+            4.1,
+            4.2,
+            5.1,
+            5.2,
+        };
+        const int precisions[] = {5, 5};
+        char error[256] = {0};
+
+        wkp_workspace *workspace = nullptr;
+        auto s = wkp_workspace_create(
+            0,
+            0,
+            -1,
+            -1,
+            &workspace,
+            error,
+            sizeof(error));
+        INFO(error);
+        REQUIRE(s == WKP_STATUS_OK);
+        REQUIRE(workspace != nullptr);
+
+        const uint8_t *encoded_data = nullptr;
+        size_t encoded_size = 0;
+        s = wkp_workspace_encode_f64(
+            workspace,
+            small_values.data(),
+            small_values.size(),
+            2,
+            precisions,
+            2,
+            &encoded_data,
+            &encoded_size,
+            error,
+            sizeof(error));
+        INFO(error);
+        REQUIRE(s == WKP_STATUS_OK);
+        REQUIRE(encoded_data != nullptr);
+        REQUIRE(encoded_size > 0);
+
+        s = wkp_workspace_encode_f64(
+            workspace,
+            large_values.data(),
+            large_values.size(),
+            2,
+            precisions,
+            2,
+            &encoded_data,
+            &encoded_size,
+            error,
+            sizeof(error));
+        INFO(error);
+        REQUIRE(s == WKP_STATUS_OK);
+        REQUIRE(encoded_data != nullptr);
+        auto *encoded_ptr_after_large = encoded_data;
+
+        const double *decoded_data = nullptr;
+        size_t decoded_size = 0;
+        s = wkp_workspace_decode_f64(
+            workspace,
+            encoded_data,
+            encoded_size,
+            2,
+            precisions,
+            2,
+            &decoded_data,
+            &decoded_size,
+            error,
+            sizeof(error));
+        INFO(error);
+        REQUIRE(s == WKP_STATUS_OK);
+        REQUIRE(decoded_size == large_values.size());
+        auto *decoded_ptr_after_large = decoded_data;
+        REQUIRE(decoded_ptr_after_large != nullptr);
+
+        s = wkp_workspace_encode_f64(
+            workspace,
+            small_values.data(),
+            small_values.size(),
+            2,
+            precisions,
+            2,
+            &encoded_data,
+            &encoded_size,
+            error,
+            sizeof(error));
+        INFO(error);
+        REQUIRE(s == WKP_STATUS_OK);
+        CHECK(encoded_data == encoded_ptr_after_large);
+
+        s = wkp_workspace_decode_f64(
+            workspace,
+            encoded_data,
+            encoded_size,
+            2,
+            precisions,
+            2,
+            &decoded_data,
+            &decoded_size,
+            error,
+            sizeof(error));
+        INFO(error);
+        REQUIRE(s == WKP_STATUS_OK);
+        CHECK(decoded_data == decoded_ptr_after_large);
+
+        wkp_workspace_destroy(workspace);
+    }
+
+    TEST_CASE("c api workspace max size limit")
+    {
+        const std::vector<double> values = {
+            0.1,
+            0.2,
+            1.1,
+            1.2,
+            2.1,
+            2.2,
+            3.1,
+            3.2,
+            4.1,
+            4.2,
+            5.1,
+            5.2,
+        };
+        const int precisions[] = {5, 5};
+        char error[256] = {0};
+
+        wkp_workspace *workspace = nullptr;
+        auto s = wkp_workspace_create(
+            8,
+            1,
+            16,
+            2,
+            &workspace,
+            error,
+            sizeof(error));
+        INFO(error);
+        REQUIRE(s == WKP_STATUS_OK);
+        REQUIRE(workspace != nullptr);
+
+        const uint8_t *encoded_data = nullptr;
+        size_t encoded_size = 0;
+        s = wkp_workspace_encode_f64(
+            workspace,
+            values.data(),
+            values.size(),
+            2,
+            precisions,
+            2,
+            &encoded_data,
+            &encoded_size,
+            error,
+            sizeof(error));
+        INFO(error);
+        REQUIRE(s == WKP_STATUS_LIMIT_EXCEEDED);
+
+        wkp_workspace_destroy(workspace);
+    }
+
+    TEST_CASE("c api workspace geometry encode linestring")
+    {
+        const std::vector<double> coords = {
+            175.26025,
+            -37.79209,
+            175.26026,
+            -37.79210,
+            175.26027,
+            -37.79211,
+        };
+        char error[256] = {0};
+
+        wkp_workspace *workspace = nullptr;
+        auto s = wkp_workspace_create(
+            2,
+            2,
+            -1,
+            -1,
+            &workspace,
+            error,
+            sizeof(error));
+        INFO(error);
+        REQUIRE(s == WKP_STATUS_OK);
+
+        const uint8_t *encoded_data = nullptr;
+        size_t encoded_size = 0;
+        s = wkp_workspace_encode_linestring_f64(
+            workspace,
+            coords.data(),
+            coords.size(),
+            2,
+            5,
+            &encoded_data,
+            &encoded_size,
+            error,
+            sizeof(error));
+        INFO(error);
+        REQUIRE(s == WKP_STATUS_OK);
+        REQUIRE(encoded_data != nullptr);
+        REQUIRE(encoded_size >= 8);
+
+        const std::string encoded_string(reinterpret_cast<const char *>(encoded_data), encoded_size);
+        CHECK(parse_2digits(encoded_string, 0) == 1);
+        CHECK(parse_2digits(encoded_string, 2) == 5);
+        CHECK(parse_2digits(encoded_string, 4) == 2);
+        CHECK(parse_2digits(encoded_string, 6) == WKP_GEOMETRY_LINESTRING);
+
+        wkp_workspace_destroy(workspace);
+    }
+
+    TEST_CASE("c api workspace geometry max size limit")
+    {
+        const std::vector<double> coords = {
+            175.26025,
+            -37.79209,
+            175.26026,
+            -37.79210,
+            175.26027,
+            -37.79211,
+        };
+        char error[256] = {0};
+
+        wkp_workspace *workspace = nullptr;
+        auto s = wkp_workspace_create(
+            1,
+            1,
+            4,
+            -1,
+            &workspace,
+            error,
+            sizeof(error));
+        INFO(error);
+        REQUIRE(s == WKP_STATUS_OK);
+
+        const uint8_t *encoded_data = nullptr;
+        size_t encoded_size = 0;
+        s = wkp_workspace_encode_linestring_f64(
+            workspace,
+            coords.data(),
+            coords.size(),
+            2,
+            5,
+            &encoded_data,
+            &encoded_size,
+            error,
+            sizeof(error));
+        INFO(error);
+        REQUIRE(s == WKP_STATUS_LIMIT_EXCEEDED);
+
+        wkp_workspace_destroy(workspace);
+    }
+
     TEST_CASE("c api repeated alloc free")
     {
         const std::vector<double> values = {

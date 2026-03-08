@@ -12,6 +12,16 @@
 #include <string_view>
 #include <vector>
 
+struct wkp_workspace
+{
+    std::vector<uint8_t> u8_work;
+    std::vector<double> f64_work;
+    std::size_t max_u8_capacity = 0;
+    std::size_t max_f64_capacity = 0;
+    bool has_u8_limit = false;
+    bool has_f64_limit = false;
+};
+
 namespace
 {
 
@@ -694,6 +704,141 @@ namespace
         }
     };
 
+    bool normalize_max_capacity(
+        int64_t raw_max,
+        std::size_t *out_limit,
+        bool *out_has_limit,
+        char *error_message,
+        std::size_t error_message_capacity)
+    {
+        if (raw_max == -1)
+        {
+            *out_limit = 0;
+            *out_has_limit = false;
+            return true;
+        }
+        if (raw_max < 0)
+        {
+            set_error(error_message, error_message_capacity, "max capacity must be -1 (unlimited) or >= 0");
+            return false;
+        }
+
+        *out_limit = static_cast<std::size_t>(raw_max);
+        *out_has_limit = true;
+        return true;
+    }
+
+    wkp_status resize_workspace_u8(
+        wkp_workspace *workspace,
+        std::size_t required,
+        char *error_message,
+        std::size_t error_message_capacity)
+    {
+        if (workspace->has_u8_limit && required > workspace->max_u8_capacity)
+        {
+            set_error(error_message, error_message_capacity, "workspace u8 buffer exceeded max_size");
+            return WKP_STATUS_LIMIT_EXCEEDED;
+        }
+        try
+        {
+            workspace->u8_work.resize(required);
+            return WKP_STATUS_OK;
+        }
+        catch (const std::bad_alloc &)
+        {
+            set_error(error_message, error_message_capacity, "failed to resize workspace u8 buffer");
+            return WKP_STATUS_ALLOCATION_FAILED;
+        }
+    }
+
+    wkp_status resize_workspace_f64(
+        wkp_workspace *workspace,
+        std::size_t required,
+        char *error_message,
+        std::size_t error_message_capacity)
+    {
+        if (workspace->has_f64_limit && required > workspace->max_f64_capacity)
+        {
+            set_error(error_message, error_message_capacity, "workspace f64 buffer exceeded max_size");
+            return WKP_STATUS_LIMIT_EXCEEDED;
+        }
+        try
+        {
+            workspace->f64_work.resize(required);
+            return WKP_STATUS_OK;
+        }
+        catch (const std::bad_alloc &)
+        {
+            set_error(error_message, error_message_capacity, "failed to resize workspace f64 buffer");
+            return WKP_STATUS_ALLOCATION_FAILED;
+        }
+    }
+
+    template <typename EncodeFn>
+    wkp_status workspace_encode_u8_retry(
+        wkp_workspace *workspace,
+        const uint8_t **out_data,
+        size_t *out_size,
+        char *error_message,
+        size_t error_message_capacity,
+        EncodeFn &&encode_fn)
+    {
+        if (workspace == nullptr || out_data == nullptr || out_size == nullptr)
+        {
+            set_error(error_message, error_message_capacity, "workspace, out_data, and out_size are required");
+            return WKP_STATUS_INVALID_ARGUMENT;
+        }
+
+        if (workspace->u8_work.empty())
+        {
+            constexpr std::size_t kDefaultCapacity = 64;
+            const wkp_status reserve_status = resize_workspace_u8(
+                workspace,
+                kDefaultCapacity,
+                error_message,
+                error_message_capacity);
+            if (reserve_status != WKP_STATUS_OK)
+            {
+                return reserve_status;
+            }
+        }
+
+        for (;;)
+        {
+            wkp_u8_buffer out{
+                workspace->u8_work.data(),
+                workspace->u8_work.size()};
+
+            const wkp_status status = encode_fn(
+                &out,
+                error_message,
+                error_message_capacity);
+
+            if (status == WKP_STATUS_BUFFER_TOO_SMALL)
+            {
+                const wkp_status reserve_status = resize_workspace_u8(
+                    workspace,
+                    out.size,
+                    error_message,
+                    error_message_capacity);
+                if (reserve_status != WKP_STATUS_OK)
+                {
+                    return reserve_status;
+                }
+                continue;
+            }
+
+            if (status != WKP_STATUS_OK)
+            {
+                return status;
+            }
+
+            *out_data = workspace->u8_work.data();
+            *out_size = out.size;
+            return WKP_STATUS_OK;
+        }
+    }
+
     bool normalize_precisions_fixed(
         std::size_t dimensions,
         const int *precisions,
@@ -864,7 +1009,64 @@ namespace
         return true;
     }
 
-    wkp_status decode_f64_into_buffer(
+} // namespace
+
+extern "C"
+{
+
+    wkp_status wkp_encode_f64_into(
+        const double *values,
+        size_t value_count,
+        size_t dimensions,
+        const int *precisions,
+        size_t precision_count,
+        wkp_u8_buffer *out_encoded,
+        char *error_message,
+        size_t error_message_capacity)
+    {
+        if (out_encoded == nullptr)
+        {
+            set_error(error_message, error_message_capacity, "out_encoded is required");
+            return WKP_STATUS_INVALID_ARGUMENT;
+        }
+        if (values == nullptr || precisions == nullptr)
+        {
+            set_error(error_message, error_message_capacity, "values and precisions are required");
+            return WKP_STATUS_INVALID_ARGUMENT;
+        }
+        if (dimensions == 0 || dimensions > kMaxDimensions)
+        {
+            set_error(error_message, error_message_capacity, "dimensions must be between 1 and 16");
+            return WKP_STATUS_INVALID_ARGUMENT;
+        }
+        if ((value_count % dimensions) != 0)
+        {
+            set_error(error_message, error_message_capacity, "value_count must be divisible by dimensions");
+            return WKP_STATUS_INVALID_ARGUMENT;
+        }
+        if (out_encoded->size > 0 && out_encoded->data == nullptr)
+        {
+            set_error(error_message, error_message_capacity, "out_encoded->data is null but size > 0");
+            return WKP_STATUS_INVALID_ARGUMENT;
+        }
+        int p[kMaxDimensions] = {0};
+        if (!normalize_precisions_fixed(dimensions, precisions, precision_count, p, error_message, error_message_capacity))
+        {
+            return WKP_STATUS_INVALID_ARGUMENT;
+        }
+
+        double factors[kMaxDimensions] = {0.0};
+        for (std::size_t i = 0; i < dimensions; ++i)
+        {
+            factors[i] = std::pow(10.0, static_cast<double>(p[i]));
+        }
+
+        OutputWriter writer{out_encoded->data, out_encoded->size, 0, false};
+        append_encoded_segment(writer, values, value_count, dimensions, factors);
+        return finalize_encoded_result(writer, out_encoded, error_message, error_message_capacity);
+    }
+
+    wkp_status wkp_decode_f64_into(
         const uint8_t *encoded,
         size_t encoded_size,
         size_t dimensions,
@@ -907,9 +1109,9 @@ namespace
             factors[i] = std::pow(10.0, static_cast<double>(p[i]));
         }
 
+        const std::string_view encoded_view(reinterpret_cast<const char *>(encoded), encoded_size);
         long long previous[kMaxDimensions] = {0};
         std::size_t value_count = 0;
-        const std::string_view encoded_view(reinterpret_cast<const char *>(encoded), encoded_size);
 
         try
         {
@@ -956,83 +1158,380 @@ namespace
         return WKP_STATUS_OK;
     }
 
-} // namespace
+    wkp_status wkp_workspace_create(
+        size_t initial_u8_capacity,
+        size_t initial_f64_capacity,
+        int64_t max_u8_capacity,
+        int64_t max_f64_capacity,
+        wkp_workspace **out_workspace,
+        char *error_message,
+        size_t error_message_capacity)
+    {
+        if (out_workspace == nullptr)
+        {
+            set_error(error_message, error_message_capacity, "out_workspace is required");
+            return WKP_STATUS_INVALID_ARGUMENT;
+        }
 
-extern "C"
-{
+        std::size_t u8_limit = 0;
+        bool has_u8_limit = false;
+        if (!normalize_max_capacity(max_u8_capacity, &u8_limit, &has_u8_limit, error_message, error_message_capacity))
+        {
+            return WKP_STATUS_INVALID_ARGUMENT;
+        }
 
-    wkp_status wkp_encode_f64_into(
+        std::size_t f64_limit = 0;
+        bool has_f64_limit = false;
+        if (!normalize_max_capacity(max_f64_capacity, &f64_limit, &has_f64_limit, error_message, error_message_capacity))
+        {
+            return WKP_STATUS_INVALID_ARGUMENT;
+        }
+
+        if (has_u8_limit && initial_u8_capacity > u8_limit)
+        {
+            set_error(error_message, error_message_capacity, "initial u8 capacity exceeds max_size");
+            return WKP_STATUS_LIMIT_EXCEEDED;
+        }
+        if (has_f64_limit && initial_f64_capacity > f64_limit)
+        {
+            set_error(error_message, error_message_capacity, "initial f64 capacity exceeds max_size");
+            return WKP_STATUS_LIMIT_EXCEEDED;
+        }
+
+        auto *workspace = new (std::nothrow) wkp_workspace();
+        if (workspace == nullptr)
+        {
+            set_error(error_message, error_message_capacity, "failed to create workspace");
+            return WKP_STATUS_ALLOCATION_FAILED;
+        }
+
+        workspace->max_u8_capacity = u8_limit;
+        workspace->max_f64_capacity = f64_limit;
+        workspace->has_u8_limit = has_u8_limit;
+        workspace->has_f64_limit = has_f64_limit;
+
+        try
+        {
+            workspace->u8_work.resize(initial_u8_capacity);
+            workspace->f64_work.resize(initial_f64_capacity);
+        }
+        catch (const std::bad_alloc &)
+        {
+            delete workspace;
+            set_error(error_message, error_message_capacity, "failed to initialize workspace buffers");
+            return WKP_STATUS_ALLOCATION_FAILED;
+        }
+
+        *out_workspace = workspace;
+        return WKP_STATUS_OK;
+    }
+
+    void wkp_workspace_destroy(wkp_workspace *workspace)
+    {
+        delete workspace;
+    }
+
+    wkp_status wkp_workspace_encode_f64(
+        wkp_workspace *workspace,
         const double *values,
         size_t value_count,
         size_t dimensions,
         const int *precisions,
         size_t precision_count,
-        wkp_u8_buffer *out_encoded,
+        const uint8_t **out_data,
+        size_t *out_size,
         char *error_message,
         size_t error_message_capacity)
     {
-        if (out_encoded == nullptr)
-        {
-            set_error(error_message, error_message_capacity, "out_encoded is required");
-            return WKP_STATUS_INVALID_ARGUMENT;
-        }
-        if (values == nullptr || precisions == nullptr)
-        {
-            set_error(error_message, error_message_capacity, "values and precisions are required");
-            return WKP_STATUS_INVALID_ARGUMENT;
-        }
-        if (dimensions == 0 || dimensions > kMaxDimensions)
-        {
-            set_error(error_message, error_message_capacity, "dimensions must be between 1 and 16");
-            return WKP_STATUS_INVALID_ARGUMENT;
-        }
-        if ((value_count % dimensions) != 0)
-        {
-            set_error(error_message, error_message_capacity, "value_count must be divisible by dimensions");
-            return WKP_STATUS_INVALID_ARGUMENT;
-        }
-        if (out_encoded->size > 0 && out_encoded->data == nullptr)
-        {
-            set_error(error_message, error_message_capacity, "out_encoded->data is null but size > 0");
-            return WKP_STATUS_INVALID_ARGUMENT;
-        }
-
-        int p[kMaxDimensions] = {0};
-        if (!normalize_precisions_fixed(dimensions, precisions, precision_count, p, error_message, error_message_capacity))
-        {
-            return WKP_STATUS_INVALID_ARGUMENT;
-        }
-
-        double factors[kMaxDimensions] = {0.0};
-        for (std::size_t i = 0; i < dimensions; ++i)
-        {
-            factors[i] = std::pow(10.0, static_cast<double>(p[i]));
-        }
-
-        OutputWriter writer{out_encoded->data, out_encoded->size, 0, false};
-        append_encoded_segment(writer, values, value_count, dimensions, factors);
-        return finalize_encoded_result(writer, out_encoded, error_message, error_message_capacity);
+        return workspace_encode_u8_retry(
+            workspace,
+            out_data,
+            out_size,
+            error_message,
+            error_message_capacity,
+            [&](wkp_u8_buffer *out, char *err, size_t err_cap) -> wkp_status
+            {
+                return wkp_encode_f64_into(
+                    values,
+                    value_count,
+                    dimensions,
+                    precisions,
+                    precision_count,
+                    out,
+                    err,
+                    err_cap);
+            });
     }
 
-    wkp_status wkp_decode_f64_into(
+    wkp_status wkp_workspace_encode_point_f64(
+        wkp_workspace *workspace,
+        const double *coords,
+        size_t coord_value_count,
+        size_t dimensions,
+        int precision,
+        const uint8_t **out_data,
+        size_t *out_size,
+        char *error_message,
+        size_t error_message_capacity)
+    {
+        return workspace_encode_u8_retry(
+            workspace,
+            out_data,
+            out_size,
+            error_message,
+            error_message_capacity,
+            [&](wkp_u8_buffer *out, char *err, size_t err_cap) -> wkp_status
+            {
+                return wkp_encode_point_f64_into(
+                    coords,
+                    coord_value_count,
+                    dimensions,
+                    precision,
+                    out,
+                    err,
+                    err_cap);
+            });
+    }
+
+    wkp_status wkp_workspace_encode_linestring_f64(
+        wkp_workspace *workspace,
+        const double *coords,
+        size_t coord_value_count,
+        size_t dimensions,
+        int precision,
+        const uint8_t **out_data,
+        size_t *out_size,
+        char *error_message,
+        size_t error_message_capacity)
+    {
+        return workspace_encode_u8_retry(
+            workspace,
+            out_data,
+            out_size,
+            error_message,
+            error_message_capacity,
+            [&](wkp_u8_buffer *out, char *err, size_t err_cap) -> wkp_status
+            {
+                return wkp_encode_linestring_f64_into(
+                    coords,
+                    coord_value_count,
+                    dimensions,
+                    precision,
+                    out,
+                    err,
+                    err_cap);
+            });
+    }
+
+    wkp_status wkp_workspace_encode_polygon_f64(
+        wkp_workspace *workspace,
+        const double *coords,
+        size_t coord_value_count,
+        size_t dimensions,
+        int precision,
+        const size_t *ring_point_counts,
+        size_t ring_count,
+        const uint8_t **out_data,
+        size_t *out_size,
+        char *error_message,
+        size_t error_message_capacity)
+    {
+        return workspace_encode_u8_retry(
+            workspace,
+            out_data,
+            out_size,
+            error_message,
+            error_message_capacity,
+            [&](wkp_u8_buffer *out, char *err, size_t err_cap) -> wkp_status
+            {
+                return wkp_encode_polygon_f64_into(
+                    coords,
+                    coord_value_count,
+                    dimensions,
+                    precision,
+                    ring_point_counts,
+                    ring_count,
+                    out,
+                    err,
+                    err_cap);
+            });
+    }
+
+    wkp_status wkp_workspace_encode_multipoint_f64(
+        wkp_workspace *workspace,
+        const double *coords,
+        size_t coord_value_count,
+        size_t dimensions,
+        int precision,
+        size_t point_count,
+        const uint8_t **out_data,
+        size_t *out_size,
+        char *error_message,
+        size_t error_message_capacity)
+    {
+        return workspace_encode_u8_retry(
+            workspace,
+            out_data,
+            out_size,
+            error_message,
+            error_message_capacity,
+            [&](wkp_u8_buffer *out, char *err, size_t err_cap) -> wkp_status
+            {
+                return wkp_encode_multipoint_f64_into(
+                    coords,
+                    coord_value_count,
+                    dimensions,
+                    precision,
+                    point_count,
+                    out,
+                    err,
+                    err_cap);
+            });
+    }
+
+    wkp_status wkp_workspace_encode_multilinestring_f64(
+        wkp_workspace *workspace,
+        const double *coords,
+        size_t coord_value_count,
+        size_t dimensions,
+        int precision,
+        const size_t *linestring_point_counts,
+        size_t linestring_count,
+        const uint8_t **out_data,
+        size_t *out_size,
+        char *error_message,
+        size_t error_message_capacity)
+    {
+        return workspace_encode_u8_retry(
+            workspace,
+            out_data,
+            out_size,
+            error_message,
+            error_message_capacity,
+            [&](wkp_u8_buffer *out, char *err, size_t err_cap) -> wkp_status
+            {
+                return wkp_encode_multilinestring_f64_into(
+                    coords,
+                    coord_value_count,
+                    dimensions,
+                    precision,
+                    linestring_point_counts,
+                    linestring_count,
+                    out,
+                    err,
+                    err_cap);
+            });
+    }
+
+    wkp_status wkp_workspace_encode_multipolygon_f64(
+        wkp_workspace *workspace,
+        const double *coords,
+        size_t coord_value_count,
+        size_t dimensions,
+        int precision,
+        const size_t *polygon_ring_counts,
+        size_t polygon_count,
+        const size_t *ring_point_counts,
+        size_t ring_count,
+        const uint8_t **out_data,
+        size_t *out_size,
+        char *error_message,
+        size_t error_message_capacity)
+    {
+        return workspace_encode_u8_retry(
+            workspace,
+            out_data,
+            out_size,
+            error_message,
+            error_message_capacity,
+            [&](wkp_u8_buffer *out, char *err, size_t err_cap) -> wkp_status
+            {
+                return wkp_encode_multipolygon_f64_into(
+                    coords,
+                    coord_value_count,
+                    dimensions,
+                    precision,
+                    polygon_ring_counts,
+                    polygon_count,
+                    ring_point_counts,
+                    ring_count,
+                    out,
+                    err,
+                    err_cap);
+            });
+    }
+
+    wkp_status wkp_workspace_decode_f64(
+        wkp_workspace *workspace,
         const uint8_t *encoded,
         size_t encoded_size,
         size_t dimensions,
         const int *precisions,
         size_t precision_count,
-        wkp_f64_buffer *out_values,
+        const double **out_data,
+        size_t *out_size,
         char *error_message,
         size_t error_message_capacity)
     {
-        return decode_f64_into_buffer(
-            encoded,
-            encoded_size,
-            dimensions,
-            precisions,
-            precision_count,
-            out_values,
-            error_message,
-            error_message_capacity);
+        if (workspace == nullptr || out_data == nullptr || out_size == nullptr)
+        {
+            set_error(error_message, error_message_capacity, "workspace, out_data, and out_size are required");
+            return WKP_STATUS_INVALID_ARGUMENT;
+        }
+
+        if (workspace->f64_work.empty())
+        {
+            constexpr std::size_t kDefaultCapacity = 16;
+            const wkp_status reserve_status = resize_workspace_f64(
+                workspace,
+                kDefaultCapacity,
+                error_message,
+                error_message_capacity);
+            if (reserve_status != WKP_STATUS_OK)
+            {
+                return reserve_status;
+            }
+        }
+
+        for (;;)
+        {
+            wkp_f64_buffer out{
+                workspace->f64_work.data(),
+                workspace->f64_work.size()};
+
+            const wkp_status status = wkp_decode_f64_into(
+                encoded,
+                encoded_size,
+                dimensions,
+                precisions,
+                precision_count,
+                &out,
+                error_message,
+                error_message_capacity);
+
+            if (status == WKP_STATUS_BUFFER_TOO_SMALL)
+            {
+                const wkp_status reserve_status = resize_workspace_f64(
+                    workspace,
+                    out.size,
+                    error_message,
+                    error_message_capacity);
+                if (reserve_status != WKP_STATUS_OK)
+                {
+                    return reserve_status;
+                }
+                continue;
+            }
+
+            if (status != WKP_STATUS_OK)
+            {
+                return status;
+            }
+
+            *out_data = workspace->f64_work.data();
+            *out_size = out.size;
+            return WKP_STATUS_OK;
+        }
     }
 
     wkp_status wkp_decode_geometry_header(
@@ -1406,6 +1905,7 @@ extern "C"
         {
             return;
         }
+
         buffer->data = nullptr;
         buffer->size = 0;
     }
@@ -1416,6 +1916,7 @@ extern "C"
         {
             return;
         }
+
         buffer->data = nullptr;
         buffer->size = 0;
     }

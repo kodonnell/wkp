@@ -10,7 +10,9 @@ WKP is a compact string-based geometry encoding format inspired by Google Polyli
 - arbitrary dimensions (for example XYZ)
 - polygon and multi-geometry support
 
-Compared to WKT/WKB, WKP is typically smaller on the wire and competitive or faster for encode/decode in common line/polygon workloads.
+Compared to WKT, WKP is typically 10x smaller and encodes/decodes 8x/20x faster. Compared to WKB, WKP is typically 4x smaller and encodes/decodes 2x/0.7x faster. See here[^1].
+
+[^1]: In python run `python .\bindings\python\benchmark\benchmark.py --linestring-points=10000 --precisions=5 --max-iterations=1000 --max-duration=1`. Use 5dp as that's Google Polyline standard. Compare with WKT full precision (as that's usual behaviour as it's uncommon for users to round all coordinates to 5dp before encoding as wkt). Use a realistic example of NZ coastline vs a random example. Encode: WKP=0.31ms, WKB=0.65ms, WKT=2.13ms. Decode: WKP=.15ms, WKB=0.11ms, WKT=6.18ms. Size: WKP=43kb, WKB=156kb, WKT=380kb.
 
 ## Architecture (ABI-first)
 
@@ -64,12 +66,14 @@ pip install wkp
 
 ```python
 from shapely import LineString
-from wkp import GeometryEncoder
+from wkp import Workspace, encode_linestring
 
 linestring = LineString([(1, 2), (3, 4), (5, 6)])
-encoder = GeometryEncoder(dimensions=2, precision=5)
-print(encoder.encode(linestring))
+workspace = Workspace()
+print(encode_linestring(linestring, precision=5, workspace=workspace))
 ```
+
+For convenience, `workspace` is optional and functions will create/use a default workspace when omitted, but reusing an explicit `Workspace` is faster in repeated encode/decode workloads.
 
 ## Benchmarks
 
