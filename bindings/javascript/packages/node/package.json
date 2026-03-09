@@ -1,6 +1,6 @@
 {
   "name": "@wkpjs/node",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "wkpCoreCompatibility": "0.3.x",
   "description": "Node.js bindings for WKP core via Node-API",
   "repository": {
