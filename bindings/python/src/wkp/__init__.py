@@ -13,7 +13,7 @@ from shapely.geometry import LineString, MultiLineString, MultiPoint, MultiPolyg
 from . import _core
 
 __core_version__ = _core.core_version()
-__core_compatibility__ = "0.2.x"
+__core_compatibility__ = "0.3.x"
 
 __all__ = [
     "__version__",
