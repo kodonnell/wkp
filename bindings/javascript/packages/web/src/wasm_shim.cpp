@@ -1,4 +1,5 @@
 #include <cstddef>
+#include <cstring>
 #include <cstdint>
 
 #include "wkp/_version.h"
