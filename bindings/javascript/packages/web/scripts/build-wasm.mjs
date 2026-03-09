@@ -28,7 +28,7 @@ const args = [
     '-s', 'ALLOW_MEMORY_GROWTH=1',
     '-s', 'FILESYSTEM=0',
     '-s', 'EXPORTED_RUNTIME_METHODS=["cwrap"]',
-    '-s', 'EXPORTED_FUNCTIONS=["_malloc","_free","_wkp_wasm_encode_f64","_wkp_wasm_decode_f64","_wkp_wasm_decode_geometry_header","_wkp_wasm_free_u8","_wkp_wasm_free_f64","_wkp_wasm_core_version","_wkp_wasm_geometry_point","_wkp_wasm_geometry_linestring","_wkp_wasm_geometry_polygon","_wkp_wasm_geometry_multipoint","_wkp_wasm_geometry_multilinestring","_wkp_wasm_geometry_multipolygon"]',
+    '-s', 'EXPORTED_FUNCTIONS=["_malloc","_free","_wkp_wasm_workspace_create","_wkp_wasm_workspace_destroy","_wkp_wasm_workspace_encode_f64","_wkp_wasm_workspace_decode_f64","_wkp_wasm_workspace_encode_geometry_frame_f64","_wkp_wasm_workspace_decode_geometry_frame_f64","_wkp_wasm_decode_geometry_header","_wkp_wasm_core_version","_wkp_wasm_geometry_point","_wkp_wasm_geometry_linestring","_wkp_wasm_geometry_polygon","_wkp_wasm_geometry_multipoint","_wkp_wasm_geometry_multilinestring","_wkp_wasm_geometry_multipolygon","_wkp_wasm_status_ok","_wkp_wasm_status_invalid_argument","_wkp_wasm_status_malformed_input","_wkp_wasm_status_allocation_failed","_wkp_wasm_status_buffer_too_small","_wkp_wasm_status_limit_exceeded","_wkp_wasm_status_internal_error"]',
     '-o', outJs
 ];
 
