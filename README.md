@@ -1,12 +1,9 @@
 [![PyPI version fury.io](https://badge.fury.io/py/wkp.svg)](https://pypi.python.org/pypi/wkp/)
 [![npm version @wkpjs/node](https://badge.fury.io/js/%40wkpjs%2Fnode.svg)](https://badge.fury.io/js/%40wkpjs%2Fnode)
 [![npm version @wkpjs/web](https://badge.fury.io/js/%40wkpjs%2Fweb.svg)](https://badge.fury.io/js/%40wkpjs%2Fweb)
+[![GitHub Pages](https://img.shields.io/website?url=https%3A%2F%2Fkodonnell.github.io%2Fwkp%2F&up_message=live&down_message=down&label=github%20pages)](https://kodonnell.github.io/wkp/)
 
 # WKP - Well Known Polylines
-
-## Demo
-
-- GitHub Pages: https://kodonnell.github.io/wkp/
 
 WKP is a compact string-based geometry encoding format inspired by Google Polyline, but extended for:
 
@@ -17,6 +14,10 @@ WKP is a compact string-based geometry encoding format inspired by Google Polyli
 Compared to WKT, WKP is typically 10x smaller and encodes/decodes 8x/20x faster. Compared to WKB, WKP is typically 4x smaller and encodes/decodes 2x/0.7x faster. See here[^1].
 
 [^1]: In python run `python .\bindings\python\benchmark\benchmark.py --linestring-points=10000 --precisions=5 --max-iterations=1000 --max-duration=1`. Use 5dp as that's Google Polyline standard. Compare with WKT full precision (as that's usual behaviour as it's uncommon for users to round all coordinates to 5dp before encoding as wkt). Use a realistic example of NZ coastline vs a random example. Encode: WKP=0.31ms, WKB=0.65ms, WKT=2.13ms. Decode: WKP=.15ms, WKB=0.11ms, WKT=6.18ms. Size: WKP=43kb, WKB=156kb, WKT=380kb.
+
+## Demo
+
+GitHub Pages: https://kodonnell.github.io/wkp/
 
 ## Architecture (ABI-first)
 
