@@ -36,13 +36,13 @@ python -m build bindings/python
 pytest bindings/python/tests
 ```
 
-## GeometryEncoder example
+## Workspace API example
 
 ```python
 from shapely.geometry import LineString
-from wkp import GeometryEncoder
+from wkp import Workspace, decode, encode_linestring
 
-encoder = GeometryEncoder(precision=6, dimensions=2)
+workspace = Workspace()
 
 geom = LineString([
 	(174.776, -41.289),
@@ -50,27 +50,54 @@ geom = LineString([
 	(174.778, -41.291),
 ])
 
-encoded = encoder.encode(geom)
-decoded = GeometryEncoder.decode(encoded)
+encoded = encode_linestring(geom, precision=6, workspace=workspace)
+decoded = decode(encoded, workspace=workspace)
 
 print(encoded)
 print(decoded.version, decoded.precision, decoded.dimensions)
 print(decoded.geometry.wkt)
 ```
 
+This workspace-first pattern is recommended for performance because it reuses internal buffers across calls.
+
+## Convenience usage (no workspace)
+
+You can call the same functions without passing a workspace:
+
+```python
+from shapely.geometry import LineString
+from wkp import decode, encode_linestring
+
+geom = LineString([(0, 0), (1, 1), (2, 2)])
+encoded = encode_linestring(geom, precision=6)
+decoded = decode(encoded)
+```
+
+This is simpler, but slower for repeated operations because it does not let you explicitly reuse a dedicated workspace.
+
 ## Benchmark
 
 From repo root:
 
 ```sh
-python bindings/python/benchmark/benchmark.py --linestring-points=10000 --precisions=5
+python bindings/python/benchmark/benchmark.py --linestring-points=10000 --precisions=5 --max-iterations=1000 --max-duration=1
 ```
 
-You can also run with defaults:
+Example results:
 
-```sh
-python bindings/python/benchmark/benchmark.py
-```
+| Method          | Source   | kb    | Encode (ms) | Decode (ms) | Total (ms) | Iters |
+| --------------- | -------- | ----- | ----------- | ----------- | ---------- | ----- |
+| shapely_wkb     | nz-coast | 156.3 | 0.54 ± 0.04 | 0.10 ± 0.01 | 0.64       | 2000  |
+| shapely_wkt     | nz-coast | 379.7 | 1.73 ± 0.09 | 5.16 ± 0.29 | 6.89       | 768   |
+| shapely_wkt_5dp | nz-coast | 202.8 | 1.29 ± 0.07 | 2.63 ± 0.09 | 3.92       | 1154  |
+| wkp-5p-bytes    | nz-coast | 42.9  | 0.27 ± 0.02 | 0.15 ± 0.01 | 0.42       | 2000  |
+| wkp-5p-str      | nz-coast | 42.9  | 0.27 ± 0.02 | 0.15 ± 0.02 | 0.42       | 2000  |
+| shapely_wkb     | random   | 156.3 | 0.53 ± 0.02 | 0.10 ± 0.01 | 0.63       | 2000  |
+| shapely_wkt     | random   | 378.4 | 1.77 ± 0.08 | 4.87 ± 0.21 | 6.64       | 760   |
+| shapely_wkt_5dp | random   | 163.9 | 1.37 ± 0.09 | 2.71 ± 0.12 | 4.08       | 1090  |
+| wkp-5p-bytes    | random   | 72.2  | 0.35 ± 0.37 | 0.19 ± 0.02 | 0.54       | 2000  |
+| wkp-5p-str      | random   | 72.2  | 0.31 ± 0.03 | 0.19 ± 0.04 | 0.50       | 2000  |
+
 
 ## Packaging / release
 

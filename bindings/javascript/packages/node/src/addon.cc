@@ -1,6 +1,7 @@
 #include <napi.h>
 
 #include <cstring>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -141,30 +142,33 @@ namespace
         std::vector<int> precisions = to_precisions(env, info[2]);
 
         char error_message[512] = {0};
-        std::vector<uint8_t> scratch(4096);
+        wkp_workspace *workspace = nullptr;
+        auto status = wkp_workspace_create(4096, 256, -1, -1, &workspace, error_message, sizeof(error_message));
+        throw_for_status(env, status, error_message);
 
-        while (true)
+        const uint8_t *encoded_data = nullptr;
+        size_t encoded_size = 0;
+        status = wkp_workspace_encode_f64(
+            workspace,
+            values.data(),
+            values.size(),
+            dimensions,
+            precisions.data(),
+            precisions.size(),
+            &encoded_data,
+            &encoded_size,
+            error_message,
+            sizeof(error_message));
+
+        if (status != WKP_STATUS_OK)
         {
-            wkp_u8_buffer out{scratch.data(), scratch.size()};
-            const wkp_status status = wkp_encode_f64_into(
-                values.data(),
-                values.size(),
-                dimensions,
-                precisions.data(),
-                precisions.size(),
-                &out,
-                error_message,
-                sizeof(error_message));
-
-            if (status == WKP_STATUS_BUFFER_TOO_SMALL)
-            {
-                scratch.resize(out.size);
-                continue;
-            }
-
+            wkp_workspace_destroy(workspace);
             throw_for_status(env, status, error_message);
-            return Napi::Buffer<uint8_t>::Copy(env, scratch.data(), out.size);
         }
+
+        Napi::Value out = Napi::Buffer<uint8_t>::Copy(env, encoded_data, encoded_size);
+        wkp_workspace_destroy(workspace);
+        return out;
     }
 
     Napi::Value DecodeF64(const Napi::CallbackInfo &info)
@@ -187,32 +191,37 @@ namespace
         std::vector<int> precisions = to_precisions(env, info[2]);
 
         char error_message[512] = {0};
-        std::vector<double> scratch(std::max<size_t>(dimensions, 64));
+        wkp_workspace *workspace = nullptr;
+        auto status = wkp_workspace_create(4096, 256, -1, -1, &workspace, error_message, sizeof(error_message));
+        throw_for_status(env, status, error_message);
 
-        while (true)
+        const double *decoded_data = nullptr;
+        size_t decoded_size = 0;
+        status = wkp_workspace_decode_f64(
+            workspace,
+            encoded.data(),
+            encoded.size(),
+            dimensions,
+            precisions.data(),
+            precisions.size(),
+            &decoded_data,
+            &decoded_size,
+            error_message,
+            sizeof(error_message));
+
+        if (status != WKP_STATUS_OK)
         {
-            wkp_f64_buffer out{scratch.data(), scratch.size()};
-            const wkp_status status = wkp_decode_f64_into(
-                encoded.data(),
-                encoded.size(),
-                dimensions,
-                precisions.data(),
-                precisions.size(),
-                &out,
-                error_message,
-                sizeof(error_message));
-
-            if (status == WKP_STATUS_BUFFER_TOO_SMALL)
-            {
-                scratch.resize(out.size);
-                continue;
-            }
-
+            wkp_workspace_destroy(workspace);
             throw_for_status(env, status, error_message);
-            Napi::ArrayBuffer buffer = Napi::ArrayBuffer::New(env, out.size * sizeof(double));
-            std::memcpy(buffer.Data(), scratch.data(), out.size * sizeof(double));
-            return Napi::Float64Array::New(env, out.size, buffer, 0, napi_float64_array);
         }
+
+        Napi::ArrayBuffer buffer = Napi::ArrayBuffer::New(env, decoded_size * sizeof(double));
+        if (decoded_size > 0)
+        {
+            std::memcpy(buffer.Data(), decoded_data, decoded_size * sizeof(double));
+        }
+        wkp_workspace_destroy(workspace);
+        return Napi::Float64Array::New(env, decoded_size, buffer, 0, napi_float64_array);
     }
 
     Napi::Value DecodeGeometryHeader(const Napi::CallbackInfo &info)
@@ -251,6 +260,384 @@ namespace
         return out;
     }
 
+    std::vector<size_t> to_counts(const Napi::Env &env, const Napi::Value &value, const char *name)
+    {
+        if (!value.IsArray())
+        {
+            throw Napi::TypeError::New(env, std::string(name) + " must be an array of integers");
+        }
+
+        Napi::Array array = value.As<Napi::Array>();
+        std::vector<size_t> out;
+        out.reserve(array.Length());
+        for (uint32_t i = 0; i < array.Length(); ++i)
+        {
+            Napi::Value item = array.Get(i);
+            if (!item.IsNumber())
+            {
+                throw Napi::TypeError::New(env, std::string(name) + " must contain only numbers");
+            }
+            const int64_t parsed = item.As<Napi::Number>().Int64Value();
+            if (parsed < 0)
+            {
+                throw Napi::TypeError::New(env, std::string(name) + " cannot contain negative values");
+            }
+            out.push_back(static_cast<size_t>(parsed));
+        }
+        return out;
+    }
+
+    Napi::Value encode_geometry_frame_with_workspace(
+        const Napi::Env &env,
+        int geometry_type,
+        const std::vector<double> &coords,
+        size_t dimensions,
+        int precision,
+        const std::vector<size_t> &group_segment_counts,
+        const std::vector<size_t> &segment_point_counts)
+    {
+        char error_message[512] = {0};
+        wkp_workspace *workspace = nullptr;
+        wkp_status status = wkp_workspace_create(4096, 256, -1, -1, &workspace, error_message, sizeof(error_message));
+        throw_for_status(env, status, error_message);
+
+        const uint8_t *out_data = nullptr;
+        size_t out_size = 0;
+        status = wkp_workspace_encode_geometry_frame_f64(
+            workspace,
+            geometry_type,
+            coords.data(),
+            coords.size(),
+            dimensions,
+            precision,
+            group_segment_counts.data(),
+            group_segment_counts.size(),
+            segment_point_counts.data(),
+            segment_point_counts.size(),
+            &out_data,
+            &out_size,
+            error_message,
+            sizeof(error_message));
+
+        Napi::Value result = env.Null();
+        if (status == WKP_STATUS_OK)
+        {
+            result = Napi::Buffer<uint8_t>::Copy(env, out_data, out_size);
+        }
+
+        wkp_workspace_destroy(workspace);
+        throw_for_status(env, status, error_message);
+        return result;
+    }
+
+    Napi::Value EncodePointF64(const Napi::CallbackInfo &info)
+    {
+        Napi::Env env = info.Env();
+        if (info.Length() < 3)
+        {
+            throw Napi::TypeError::New(env, "encodePointF64(coords, dimensions, precision) expects 3 arguments");
+        }
+
+        std::vector<double> coords = to_values(env, info[0]);
+        if (!info[1].IsNumber() || !info[2].IsNumber())
+        {
+            throw Napi::TypeError::New(env, "dimensions and precision must be numbers");
+        }
+        const size_t dimensions = static_cast<size_t>(info[1].As<Napi::Number>().Uint32Value());
+        const int precision = info[2].As<Napi::Number>().Int32Value();
+
+        return encode_geometry_frame_with_workspace(
+            env,
+            WKP_GEOMETRY_POINT,
+            coords,
+            dimensions,
+            precision,
+            std::vector<size_t>{1},
+            std::vector<size_t>{1});
+    }
+
+    Napi::Value EncodeLineStringF64(const Napi::CallbackInfo &info)
+    {
+        Napi::Env env = info.Env();
+        if (info.Length() < 3)
+        {
+            throw Napi::TypeError::New(env, "encodeLineStringF64(coords, dimensions, precision) expects 3 arguments");
+        }
+
+        std::vector<double> coords = to_values(env, info[0]);
+        if (!info[1].IsNumber() || !info[2].IsNumber())
+        {
+            throw Napi::TypeError::New(env, "dimensions and precision must be numbers");
+        }
+        const size_t dimensions = static_cast<size_t>(info[1].As<Napi::Number>().Uint32Value());
+        const int precision = info[2].As<Napi::Number>().Int32Value();
+
+        return encode_geometry_frame_with_workspace(
+            env,
+            WKP_GEOMETRY_LINESTRING,
+            coords,
+            dimensions,
+            precision,
+            std::vector<size_t>{1},
+            std::vector<size_t>{coords.size() / dimensions});
+    }
+
+    Napi::Value EncodePolygonF64(const Napi::CallbackInfo &info)
+    {
+        Napi::Env env = info.Env();
+        if (info.Length() < 4)
+        {
+            throw Napi::TypeError::New(env, "encodePolygonF64(coords, dimensions, precision, ringPointCounts) expects 4 arguments");
+        }
+
+        std::vector<double> coords = to_values(env, info[0]);
+        if (!info[1].IsNumber() || !info[2].IsNumber())
+        {
+            throw Napi::TypeError::New(env, "dimensions and precision must be numbers");
+        }
+        const size_t dimensions = static_cast<size_t>(info[1].As<Napi::Number>().Uint32Value());
+        const int precision = info[2].As<Napi::Number>().Int32Value();
+        std::vector<size_t> ring_counts = to_counts(env, info[3], "ringPointCounts");
+
+        return encode_geometry_frame_with_workspace(
+            env,
+            WKP_GEOMETRY_POLYGON,
+            coords,
+            dimensions,
+            precision,
+            std::vector<size_t>{ring_counts.size()},
+            ring_counts);
+    }
+
+    Napi::Value EncodeMultiPointF64(const Napi::CallbackInfo &info)
+    {
+        Napi::Env env = info.Env();
+        if (info.Length() < 4)
+        {
+            throw Napi::TypeError::New(env, "encodeMultiPointF64(coords, dimensions, precision, pointCount) expects 4 arguments");
+        }
+
+        std::vector<double> coords = to_values(env, info[0]);
+        if (!info[1].IsNumber() || !info[2].IsNumber() || !info[3].IsNumber())
+        {
+            throw Napi::TypeError::New(env, "dimensions, precision, and pointCount must be numbers");
+        }
+        const size_t dimensions = static_cast<size_t>(info[1].As<Napi::Number>().Uint32Value());
+        const int precision = info[2].As<Napi::Number>().Int32Value();
+        const size_t point_count = static_cast<size_t>(info[3].As<Napi::Number>().Uint32Value());
+
+        std::vector<size_t> group_segment_counts(point_count, 1);
+        std::vector<size_t> segment_point_counts(point_count, 1);
+        return encode_geometry_frame_with_workspace(
+            env,
+            WKP_GEOMETRY_MULTIPOINT,
+            coords,
+            dimensions,
+            precision,
+            group_segment_counts,
+            segment_point_counts);
+    }
+
+    Napi::Value EncodeMultiLineStringF64(const Napi::CallbackInfo &info)
+    {
+        Napi::Env env = info.Env();
+        if (info.Length() < 4)
+        {
+            throw Napi::TypeError::New(env, "encodeMultiLineStringF64(coords, dimensions, precision, linePointCounts) expects 4 arguments");
+        }
+
+        std::vector<double> coords = to_values(env, info[0]);
+        if (!info[1].IsNumber() || !info[2].IsNumber())
+        {
+            throw Napi::TypeError::New(env, "dimensions and precision must be numbers");
+        }
+        const size_t dimensions = static_cast<size_t>(info[1].As<Napi::Number>().Uint32Value());
+        const int precision = info[2].As<Napi::Number>().Int32Value();
+        std::vector<size_t> line_counts = to_counts(env, info[3], "linePointCounts");
+
+        std::vector<size_t> group_segment_counts(line_counts.size(), 1);
+        return encode_geometry_frame_with_workspace(
+            env,
+            WKP_GEOMETRY_MULTILINESTRING,
+            coords,
+            dimensions,
+            precision,
+            group_segment_counts,
+            line_counts);
+    }
+
+    Napi::Value EncodeMultiPolygonF64(const Napi::CallbackInfo &info)
+    {
+        Napi::Env env = info.Env();
+        if (info.Length() < 5)
+        {
+            throw Napi::TypeError::New(env, "encodeMultiPolygonF64(coords, dimensions, precision, polygonRingCounts, ringPointCounts) expects 5 arguments");
+        }
+
+        std::vector<double> coords = to_values(env, info[0]);
+        if (!info[1].IsNumber() || !info[2].IsNumber())
+        {
+            throw Napi::TypeError::New(env, "dimensions and precision must be numbers");
+        }
+        const size_t dimensions = static_cast<size_t>(info[1].As<Napi::Number>().Uint32Value());
+        const int precision = info[2].As<Napi::Number>().Int32Value();
+        std::vector<size_t> polygon_ring_counts = to_counts(env, info[3], "polygonRingCounts");
+        std::vector<size_t> ring_point_counts = to_counts(env, info[4], "ringPointCounts");
+
+        return encode_geometry_frame_with_workspace(
+            env,
+            WKP_GEOMETRY_MULTIPOLYGON,
+            coords,
+            dimensions,
+            precision,
+            polygon_ring_counts,
+            ring_point_counts);
+    }
+
+    Napi::Array rows_from_coords(const Napi::Env &env, const double *coords, size_t point_count, int dimensions)
+    {
+        if (dimensions <= 0)
+        {
+            throw Napi::Error::New(env, "Decoded geometry segment has invalid coordinate length");
+        }
+
+        Napi::Array rows = Napi::Array::New(env, point_count);
+        for (size_t r = 0; r < point_count; ++r)
+        {
+            Napi::Array row = Napi::Array::New(env, static_cast<uint32_t>(dimensions));
+            for (int d = 0; d < dimensions; ++d)
+            {
+                row.Set(static_cast<uint32_t>(d), Napi::Number::New(env, coords[(r * static_cast<size_t>(dimensions)) + static_cast<size_t>(d)]));
+            }
+            rows.Set(static_cast<uint32_t>(r), row);
+        }
+        return rows;
+    }
+
+    Napi::Value DecodeGeometryFrame(const Napi::CallbackInfo &info)
+    {
+        Napi::Env env = info.Env();
+        if (info.Length() < 1)
+        {
+            throw Napi::TypeError::New(env, "decodeGeometryFrame(encoded) expects 1 argument");
+        }
+
+        std::vector<uint8_t> encoded = to_encoded_bytes(env, info[0]);
+        char error_message[512] = {0};
+
+        wkp_workspace *workspace = nullptr;
+        wkp_status status = wkp_workspace_create(4096, 256, -1, -1, &workspace, error_message, sizeof(error_message));
+        throw_for_status(env, status, error_message);
+
+        struct WorkspaceHolder
+        {
+            wkp_workspace *ptr;
+            ~WorkspaceHolder()
+            {
+                wkp_workspace_destroy(ptr);
+            }
+        } workspace_holder{workspace};
+
+        const wkp_geometry_frame_f64 *frame = nullptr;
+        status = wkp_workspace_decode_geometry_frame_f64(
+            workspace,
+            encoded.data(),
+            encoded.size(),
+            &frame,
+            error_message,
+            sizeof(error_message));
+        if (status != WKP_STATUS_OK)
+        {
+            throw_for_status(env, status, error_message);
+        }
+
+        Napi::Object geometry = Napi::Object::New(env);
+        const int gtype = frame->geometry_type;
+        const int dims = frame->dimensions;
+        size_t segment_index = 0;
+        size_t coord_index = 0;
+
+        auto next_segment_rows = [&]() -> Napi::Array
+        {
+            const size_t point_count = frame->segment_point_counts[segment_index++];
+            const double *segment_coords = frame->coords + coord_index;
+            coord_index += point_count * static_cast<size_t>(dims);
+            return rows_from_coords(env, segment_coords, point_count, dims);
+        };
+
+        if (gtype == WKP_GEOMETRY_POINT)
+        {
+            geometry.Set("type", Napi::String::New(env, "Point"));
+            const Napi::Array rows = next_segment_rows();
+            geometry.Set("coordinates", rows.Get(static_cast<uint32_t>(0)));
+        }
+        else if (gtype == WKP_GEOMETRY_LINESTRING)
+        {
+            geometry.Set("type", Napi::String::New(env, "LineString"));
+            geometry.Set("coordinates", next_segment_rows());
+        }
+        else if (gtype == WKP_GEOMETRY_POLYGON)
+        {
+            geometry.Set("type", Napi::String::New(env, "Polygon"));
+            const size_t ring_count = frame->group_segment_counts[0];
+            Napi::Array rings = Napi::Array::New(env, ring_count);
+            for (size_t i = 0; i < ring_count; ++i)
+            {
+                rings.Set(static_cast<uint32_t>(i), next_segment_rows());
+            }
+            geometry.Set("coordinates", rings);
+        }
+        else if (gtype == WKP_GEOMETRY_MULTIPOINT)
+        {
+            geometry.Set("type", Napi::String::New(env, "MultiPoint"));
+            Napi::Array points = Napi::Array::New(env, frame->group_count);
+            for (size_t i = 0; i < frame->group_count; ++i)
+            {
+                const Napi::Array rows = next_segment_rows();
+                points.Set(static_cast<uint32_t>(i), rows.Get(static_cast<uint32_t>(0)));
+            }
+            geometry.Set("coordinates", points);
+        }
+        else if (gtype == WKP_GEOMETRY_MULTILINESTRING)
+        {
+            geometry.Set("type", Napi::String::New(env, "MultiLineString"));
+            Napi::Array lines = Napi::Array::New(env, frame->group_count);
+            for (size_t i = 0; i < frame->group_count; ++i)
+            {
+                lines.Set(static_cast<uint32_t>(i), next_segment_rows());
+            }
+            geometry.Set("coordinates", lines);
+        }
+        else if (gtype == WKP_GEOMETRY_MULTIPOLYGON)
+        {
+            geometry.Set("type", Napi::String::New(env, "MultiPolygon"));
+            Napi::Array polygons = Napi::Array::New(env, frame->group_count);
+            for (size_t p = 0; p < frame->group_count; ++p)
+            {
+                const size_t ring_count = frame->group_segment_counts[p];
+                Napi::Array rings = Napi::Array::New(env, ring_count);
+                for (size_t r = 0; r < ring_count; ++r)
+                {
+                    rings.Set(static_cast<uint32_t>(r), next_segment_rows());
+                }
+                polygons.Set(static_cast<uint32_t>(p), rings);
+            }
+            geometry.Set("coordinates", polygons);
+        }
+        else
+        {
+            throw Napi::TypeError::New(env, "Unsupported geometry type in header");
+        }
+
+        Napi::Object out = Napi::Object::New(env);
+        out.Set("version", Napi::Number::New(env, frame->version));
+        out.Set("precision", Napi::Number::New(env, frame->precision));
+        out.Set("dimensions", Napi::Number::New(env, frame->dimensions));
+        out.Set("geometry", geometry);
+
+        return out;
+    }
+
 } // namespace
 
 Napi::Object Init(Napi::Env env, Napi::Object exports)
@@ -258,6 +645,13 @@ Napi::Object Init(Napi::Env env, Napi::Object exports)
     exports.Set("encodeF64", Napi::Function::New(env, EncodeF64));
     exports.Set("decodeF64", Napi::Function::New(env, DecodeF64));
     exports.Set("decodeGeometryHeader", Napi::Function::New(env, DecodeGeometryHeader));
+    exports.Set("decodeGeometryFrame", Napi::Function::New(env, DecodeGeometryFrame));
+    exports.Set("encodePointF64", Napi::Function::New(env, EncodePointF64));
+    exports.Set("encodeLineStringF64", Napi::Function::New(env, EncodeLineStringF64));
+    exports.Set("encodePolygonF64", Napi::Function::New(env, EncodePolygonF64));
+    exports.Set("encodeMultiPointF64", Napi::Function::New(env, EncodeMultiPointF64));
+    exports.Set("encodeMultiLineStringF64", Napi::Function::New(env, EncodeMultiLineStringF64));
+    exports.Set("encodeMultiPolygonF64", Napi::Function::New(env, EncodeMultiPolygonF64));
     exports.Set("coreVersion", Napi::Function::New(env, [](const Napi::CallbackInfo &info)
                                                    { return Napi::String::New(info.Env(), WKP_CORE_VERSION); }));
 

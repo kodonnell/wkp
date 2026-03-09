@@ -1,4 +1,5 @@
 #include <cstddef>
+#include <cstring>
 #include <cstdint>
 #include <cstdlib>
 
@@ -24,51 +25,57 @@ extern "C"
             return static_cast<int>(WKP_STATUS_INVALID_ARGUMENT);
         }
 
-        std::size_t capacity = (value_count * 4) + 64;
-        uint8_t *buffer = static_cast<uint8_t *>(std::malloc(capacity));
-        if (buffer == nullptr)
+        char local_error[256] = {0};
+        char *err = error_message != nullptr ? error_message : local_error;
+        const size_t err_cap = error_message != nullptr ? error_message_capacity : sizeof(local_error);
+
+        wkp_workspace *workspace = nullptr;
+        wkp_status status = wkp_workspace_create(4096, 256, -1, -1, &workspace, err, err_cap);
+        if (status != WKP_STATUS_OK)
         {
-            return static_cast<int>(WKP_STATUS_ALLOCATION_FAILED);
-        }
-
-        while (true)
-        {
-            wkp_u8_buffer out{buffer, capacity};
-            const wkp_status status = wkp_encode_f64_into(
-                values,
-                value_count,
-                dimensions,
-                precisions,
-                precision_count,
-                &out,
-                error_message,
-                error_message_capacity);
-
-            if (status == WKP_STATUS_BUFFER_TOO_SMALL)
-            {
-                capacity = out.size;
-                uint8_t *next = static_cast<uint8_t *>(std::realloc(buffer, capacity));
-                if (next == nullptr)
-                {
-                    std::free(buffer);
-                    return static_cast<int>(WKP_STATUS_ALLOCATION_FAILED);
-                }
-                buffer = next;
-                continue;
-            }
-
-            if (status != WKP_STATUS_OK)
-            {
-                std::free(buffer);
-                *out_data = nullptr;
-                *out_size = 0;
-                return static_cast<int>(status);
-            }
-
-            *out_data = buffer;
-            *out_size = out.size;
             return static_cast<int>(status);
         }
+
+        const uint8_t *workspace_data = nullptr;
+        std::size_t workspace_size = 0;
+        status = wkp_workspace_encode_f64(
+            workspace,
+            values,
+            value_count,
+            dimensions,
+            precisions,
+            precision_count,
+            &workspace_data,
+            &workspace_size,
+            err,
+            err_cap);
+
+        if (status != WKP_STATUS_OK)
+        {
+            wkp_workspace_destroy(workspace);
+            *out_data = nullptr;
+            *out_size = 0;
+            return static_cast<int>(status);
+        }
+
+        uint8_t *buffer = nullptr;
+        if (workspace_size > 0)
+        {
+            buffer = static_cast<uint8_t *>(std::malloc(workspace_size));
+            if (buffer == nullptr)
+            {
+                wkp_workspace_destroy(workspace);
+                *out_data = nullptr;
+                *out_size = 0;
+                return static_cast<int>(WKP_STATUS_ALLOCATION_FAILED);
+            }
+            std::memcpy(buffer, workspace_data, workspace_size);
+        }
+
+        wkp_workspace_destroy(workspace);
+        *out_data = buffer;
+        *out_size = workspace_size;
+        return static_cast<int>(WKP_STATUS_OK);
     }
 
     int wkp_wasm_decode_f64(
@@ -87,55 +94,57 @@ extern "C"
             return static_cast<int>(WKP_STATUS_INVALID_ARGUMENT);
         }
 
-        std::size_t capacity = (encoded_size > 0 ? encoded_size : 1) * dimensions;
-        if (capacity == 0)
+        char local_error[256] = {0};
+        char *err = error_message != nullptr ? error_message : local_error;
+        const size_t err_cap = error_message != nullptr ? error_message_capacity : sizeof(local_error);
+
+        wkp_workspace *workspace = nullptr;
+        wkp_status status = wkp_workspace_create(4096, 256, -1, -1, &workspace, err, err_cap);
+        if (status != WKP_STATUS_OK)
         {
-            capacity = dimensions > 0 ? dimensions : 1;
-        }
-        double *buffer = static_cast<double *>(std::malloc(sizeof(double) * capacity));
-        if (buffer == nullptr)
-        {
-            return static_cast<int>(WKP_STATUS_ALLOCATION_FAILED);
-        }
-
-        while (true)
-        {
-            wkp_f64_buffer out{buffer, capacity};
-            const wkp_status status = wkp_decode_f64_into(
-                encoded,
-                encoded_size,
-                dimensions,
-                precisions,
-                precision_count,
-                &out,
-                error_message,
-                error_message_capacity);
-
-            if (status == WKP_STATUS_BUFFER_TOO_SMALL)
-            {
-                capacity = out.size;
-                double *next = static_cast<double *>(std::realloc(buffer, sizeof(double) * capacity));
-                if (next == nullptr)
-                {
-                    std::free(buffer);
-                    return static_cast<int>(WKP_STATUS_ALLOCATION_FAILED);
-                }
-                buffer = next;
-                continue;
-            }
-
-            if (status != WKP_STATUS_OK)
-            {
-                std::free(buffer);
-                *out_data = nullptr;
-                *out_size = 0;
-                return static_cast<int>(status);
-            }
-
-            *out_data = buffer;
-            *out_size = out.size;
             return static_cast<int>(status);
         }
+
+        const double *workspace_data = nullptr;
+        std::size_t workspace_size = 0;
+        status = wkp_workspace_decode_f64(
+            workspace,
+            encoded,
+            encoded_size,
+            dimensions,
+            precisions,
+            precision_count,
+            &workspace_data,
+            &workspace_size,
+            err,
+            err_cap);
+
+        if (status != WKP_STATUS_OK)
+        {
+            wkp_workspace_destroy(workspace);
+            *out_data = nullptr;
+            *out_size = 0;
+            return static_cast<int>(status);
+        }
+
+        double *buffer = nullptr;
+        if (workspace_size > 0)
+        {
+            buffer = static_cast<double *>(std::malloc(sizeof(double) * workspace_size));
+            if (buffer == nullptr)
+            {
+                wkp_workspace_destroy(workspace);
+                *out_data = nullptr;
+                *out_size = 0;
+                return static_cast<int>(WKP_STATUS_ALLOCATION_FAILED);
+            }
+            std::memcpy(buffer, workspace_data, sizeof(double) * workspace_size);
+        }
+
+        wkp_workspace_destroy(workspace);
+        *out_data = buffer;
+        *out_size = workspace_size;
+        return static_cast<int>(WKP_STATUS_OK);
     }
 
     int wkp_wasm_decode_geometry_header(

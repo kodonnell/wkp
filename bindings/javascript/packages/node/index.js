@@ -44,13 +44,6 @@ const EncodedGeometryType = Object.freeze({ ...core.EncodedGeometryType });
 
 const decoder = new TextDecoder();
 
-function pad2(value, name) {
-    if (!Number.isInteger(value) || value < 0 || value > 99) {
-        throw new TypeError(`${name} must be an integer in [0, 99]`);
-    }
-    return String(value).padStart(2, '0');
-}
-
 function normalizeEncodedBytes(encodedValue) {
     if (typeof encodedValue === 'string') {
         return Buffer.from(encodedValue, 'ascii');
@@ -130,6 +123,22 @@ function flattenCoordRowsInto(rows, dimensions, label, state) {
         }
     }
     return out.subarray(0, needed);
+}
+
+function rowsFromFlatValues(values, dimensions) {
+    if (values.length % dimensions !== 0) {
+        throw new TypeError('Decoded coordinate vector has invalid length');
+    }
+    const rowCount = values.length / dimensions;
+    const rows = new Array(rowCount);
+    for (let rowIndex = 0; rowIndex < rowCount; rowIndex += 1) {
+        const row = new Array(dimensions);
+        for (let dim = 0; dim < dimensions; dim += 1) {
+            row[dim] = values[(rowIndex * dimensions) + dim];
+        }
+        rows[rowIndex] = row;
+    }
+    return rows;
 }
 
 function decodePolylineSegment(segment, dimensions, precision) {
@@ -215,152 +224,259 @@ function decodeBody(body, geometryType, dimensions, precision) {
     throw new TypeError(`Unsupported geometry type in header: ${geometryType}`);
 }
 
-function encodeBody(geometry, dimensions, precision, encodeRows) {
+function inferDimensionsFromPosition(position, label) {
+    if (!Array.isArray(position) || position.length === 0) {
+        throw new TypeError(`${label} must contain at least one coordinate value`);
+    }
+    for (const value of position) {
+        if (typeof value !== 'number' || !Number.isFinite(value)) {
+            throw new TypeError(`${label} contains non-finite coordinate values`);
+        }
+    }
+    return position.length;
+}
+
+function geometryDimensions(geometry) {
     if (!geometry || typeof geometry !== 'object' || typeof geometry.type !== 'string') {
         throw new TypeError('geometry must be an object with GeoJSON-like type and coordinates');
     }
 
     if (geometry.type === 'Point') {
-        return [EncodedGeometryType.POINT, encodeRows([geometry.coordinates], 'point coordinate')];
+        return inferDimensionsFromPosition(geometry.coordinates, 'point coordinate');
+    }
+    if (geometry.type === 'LineString' || geometry.type === 'MultiPoint') {
+        if (!Array.isArray(geometry.coordinates) || geometry.coordinates.length === 0) {
+            throw new TypeError(`${geometry.type} coordinates must contain at least one position`);
+        }
+        return inferDimensionsFromPosition(geometry.coordinates[0], `${geometry.type} coordinate`);
+    }
+    if (geometry.type === 'Polygon' || geometry.type === 'MultiLineString') {
+        if (!Array.isArray(geometry.coordinates) || geometry.coordinates.length === 0 || !Array.isArray(geometry.coordinates[0]) || geometry.coordinates[0].length === 0) {
+            throw new TypeError(`${geometry.type} coordinates must contain at least one part with one position`);
+        }
+        return inferDimensionsFromPosition(geometry.coordinates[0][0], `${geometry.type} coordinate`);
+    }
+    if (geometry.type === 'MultiPolygon') {
+        if (
+            !Array.isArray(geometry.coordinates)
+            || geometry.coordinates.length === 0
+            || !Array.isArray(geometry.coordinates[0])
+            || geometry.coordinates[0].length === 0
+            || !Array.isArray(geometry.coordinates[0][0])
+            || geometry.coordinates[0][0].length === 0
+        ) {
+            throw new TypeError('MultiPolygon coordinates must contain at least one polygon/ring/position');
+        }
+        return inferDimensionsFromPosition(geometry.coordinates[0][0][0], 'MultiPolygon coordinate');
+    }
+
+    throw new TypeError(`Unsupported geometry type: ${geometry.type}`);
+}
+
+function encodeGeometry(geometry, precision, dimensions, workspace) {
+    const ws = workspace;
+    if (!geometry || typeof geometry !== 'object' || typeof geometry.type !== 'string') {
+        throw new TypeError('geometry must be an object with GeoJSON-like type and coordinates');
+    }
+
+    if (geometry.type === 'Point') {
+        const values = flattenCoordRowsInto([geometry.coordinates], dimensions, 'point coordinate', ws._valueScratch);
+        return decoder.decode(core.encodePointF64(values, dimensions, precision));
     }
 
     if (geometry.type === 'LineString') {
-        return [EncodedGeometryType.LINESTRING, encodeRows(geometry.coordinates, 'linestring coordinates')];
+        const values = flattenCoordRowsInto(geometry.coordinates, dimensions, 'linestring coordinates', ws._valueScratch);
+        return decoder.decode(core.encodeLineStringF64(values, dimensions, precision));
     }
 
     if (geometry.type === 'Polygon') {
         if (!Array.isArray(geometry.coordinates) || geometry.coordinates.length === 0) {
             throw new TypeError('polygon coordinates must contain at least one ring');
         }
-        const body = geometry.coordinates.map((ring) => encodeRows(ring, 'polygon ring')).join(',');
-        return [EncodedGeometryType.POLYGON, body];
+        const ringPointCounts = [];
+        const flat = [];
+        for (const ring of geometry.coordinates) {
+            const ringValues = flattenCoordRows(ring, dimensions, 'polygon ring');
+            ringPointCounts.push(ring.length);
+            for (const v of ringValues) {
+                flat.push(v);
+            }
+        }
+        return decoder.decode(core.encodePolygonF64(Float64Array.from(flat), dimensions, precision, ringPointCounts));
     }
 
     if (geometry.type === 'MultiPoint') {
         if (!Array.isArray(geometry.coordinates) || geometry.coordinates.length === 0) {
             throw new TypeError('multipoint coordinates must contain at least one point');
         }
-        const body = geometry.coordinates.map((point) => encodeRows([point], 'multipoint point')).join(';');
-        return [EncodedGeometryType.MULTIPOINT, body];
+        const values = flattenCoordRowsInto(geometry.coordinates, dimensions, 'multipoint points', ws._valueScratch);
+        return decoder.decode(core.encodeMultiPointF64(values, dimensions, precision, geometry.coordinates.length));
     }
 
     if (geometry.type === 'MultiLineString') {
         if (!Array.isArray(geometry.coordinates) || geometry.coordinates.length === 0) {
             throw new TypeError('multilinestring coordinates must contain at least one line');
         }
-        const body = geometry.coordinates.map((line) => encodeRows(line, 'multilinestring part')).join(';');
-        return [EncodedGeometryType.MULTILINESTRING, body];
+        const linePointCounts = [];
+        const flat = [];
+        for (const line of geometry.coordinates) {
+            const lineValues = flattenCoordRows(line, dimensions, 'multilinestring part');
+            linePointCounts.push(line.length);
+            for (const v of lineValues) {
+                flat.push(v);
+            }
+        }
+        return decoder.decode(core.encodeMultiLineStringF64(Float64Array.from(flat), dimensions, precision, linePointCounts));
     }
 
     if (geometry.type === 'MultiPolygon') {
         if (!Array.isArray(geometry.coordinates) || geometry.coordinates.length === 0) {
             throw new TypeError('multipolygon coordinates must contain at least one polygon');
         }
-        const body = geometry.coordinates
-            .map((polygon) => {
-                if (!Array.isArray(polygon) || polygon.length === 0) {
-                    throw new TypeError('each multipolygon part must contain at least one ring');
+
+        const polygonRingCounts = [];
+        const ringPointCounts = [];
+        const flat = [];
+
+        for (const polygon of geometry.coordinates) {
+            if (!Array.isArray(polygon) || polygon.length === 0) {
+                throw new TypeError('each multipolygon part must contain at least one ring');
+            }
+            polygonRingCounts.push(polygon.length);
+            for (const ring of polygon) {
+                const ringValues = flattenCoordRows(ring, dimensions, 'multipolygon ring');
+                ringPointCounts.push(ring.length);
+                for (const v of ringValues) {
+                    flat.push(v);
                 }
-                return polygon.map((ring) => encodeRows(ring, 'multipolygon ring')).join(',');
-            })
-            .join(';');
-        return [EncodedGeometryType.MULTIPOLYGON, body];
+            }
+        }
+
+        return decoder.decode(core.encodeMultiPolygonF64(
+            Float64Array.from(flat),
+            dimensions,
+            precision,
+            polygonRingCounts,
+            ringPointCounts
+        ));
     }
 
     throw new TypeError(`Unsupported geometry type: ${geometry.type}`);
 }
 
-class GeometryEncoder {
-    constructor(precision, dimensions, initialCapacity = 4096) {
-        if (!Number.isInteger(dimensions) || dimensions <= 0 || dimensions > 16) {
-            throw new TypeError('dimensions must be between 1 and 16');
-        }
-        if (!Number.isInteger(precision) || precision < 0 || precision > 99) {
-            throw new TypeError('precision must be an integer in [0, 99]');
-        }
+function decodeGeometry(encodedValue, workspace) {
+    void (workspace);
+    return core.decodeGeometryFrame(encodedValue);
+}
+
+class Workspace {
+    constructor(initialCapacity = 4096) {
         if (!Number.isInteger(initialCapacity) || initialCapacity <= 0) {
             throw new TypeError('initialCapacity must be a positive integer');
         }
-
-        this.precision = precision;
-        this.dimensions = dimensions;
         this.initialCapacity = initialCapacity;
-        this._precisions = [this.precision];
         this._valueScratch = {
-            values: new Float64Array(Math.max(1, Math.ceil(this.initialCapacity / Float64Array.BYTES_PER_ELEMENT)))
+            values: new Float64Array(Math.max(1, Math.ceil(initialCapacity / Float64Array.BYTES_PER_ELEMENT)))
         };
     }
 
-    _encodeRows(rows, label) {
-        const values = flattenCoordRowsInto(rows, this.dimensions, label, this._valueScratch);
-        return decoder.decode(core.encodeF64(values, this.dimensions, this._precisions));
+    encodeF64(values, dimensions, precisions) {
+        return core.encodeF64(values, dimensions, precisions);
     }
 
-    encodeBytes(geometry) {
-        const [geometryType, body] = encodeBody(
-            geometry,
-            this.dimensions,
-            this.precision,
-            (rows, label) => this._encodeRows(rows, label)
-        );
-        const header = `${pad2(1, 'version')}${pad2(this.precision, 'precision')}${pad2(this.dimensions, 'dimensions')}${pad2(geometryType, 'geometry type')}`;
-        return Buffer.from(header + body, 'ascii');
-    }
-
-    encode(geometry) {
-        return this.encodeBytes(geometry).toString('ascii');
-    }
-
-    encodeStr(geometry) {
-        return this.encode(geometry);
-    }
-
-    decodeBytes(encodedValue) {
-        const ascii = toAscii(encodedValue);
-        const [version, precision, dimensions, geometryType] = GeometryEncoder.decodeHeader(ascii);
-        if (precision !== this.precision || dimensions !== this.dimensions) {
-            throw new TypeError(
-                `Encoded geometry has precision=${precision}, dimensions=${dimensions}, but this encoder is precision=${this.precision}, dimensions=${this.dimensions}`
-            );
-        }
-        return {
-            version,
-            precision,
-            dimensions,
-            geometry: decodeBody(ascii.slice(8), geometryType, dimensions, precision)
-        };
-    }
-
-    decodeStr(encoded) {
-        return this.decodeBytes(encoded);
-    }
-
-    static decodeHeader(encodedValue) {
-        return decodeHeaderInternal(encodedValue);
-    }
-
-    static decode(encodedValue) {
-        const [version, precision, dimensions] = GeometryEncoder.decodeHeader(encodedValue);
-        const decoderInstance = new GeometryEncoder(precision, dimensions);
-        const decoded = decoderInstance.decodeBytes(encodedValue);
-        if (decoded.version !== version) {
-            throw new TypeError('Unexpected decoded version mismatch');
-        }
-        return decoded;
+    decodeF64(encoded, dimensions, precisions) {
+        return core.decodeF64(encoded, dimensions, precisions);
     }
 }
 
-function decodeGeometryHeader(encodedValue) {
-    return GeometryEncoder.decodeHeader(encodedValue);
+let defaultWorkspace = null;
+
+function resolveWorkspace(workspace) {
+    if (workspace == null) {
+        if (defaultWorkspace == null) {
+            defaultWorkspace = new Workspace();
+        }
+        return defaultWorkspace;
+    }
+    if (!(workspace instanceof Workspace)) {
+        throw new TypeError('workspace must be a Workspace instance');
+    }
+    return workspace;
 }
+
+function decodeHeader(encodedValue) {
+    return decodeHeaderInternal(encodedValue);
+}
+
+function decode(encodedValue, workspace = undefined) {
+    return decodeGeometry(encodedValue, resolveWorkspace(workspace));
+}
+
+function encodePoint(geometry, precision, workspace = undefined) {
+    if (!geometry || geometry.type !== 'Point') {
+        throw new TypeError('geometry must be a Point geometry');
+    }
+    const dims = geometryDimensions(geometry);
+    return encodeGeometry(geometry, precision, dims, resolveWorkspace(workspace));
+}
+
+function encodeLineString(geometry, precision, workspace = undefined) {
+    if (!geometry || geometry.type !== 'LineString') {
+        throw new TypeError('geometry must be a LineString geometry');
+    }
+    const dims = geometryDimensions(geometry);
+    return encodeGeometry(geometry, precision, dims, resolveWorkspace(workspace));
+}
+
+function encodePolygon(geometry, precision, workspace = undefined) {
+    if (!geometry || geometry.type !== 'Polygon') {
+        throw new TypeError('geometry must be a Polygon geometry');
+    }
+    const dims = geometryDimensions(geometry);
+    return encodeGeometry(geometry, precision, dims, resolveWorkspace(workspace));
+}
+
+function encodeMultiPoint(geometry, precision, workspace = undefined) {
+    if (!geometry || geometry.type !== 'MultiPoint') {
+        throw new TypeError('geometry must be a MultiPoint geometry');
+    }
+    const dims = geometryDimensions(geometry);
+    return encodeGeometry(geometry, precision, dims, resolveWorkspace(workspace));
+}
+
+function encodeMultiLineString(geometry, precision, workspace = undefined) {
+    if (!geometry || geometry.type !== 'MultiLineString') {
+        throw new TypeError('geometry must be a MultiLineString geometry');
+    }
+    const dims = geometryDimensions(geometry);
+    return encodeGeometry(geometry, precision, dims, resolveWorkspace(workspace));
+}
+
+function encodeMultiPolygon(geometry, precision, workspace = undefined) {
+    if (!geometry || geometry.type !== 'MultiPolygon') {
+        throw new TypeError('geometry must be a MultiPolygon geometry');
+    }
+    const dims = geometryDimensions(geometry);
+    return encodeGeometry(geometry, precision, dims, resolveWorkspace(workspace));
+}
+
+const encodeF64 = (values, dimensions, precisions, workspace = undefined) => resolveWorkspace(workspace).encodeF64(values, dimensions, precisions);
+const decodeF64 = (encoded, dimensions, precisions, workspace = undefined) => resolveWorkspace(workspace).decodeF64(encoded, dimensions, precisions);
 
 module.exports = {
     bindingVersion: BINDING_VERSION,
     coreCompatibility: CORE_COMPATIBILITY,
-    encodeF64: core.encodeF64,
-    decodeF64: core.decodeF64,
+    Workspace,
+    decodeHeader,
+    decode,
+    encodePoint,
+    encodeLineString,
+    encodePolygon,
+    encodeMultiPoint,
+    encodeMultiLineString,
+    encodeMultiPolygon,
+    encodeF64,
+    decodeF64,
     coreVersion: core.coreVersion,
-    EncodedGeometryType,
-    GeometryEncoder,
-    decodeGeometryHeader
+    EncodedGeometryType
 };

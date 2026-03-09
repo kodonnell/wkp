@@ -55,21 +55,21 @@ const iterations = parseIntArg('--iterations', 200);
 const geometry = makeLineString(points);
 
 const wkp = await createWkp();
-const encoder = new wkp.GeometryEncoder(precision, 2);
+const workspace = new wkp.Workspace();
 
-const warmEncoded = encoder.encode(geometry);
-encoder.decodeStr(warmEncoded);
+const warmEncoded = wkp.encodeLineString(geometry, precision, workspace);
+wkp.decode(warmEncoded, workspace);
 
 const encodeTimes = [];
 const decodeTimes = [];
 let encodedBytes = warmEncoded.length;
 
 for (let i = 0; i < iterations; i += 1) {
-    const encodeRun = measureMs(() => encoder.encode(geometry));
+    const encodeRun = measureMs(() => wkp.encodeLineString(geometry, precision, workspace));
     encodedBytes = encodeRun.result.length;
     encodeTimes.push(encodeRun.elapsedMs);
 
-    const decodeRun = measureMs(() => encoder.decodeStr(encodeRun.result));
+    const decodeRun = measureMs(() => wkp.decode(encodeRun.result, workspace));
     decodeTimes.push(decodeRun.elapsedMs);
 }
 

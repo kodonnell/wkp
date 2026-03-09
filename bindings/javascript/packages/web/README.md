@@ -2,19 +2,11 @@
 
 Browser/Node WebAssembly bindings for WKP core built with Emscripten.
 
-## Dependencies
+## Requirements
 
 - Node.js >= 18
 - Emscripten (`emcc`) available (for build)
 - Browser usage requires HTTP(S) origin (not `file://`)
-
-## API
-
-Use `createWkp()` to load the WASM module and get:
-
-- `encodeF64(values, dimensions, precisions) -> Uint8Array`
-- `decodeF64(encoded, dimensions, precisions) -> Float64Array`
-- `GeometryEncoder` high-level geometry API
 
 ## Build
 
@@ -37,7 +29,7 @@ npm --workspace @wkpjs/web run test
 
 ## Benchmark
 
-### Run WASM benchmark in Node
+### Run benchmark in Node
 
 From `bindings/javascript`:
 
@@ -64,15 +56,16 @@ Then open:
 - `http://localhost:8080/benchmark/index.html`
 - `http://localhost:8080/benchmark/index.html?points=10000&precision=5&iterations=200`
 
-## Publish
+## API
 
-`@wkpjs/web` is published by `.github/workflows/npm-publish.yml` (manual `workflow_dispatch` or `npm-v*` tag trigger).
+Use `createWkp()` to load the WASM module, then call:
 
-### Manual publish from GitHub
-
-1. Open Actions -> `Publish JavaScript packages to npm`.
-2. Run with `dry_run=true` first.
-3. Re-run with `dry_run=false` to publish.
+- `Workspace`
+- `decodeHeader(encoded)`
+- `decode(encoded, workspace?)`
+- `encodePoint/encodeLineString/encodePolygon/encodeMultiPoint/encodeMultiLineString/encodeMultiPolygon`
+- `encodeF64(values, dimensions, precisions, workspace?)`
+- `decodeF64(encoded, dimensions, precisions, workspace?)`
 
 ## Example
 
@@ -80,12 +73,18 @@ Then open:
 import { createWkp } from '@wkpjs/web';
 
 const wkp = await createWkp();
-const encoder = new wkp.GeometryEncoder(6, 2);
+const workspace = new wkp.Workspace();
+const encoded = wkp.encodeLineString({ type: 'LineString', coordinates: [[0, 0], [1, 1]] }, 6, workspace);
+const decoded = wkp.decode(encoded, workspace);
+const header = wkp.decodeHeader(encoded);
 
-const encoded = encoder.encode({
-	type: 'Point',
-	coordinates: [174.776, -41.289],
-});
-
-const decoded = wkp.GeometryEncoder.decode(encoded);
+console.log(encoded);
+console.log(decoded.geometry);
+console.log(header);
 ```
+
+You can omit `workspace` for convenience, but reusing an explicit workspace is faster for repeated operations.
+
+## Publishing
+
+Publishing is shared across JS packages and documented in `bindings/javascript/README.md`.

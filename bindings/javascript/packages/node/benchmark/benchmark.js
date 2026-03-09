@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-const { GeometryEncoder } = require('..');
+const { Workspace, decode, encodeLineString } = require('..');
 
 function parseIntArg(flag, defaultValue) {
     const arg = process.argv.find((v) => v.startsWith(`${flag}=`));
@@ -56,21 +56,21 @@ function main() {
     const iterations = parseIntArg('--iterations', 200);
 
     const geometry = makeLineString(points);
-    const encoder = new GeometryEncoder(precision, 2);
+    const workspace = new Workspace();
 
-    const warmEncoded = encoder.encode(geometry);
-    encoder.decodeStr(warmEncoded);
+    const warmEncoded = encodeLineString(geometry, precision, workspace);
+    decode(warmEncoded, workspace);
 
     const encodeTimes = [];
     const decodeTimes = [];
     let encodedBytes = warmEncoded.length;
 
     for (let i = 0; i < iterations; i += 1) {
-        const encodeRun = measureMs(() => encoder.encode(geometry));
+        const encodeRun = measureMs(() => encodeLineString(geometry, precision, workspace));
         encodedBytes = encodeRun.result.length;
         encodeTimes.push(encodeRun.elapsedMs);
 
-        const decodeRun = measureMs(() => encoder.decodeStr(encodeRun.result));
+        const decodeRun = measureMs(() => decode(encodeRun.result, workspace));
         decodeTimes.push(decodeRun.elapsedMs);
     }
 

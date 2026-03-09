@@ -21,19 +21,21 @@
 - `src/core.cpp`: implementation
 - `tests/test_c_api.cpp`: ABI-focused tests
 
-## C ABI output buffer contract
+## C ABI workspace contract
 
-For C ABI encode/decode `_into` functions, the caller owns output buffers.
+The C ABI is workspace-first. Callers create one workspace and reuse it across operations.
 
-- Set `out_encoded.data` / `out_values.data` to your buffer pointer.
-- Set `out_encoded.size` / `out_values.size` to buffer capacity (bytes for `u8`, element count for `f64`).
-- On success (`WKP_STATUS_OK`), `size` is updated to the number of bytes/elements written.
-- If buffer is too small, status is `WKP_STATUS_BUFFER_TOO_SMALL` and `size` is updated to the required capacity.
-- Bindings (Python/Node/Web) follow this contract by retrying with a larger buffer.
+Workspace APIs provide auto-resize behavior and avoid explicit retry loops:
 
-`wkp_free_u8_buffer` / `wkp_free_f64_buffer` are retained for ABI compatibility and are no-op reset helpers in this model.
+- `wkp_workspace_create` / `wkp_workspace_destroy`
+- `wkp_workspace_encode_f64` / `wkp_workspace_decode_f64`
+- `wkp_workspace_encode_geometry_frame_f64`
+- `wkp_workspace_decode_geometry_frame_f64`
+- Workspace functions grow internal buffers automatically and avoid `WKP_STATUS_BUFFER_TOO_SMALL` retry loops.
+- Optional `max_size` limits are enforced; overflow returns `WKP_STATUS_LIMIT_EXCEEDED`.
+- Use `-1` for unlimited max size.
 
-Note: this no-allocation guarantee applies to the C ABI encode/decode entry points. Internal C++ helpers under `wkp::core` still use `std::string` / `std::vector` and may allocate.
+Note: internal C++ helpers under `wkp::core` still use `std::string` / `std::vector` and may allocate.
 
 ## Version source of truth
 
