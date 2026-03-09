@@ -1,4 +1,4 @@
-import { createWkp } from '../bindings/javascript/packages/web/src/index.js';
+import { createWkp } from './web/src/index.js';
 import { parseWkt, geometryToWkt } from './wkt.js';
 
 let wkpPromise = null;

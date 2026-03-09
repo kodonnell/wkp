@@ -1,4 +1,4 @@
-import { createWkp } from '../bindings/javascript/packages/web/src/index.js';
+import { createWkp } from './web/src/index.js';
 import { parseWkt, geometryToWkt } from './wkt.js';
 
 const $ = (id) => document.getElementById(id);
@@ -42,7 +42,8 @@ const ui = {
     decodeProgressFill: $('decodeProgressFill'),
     decodeProgressText: $('decodeProgressText'),
 
-    decodeHeaderMetrics: $('decodeHeaderMetrics')
+    decodeHeaderMetrics: $('decodeHeaderMetrics'),
+    webBindingVersion: $('webBindingVersion')
 };
 
 let wkp = null;
@@ -266,6 +267,30 @@ function clearError(el) {
     el.textContent = '';
 }
 
+function setWebBindingVersion(text) {
+    if (ui.webBindingVersion) {
+        ui.webBindingVersion.textContent = text;
+    }
+}
+
+async function loadWebBindingVersion() {
+    try {
+        const packageUrl = new URL('./web/package.json', import.meta.url);
+        const response = await fetch(packageUrl, { cache: 'no-store' });
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+        const pkg = await response.json();
+        if (typeof pkg.version === 'string' && pkg.version.trim().length > 0) {
+            setWebBindingVersion(pkg.version.trim());
+            return;
+        }
+    } catch {
+        // Keep UI functional even if version metadata cannot be loaded.
+    }
+    setWebBindingVersion('unknown');
+}
+
 function geometryTypeName(typeId) {
     const mapping = {
         [wkp.EncodedGeometryType.POINT]: 'POINT',
@@ -424,6 +449,8 @@ ui.generateExampleBtn.addEventListener('click', () => {
 });
 
 async function init() {
+    await loadWebBindingVersion();
+
     if (window.location.protocol === 'file:') {
         setError(ui.encodeStatus, 'Run this page from HTTP(S), not file://');
         setError(ui.decodeStatus, 'Run this page from HTTP(S), not file://');

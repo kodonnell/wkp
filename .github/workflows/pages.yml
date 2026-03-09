@@ -1,0 +1,69 @@
+name: Deploy GitHub Pages
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Build Pages artifact from docs + latest @wkpjs/web
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          rm -rf .pages-dist .pages-tmp
+          mkdir -p .pages-dist .pages-tmp
+
+          cp -R docs/. .pages-dist/
+
+          npm pack @wkpjs/web@latest --pack-destination .pages-tmp
+          TARBALL="$(ls .pages-tmp/wkpjs-web-*.tgz | head -n 1)"
+          mkdir -p .pages-tmp/pkg
+          tar -xzf "$TARBALL" -C .pages-tmp/pkg
+
+          mkdir -p .pages-dist/web
+          cp -R .pages-tmp/pkg/package/src .pages-dist/web/src
+          cp -R .pages-tmp/pkg/package/dist .pages-dist/web/dist
+          cp .pages-tmp/pkg/package/package.json .pages-dist/web/package.json
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: .pages-dist
+
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

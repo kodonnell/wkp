@@ -299,7 +299,7 @@ code {
 }
 
 .mono {
-    font-family: "Consolas", "Cascadia Mono", "Courier New", monospace;
+    font-family: ui-monospace, monospace;
     font-size: 0.84rem;
 }
 
