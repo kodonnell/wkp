@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>WKP Demo</title>
+    <link rel="stylesheet" href="./styles.css" />
+</head>
+
+<body>
+    <main class="container">
+        <header>
+            <h1>WKP Demo</h1>
+            <p>Well Known Polylines: fast and compact geometry to/from string encoding.</p>
+            <p>
+                Repo: <a href="https://github.com/kodonnell/wkp" target="_blank"
+                    rel="noreferrer">github.com/kodonnell/wkp</a>
+            </p>
+            <p class="small">
+                Use this demo to encode/decode your own geometries or generate random ones for testing speed
+                (less so compression, as delta encoding performance can vary widely based on coordinate distribution).
+                For more details on the encoding, see the <a href="https://github.com/kodonnell/wkp" target="_blank"
+                    rel="noreferrer">repo</a>.
+            </p>
+        </header>
+
+        <section class=" stack">
+            <article class="card">
+                <h2>Encode WKT -> WKP</h2>
+
+                <div class="example-panel">
+                    <div class="settings-line">
+                        <label for="exampleGeometry">Type</label>
+                        <select id="exampleGeometry" class="compact-input type-select">
+                            <option value="Point">Point</option>
+                            <option value="LineString" selected>LineString</option>
+                            <option value="Polygon">Polygon</option>
+                            <option value="MultiPoint">MultiPoint</option>
+                            <option value="MultiLineString">MultiLineString</option>
+                            <option value="MultiPolygon">MultiPolygon</option>
+                        </select>
+
+                        <div id="exampleSettings" class="settings-inline">
+                            <label for="settingDimensions">Dims</label>
+                            <input id="settingDimensions" class="compact-input tiny-input" type="number" min="2" max="6"
+                                value="2" />
+
+                            <label for="settingDp">DP</label>
+                            <input id="settingDp" class="compact-input tiny-input" type="number" min="0" max="50"
+                                value="5" />
+
+                            <label for="settingSort">Sort</label>
+                            <input id="settingSort" type="checkbox" />
+
+                            <div class="inline-setting" data-show-for="LineString,MultiPoint">
+                                <label for="settingPointCount">Pts</label>
+                                <input id="settingPointCount" class="compact-input" type="number" min="2" max="20000"
+                                    value="100" />
+                            </div>
+
+                            <div class="inline-setting" data-show-for="Polygon">
+                                <label for="settingRingCount">Rings</label>
+                                <input id="settingRingCount" class="compact-input" type="number" min="1" max="8"
+                                    value="1" />
+
+                                <label for="settingPointsPerRing">Pts/Ring</label>
+                                <input id="settingPointsPerRing" class="compact-input" type="number" min="4" max="5000"
+                                    value="60" />
+                            </div>
+
+                            <div class="inline-setting" data-show-for="MultiLineString">
+                                <label for="settingLineCount">Lines</label>
+                                <input id="settingLineCount" class="compact-input" type="number" min="1" max="200"
+                                    value="3" />
+
+                                <label for="settingPointsPerLine">Pts/Line</label>
+                                <input id="settingPointsPerLine" class="compact-input" type="number" min="2" max="5000"
+                                    value="50" />
+                            </div>
+
+                            <div class="inline-setting" data-show-for="MultiPolygon">
+                                <label for="settingPolygonCount">Polys</label>
+                                <input id="settingPolygonCount" class="compact-input" type="number" min="1" max="100"
+                                    value="2" />
+
+                                <label for="settingRingsPerPolygon">Rings/Poly</label>
+                                <input id="settingRingsPerPolygon" class="compact-input" type="number" min="1" max="8"
+                                    value="1" />
+
+                                <label for="settingMpPointsPerRing">Pts/Ring</label>
+                                <input id="settingMpPointsPerRing" class="compact-input" type="number" min="4"
+                                    max="5000" value="40" />
+                            </div>
+                        </div>
+
+                        <button id="generateExampleBtn" class="secondary with-help">Generate Random
+                            <span class="help-dot"
+                                data-tooltip="Random coordinates often compress poorly because point deltas are noisy. Enabling Sort imposes spatial order, which is somewhat unrealistic but typically closer to real-world line/polygon locality and can improve WKP compression.">?</span>
+                        </button>
+                    </div>
+                </div>
+
+                <label for="wktInput">WKT</label>
+                <textarea id="wktInput" class="mono" spellcheck="false" autocapitalize="off" autocomplete="off"
+                    placeholder="Paste your WKT here, or click Generate Random above."></textarea>
+
+                <div class="row">
+                    <label for="precisionInput">Precision</label>
+                    <input id="precisionInput" class="compact-input tiny-input" type="number" min="0" max="15"
+                        value="5" />
+                    <button id="encodeBtn" disabled>Encode</button>
+                </div>
+
+                <div class="output-box" id="encodedOutputBox">
+                    <button id="copyEncodedBtn" class="copy-icon" title="Copy encoded WKP"
+                        aria-label="Copy encoded WKP"></button>
+                    <div id="encodedOutputText" class="output-text mono"
+                        data-placeholder="Encoded WKP will appear here..." spellcheck="false"></div>
+                </div>
+
+                <div class="progress-wrap is-hidden" id="encodeProgressWrap">
+                    <div class="progress-track">
+                        <div class="progress-fill" id="encodeProgressFill"></div>
+                    </div>
+                    <div class="small" id="encodeProgressText"></div>
+                </div>
+
+                <div class="metrics" id="encodeMetrics"></div>
+                <div class="status" id="encodeStatus"></div>
+            </article>
+
+            <article class="card">
+                <h2>Decode WKP -> WKT</h2>
+                <label for="encodedInput">Encoded WKP</label>
+                <textarea id="encodedInput" class="mono" spellcheck="false" autocapitalize="off" autocomplete="off"
+                    placeholder="Paste your encoded WKP here, or click Use Encoded to copy the latest encode output."></textarea>
+
+                <div class="row">
+                    <button id="useEncodedBtn" class="secondary">Use Encoded</button>
+                    <button id="decodeBtn" disabled>Decode</button>
+                </div>
+
+                <div class="decode-info-row">
+                    <span class="small decode-info-label">Decode Info</span>
+                    <div class="info-inline" id="decodeHeaderMetrics"></div>
+                </div>
+
+                <div class="output-box" id="wktOutputBox">
+                    <button id="copyWktBtn" class="copy-icon" title="Copy decoded WKT"
+                        aria-label="Copy decoded WKT"></button>
+                    <div id="wktOutputText" class="output-text mono" data-placeholder="Decoded WKT will appear here..."
+                        spellcheck="false">
+                    </div>
+                </div>
+
+                <div class="progress-wrap is-hidden" id="decodeProgressWrap">
+                    <div class="progress-track">
+                        <div class="progress-fill" id="decodeProgressFill"></div>
+                    </div>
+                    <div class="small" id="decodeProgressText"></div>
+                </div>
+
+                <div class="metrics" id="decodeMetrics"></div>
+                <div class="status" id="decodeStatus"></div>
+            </article>
+        </section>
+    </main>
+
+    <script type="module" src="./app.js"></script>
+</body>
+
+</html>
