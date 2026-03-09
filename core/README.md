@@ -21,32 +21,19 @@
 - `src/core.cpp`: implementation
 - `tests/test_c_api.cpp`: ABI-focused tests
 
-## C ABI output buffer contract
+## C ABI workspace contract
 
-The low-level `_into` APIs use strict caller-owned buffers.
+The C ABI is workspace-first. Callers create one workspace and reuse it across operations.
 
-- `wkp_u8_buffer` and `wkp_f64_buffer` are still just pointer + size.
-- Set `data`/`size` to caller-managed storage.
-- If too small, status is `WKP_STATUS_BUFFER_TOO_SMALL` and `size` is updated to required capacity.
-- On success (`WKP_STATUS_OK`), `size` is updated to bytes/elements written.
-- `wkp_free_u8_buffer` / `wkp_free_f64_buffer` are no-op reset helpers for compatibility.
-
-Workspace APIs provide the auto-resize fast path:
+Workspace APIs provide auto-resize behavior and avoid explicit retry loops:
 
 - `wkp_workspace_create` / `wkp_workspace_destroy`
 - `wkp_workspace_encode_f64` / `wkp_workspace_decode_f64`
-- Geometry workspace encoders:
-- `wkp_workspace_encode_point_f64`
-- `wkp_workspace_encode_linestring_f64`
-- `wkp_workspace_encode_polygon_f64`
-- `wkp_workspace_encode_multipoint_f64`
-- `wkp_workspace_encode_multilinestring_f64`
-- `wkp_workspace_encode_multipolygon_f64`
+- `wkp_workspace_encode_geometry_frame_f64`
+- `wkp_workspace_decode_geometry_frame_f64`
 - Workspace functions grow internal buffers automatically and avoid `WKP_STATUS_BUFFER_TOO_SMALL` retry loops.
 - Optional `max_size` limits are enforced; overflow returns `WKP_STATUS_LIMIT_EXCEEDED`.
 - Use `-1` for unlimited max size.
-
-For geometry-specific `_into` encode functions (for example `wkp_encode_linestring_f64_into`), `size` is treated as capacity on input and required/written size on output.
 
 Note: internal C++ helpers under `wkp::core` still use `std::string` / `std::vector` and may allocate.
 

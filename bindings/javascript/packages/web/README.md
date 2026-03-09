@@ -29,7 +29,7 @@ npm --workspace @wkpjs/web run test
 
 ## Benchmark
 
-### Run WASM benchmark in Node
+### Run benchmark in Node
 
 From `bindings/javascript`:
 

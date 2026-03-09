@@ -49,11 +49,11 @@ function assertCoreCompatibility(runtimeCoreVersion) {
     }
 }
 
-function pad2(value, name) {
-    if (!Number.isInteger(value) || value < 0 || value > 99) {
-        throw new TypeError(`${name} must be an integer in [0, 99]`);
+function encodeHeaderField(value, name) {
+    if (!Number.isInteger(value) || value < 0 || value > 63) {
+        throw new TypeError(`${name} must be an integer in [0, 63]`);
     }
-    return String(value).padStart(2, '0');
+    return String.fromCharCode(value + 63);
 }
 
 function statusMessage(status) {
@@ -729,7 +729,7 @@ export async function createWkp(options) {
         const ascii = toAscii(encoded);
         const [version, precision, dimensions, geometryType] = decodeHeader(ascii);
         const geometry = decodeGeometryBody(
-            ascii.slice(8),
+            ascii.slice(4),
             geometryType,
             dimensions,
             precision,
@@ -750,7 +750,7 @@ export async function createWkp(options) {
             precision,
             (rows, label) => TEXT_DECODER.decode(ws.encodeF64(flattenCoordRowsInto(rows, dimensions, label, ws._valueScratch), dimensions, [precision]))
         );
-        return `${pad2(1, 'version')}${pad2(precision, 'precision')}${pad2(dimensions, 'dimensions')}${pad2(geometryType, 'geometry type')}${body}`;
+        return `${encodeHeaderField(1, 'version')}${encodeHeaderField(precision, 'precision')}${encodeHeaderField(dimensions, 'dimensions')}${encodeHeaderField(geometryType, 'geometry type')}${body}`;
     }
 
     function encodeLineString(geometry, precision, workspace = undefined) {
@@ -765,7 +765,7 @@ export async function createWkp(options) {
             precision,
             (rows, label) => TEXT_DECODER.decode(ws.encodeF64(flattenCoordRowsInto(rows, dimensions, label, ws._valueScratch), dimensions, [precision]))
         );
-        return `${pad2(1, 'version')}${pad2(precision, 'precision')}${pad2(dimensions, 'dimensions')}${pad2(geometryType, 'geometry type')}${body}`;
+        return `${encodeHeaderField(1, 'version')}${encodeHeaderField(precision, 'precision')}${encodeHeaderField(dimensions, 'dimensions')}${encodeHeaderField(geometryType, 'geometry type')}${body}`;
     }
 
     function encodePolygon(geometry, precision, workspace = undefined) {
@@ -780,7 +780,7 @@ export async function createWkp(options) {
             precision,
             (rows, label) => TEXT_DECODER.decode(ws.encodeF64(flattenCoordRowsInto(rows, dimensions, label, ws._valueScratch), dimensions, [precision]))
         );
-        return `${pad2(1, 'version')}${pad2(precision, 'precision')}${pad2(dimensions, 'dimensions')}${pad2(geometryType, 'geometry type')}${body}`;
+        return `${encodeHeaderField(1, 'version')}${encodeHeaderField(precision, 'precision')}${encodeHeaderField(dimensions, 'dimensions')}${encodeHeaderField(geometryType, 'geometry type')}${body}`;
     }
 
     function encodeMultiPoint(geometry, precision, workspace = undefined) {
@@ -795,7 +795,7 @@ export async function createWkp(options) {
             precision,
             (rows, label) => TEXT_DECODER.decode(ws.encodeF64(flattenCoordRowsInto(rows, dimensions, label, ws._valueScratch), dimensions, [precision]))
         );
-        return `${pad2(1, 'version')}${pad2(precision, 'precision')}${pad2(dimensions, 'dimensions')}${pad2(geometryType, 'geometry type')}${body}`;
+        return `${encodeHeaderField(1, 'version')}${encodeHeaderField(precision, 'precision')}${encodeHeaderField(dimensions, 'dimensions')}${encodeHeaderField(geometryType, 'geometry type')}${body}`;
     }
 
     function encodeMultiLineString(geometry, precision, workspace = undefined) {
@@ -810,7 +810,7 @@ export async function createWkp(options) {
             precision,
             (rows, label) => TEXT_DECODER.decode(ws.encodeF64(flattenCoordRowsInto(rows, dimensions, label, ws._valueScratch), dimensions, [precision]))
         );
-        return `${pad2(1, 'version')}${pad2(precision, 'precision')}${pad2(dimensions, 'dimensions')}${pad2(geometryType, 'geometry type')}${body}`;
+        return `${encodeHeaderField(1, 'version')}${encodeHeaderField(precision, 'precision')}${encodeHeaderField(dimensions, 'dimensions')}${encodeHeaderField(geometryType, 'geometry type')}${body}`;
     }
 
     function encodeMultiPolygon(geometry, precision, workspace = undefined) {
@@ -825,7 +825,7 @@ export async function createWkp(options) {
             precision,
             (rows, label) => TEXT_DECODER.decode(ws.encodeF64(flattenCoordRowsInto(rows, dimensions, label, ws._valueScratch), dimensions, [precision]))
         );
-        return `${pad2(1, 'version')}${pad2(precision, 'precision')}${pad2(dimensions, 'dimensions')}${pad2(geometryType, 'geometry type')}${body}`;
+        return `${encodeHeaderField(1, 'version')}${encodeHeaderField(precision, 'precision')}${encodeHeaderField(dimensions, 'dimensions')}${encodeHeaderField(geometryType, 'geometry type')}${body}`;
     }
 
     const encodeF64 = (values, dimensions, precisions, workspace = undefined) => resolveWorkspace(workspace).encodeF64(values, dimensions, precisions);

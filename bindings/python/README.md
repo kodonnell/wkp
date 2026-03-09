@@ -80,23 +80,23 @@ This is simpler, but slower for repeated operations because it does not let you 
 From repo root:
 
 ```sh
-python bindings/python/benchmark/benchmark.py --linestring-points=10000 --precisions=5
+python bindings/python/benchmark/benchmark.py --linestring-points=10000 --precisions=5 --max-iterations=1000 --max-duration=1
 ```
 
 Example results:
 
-| Method          | Source   | WKB (kb) | Encode (ms) | Encode (kb) | Decode (ms) | Total (ms) | Iters |
-| --------------- | -------- | -------- | ----------- | ----------- | ----------- | ---------- | ----- |
-| shapely_wkb     | nz-coast | 156.3    | 0.657       | 156.3       | 0.111       | 0.768      | 2000  |
-| shapely_wkt     | nz-coast | 156.3    | 2.133       | 379.7       | 6.180       | 8.313      | 635   |
-| shapely_wkt_5dp | nz-coast | 156.3    | 1.525       | 202.8       | 3.101       | 4.626      | 982   |
-| wkp-5p-bytes    | nz-coast | 156.3    | 0.307       | 42.9        | 0.152       | 0.459      | 2000  |
-| wkp-5p-str      | nz-coast | 156.3    | 0.307       | 42.9        | 0.158       | 0.465      | 2000  |
-| shapely_wkb     | random   | 156.3    | 0.624       | 156.3       | 0.115       | 0.739      | 2000  |
-| shapely_wkt     | random   | 156.3    | 2.061       | 378.5       | 5.498       | 7.559      | 676   |
-| shapely_wkt_5dp | random   | 156.3    | 1.585       | 163.8       | 3.217       | 4.802      | 946   |
-| wkp-5p-bytes    | random   | 156.3    | 0.339       | 72.0        | 0.193       | 0.532      | 2000  |
-| wkp-5p-str      | random   | 156.3    | 0.339       | 72.0        | 0.200       | 0.539      | 2000  |
+| Method          | Source   | kb    | Encode (ms) | Decode (ms) | Total (ms) | Iters |
+| --------------- | -------- | ----- | ----------- | ----------- | ---------- | ----- |
+| shapely_wkb     | nz-coast | 156.3 | 0.54 ± 0.04 | 0.10 ± 0.01 | 0.64       | 2000  |
+| shapely_wkt     | nz-coast | 379.7 | 1.73 ± 0.09 | 5.16 ± 0.29 | 6.89       | 768   |
+| shapely_wkt_5dp | nz-coast | 202.8 | 1.29 ± 0.07 | 2.63 ± 0.09 | 3.92       | 1154  |
+| wkp-5p-bytes    | nz-coast | 42.9  | 0.27 ± 0.02 | 0.15 ± 0.01 | 0.42       | 2000  |
+| wkp-5p-str      | nz-coast | 42.9  | 0.27 ± 0.02 | 0.15 ± 0.02 | 0.42       | 2000  |
+| shapely_wkb     | random   | 156.3 | 0.53 ± 0.02 | 0.10 ± 0.01 | 0.63       | 2000  |
+| shapely_wkt     | random   | 378.4 | 1.77 ± 0.08 | 4.87 ± 0.21 | 6.64       | 760   |
+| shapely_wkt_5dp | random   | 163.9 | 1.37 ± 0.09 | 2.71 ± 0.12 | 4.08       | 1090  |
+| wkp-5p-bytes    | random   | 72.2  | 0.35 ± 0.37 | 0.19 ± 0.02 | 0.54       | 2000  |
+| wkp-5p-str      | random   | 72.2  | 0.31 ± 0.03 | 0.19 ± 0.04 | 0.50       | 2000  |
 
 
 ## Packaging / release

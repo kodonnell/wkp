@@ -15,6 +15,16 @@ namespace
         return std::fabs(a - b) <= eps;
     }
 
+    std::string expect_header(int version, int precision, int dimensions, int geometry_type)
+    {
+        std::string header;
+        header.push_back(static_cast<char>(version + 63));
+        header.push_back(static_cast<char>(precision + 63));
+        header.push_back(static_cast<char>(dimensions + 63));
+        header.push_back(static_cast<char>(geometry_type + 63));
+        return header;
+    }
+
     void expect_segment_values(
         const std::vector<double> &actual,
         const std::vector<double> &expected,
@@ -35,7 +45,7 @@ namespace
 
         const std::vector<double> point = {38.5, -120.2};
         const std::string point_encoded = wkp::core::encode_point(point.data(), 1, 2, 5, &workspace);
-        CHECK(point_encoded.rfind("01050201", 0) == 0);
+        CHECK(point_encoded.rfind(expect_header(1, 5, 2, 1), 0) == 0);
         const auto point_header = wkp::core::decode_geometry_header(point_encoded);
         CHECK(point_header.version == 1);
         CHECK(point_header.precision == 5);
@@ -50,7 +60,7 @@ namespace
             43.252,
             -126.453,
         };
-        const std::string line_expected = "01050202_p~iF~ps|U_ulLnnqC_mqNvxq`@";
+        const std::string line_expected = expect_header(1, 5, 2, 2) + "_p~iF~ps|U_ulLnnqC_mqNvxq`@";
         const std::string line_encoded = wkp::core::encode_linestring(line.data(), 3, 2, 5, &workspace);
         CHECK(line_encoded == line_expected);
         const auto line_header = wkp::core::decode_geometry_header(line_encoded);
@@ -66,7 +76,7 @@ namespace
 
         const std::vector<double> point = {174.776, -41.289, 123.4};
         const std::string encoded = wkp::core::encode_point(point.data(), 1, 3, 1, &workspace);
-        CHECK(encoded.rfind("01010301", 0) == 0);
+        CHECK(encoded.rfind(expect_header(1, 1, 3, 1), 0) == 0);
 
         const auto frame = wkp::core::decode_geometry_frame(encoded);
         REQUIRE(frame.groups.size() == 1);
@@ -128,7 +138,7 @@ namespace
         const std::vector<const double *> rings = {shell.data(), hole.data()};
         const std::vector<std::size_t> ring_counts = {5, 5};
         const std::string polygon_encoded = wkp::core::encode_polygon(rings, ring_counts, 2, 5, &workspace);
-        CHECK(polygon_encoded.rfind("01050203", 0) == 0);
+        CHECK(polygon_encoded.rfind(expect_header(1, 5, 2, 3), 0) == 0);
         CHECK(polygon_encoded.find(',') != std::string::npos);
 
         const std::vector<std::vector<const double *>> polys = {
@@ -141,7 +151,7 @@ namespace
         };
 
         const std::string multipolygon_encoded = wkp::core::encode_multipolygon(polys, poly_counts, 2, 5, &workspace);
-        CHECK(multipolygon_encoded.rfind("01050206", 0) == 0);
+        CHECK(multipolygon_encoded.rfind(expect_header(1, 5, 2, 6), 0) == 0);
         CHECK(multipolygon_encoded.find(';') != std::string::npos);
         CHECK(multipolygon_encoded.find(',') != std::string::npos);
     }
@@ -156,7 +166,7 @@ namespace
         const std::vector<std::size_t> point_counts = {1, 1};
 
         const std::string multipoint_encoded = wkp::core::encode_multipoint(points, point_counts, 2, 5, &workspace);
-        CHECK(multipoint_encoded.rfind("01050204", 0) == 0);
+        CHECK(multipoint_encoded.rfind(expect_header(1, 5, 2, 4), 0) == 0);
         CHECK(multipoint_encoded.find(';') != std::string::npos);
 
         const auto multipoint_frame = wkp::core::decode_geometry_frame(multipoint_encoded);
@@ -172,7 +182,7 @@ namespace
         const std::vector<std::size_t> line_counts = {2, 2};
 
         const std::string multilinestring_encoded = wkp::core::encode_multilinestring(lines, line_counts, 2, 5, &workspace);
-        CHECK(multilinestring_encoded.rfind("01050205", 0) == 0);
+        CHECK(multilinestring_encoded.rfind(expect_header(1, 5, 2, 5), 0) == 0);
         CHECK(multilinestring_encoded.find(';') != std::string::npos);
 
         const auto multilinestring_frame = wkp::core::decode_geometry_frame(multilinestring_encoded);
@@ -300,7 +310,7 @@ namespace
         };
 
         const std::string encoded = wkp::core::encode_linestring(line.data(), 3, 2, 6, &workspace);
-        CHECK(encoded.rfind("01060202", 0) == 0);
+        CHECK(encoded.rfind(expect_header(1, 6, 2, 2), 0) == 0);
 
         const auto frame = wkp::core::decode(encoded, &workspace);
         REQUIRE(frame.groups.size() == 1);

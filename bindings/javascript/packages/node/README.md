@@ -26,6 +26,8 @@ npm --workspace @wkpjs/node run test
 
 ## Benchmark
 
+### Run benchmark in Node
+
 From `bindings/javascript`:
 
 ```sh

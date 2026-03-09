@@ -1,7 +1,7 @@
 {
   "name": "@wkpjs/javascript-bindings",
   "private": true,
-  "version": "0.2.0",
+  "version": "0.3.0",
   "workspaces": [
     "packages/*"
   ],
@@ -13,8 +13,8 @@
     "test:node": "npm --workspace @wkpjs/node run test",
     "test:web": "npm --workspace @wkpjs/web run test",
     "test": "npm run test:node && npm run test:web",
-    "benchmark:node": "npm --workspace @wkpjs/node run benchmark",
-    "benchmark:web:node": "npm --workspace @wkpjs/web run benchmark",
+    "benchmark:node": "npm --workspace @wkpjs/node run benchmark --",
+    "benchmark:web:node": "npm --workspace @wkpjs/web run benchmark --",
     "benchmark:web:serve": "npm --workspace @wkpjs/web run benchmark:serve",
     "clean": "npm run -ws clean"
   },

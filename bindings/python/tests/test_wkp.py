@@ -2,15 +2,19 @@ import wkp
 from shapely.geometry import LineString, MultiLineString, MultiPoint, MultiPolygon, Point, Polygon
 
 
+def _header_field(encoded: bytes, index: int) -> int:
+    return encoded[index] - 63
+
+
 def test_geometry_encode_decode_point_2d():
     point = Point(174.776, -41.289)
     encoded = wkp.encode_point(point, precision=6)
 
-    assert len(encoded) >= 8
-    assert encoded[:2] == "01"
-    assert encoded[2:4] == "06"
-    assert encoded[4:6] == "02"
-    assert encoded[6:8] == "01"
+    assert len(encoded) >= 4
+    assert _header_field(encoded, 0) == 1
+    assert _header_field(encoded, 1) == 6
+    assert _header_field(encoded, 2) == 2
+    assert _header_field(encoded, 3) == 1
 
     decoded = wkp.decode(encoded)
     assert decoded.version == 1
@@ -24,8 +28,8 @@ def test_geometry_encode_decode_point_3d_truncated_precision():
     point = Point(174.776, -41.289, 123.4)
     encoded = wkp.encode_point(point, precision=1)
 
-    assert encoded[2:4] == "01"
-    assert encoded[4:6] == "03"
+    assert _header_field(encoded, 1) == 1
+    assert _header_field(encoded, 2) == 3
 
     decoded = wkp.decode(encoded)
     assert decoded.dimensions == 3
@@ -37,7 +41,7 @@ def test_geometry_encode_decode_point_3d_truncated_precision():
 def test_geometry_encode_decode_linestring():
     geom = LineString([(174.776, -41.289), (174.777, -41.290), (174.778, -41.291)])
     encoded = wkp.encode_linestring(geom, precision=6)
-    assert encoded[6:8] == "02"
+    assert _header_field(encoded, 3) == 2
 
     decoded = wkp.decode(encoded)
     assert isinstance(decoded.geometry, LineString)
@@ -51,8 +55,8 @@ def test_geometry_encode_decode_polygon_with_holes():
     geom = Polygon(exterior, [hole1, hole2])
 
     encoded = wkp.encode_polygon(geom, precision=6)
-    assert encoded[6:8] == "03"
-    assert "," in encoded
+    assert _header_field(encoded, 3) == 3
+    assert b"," in encoded
 
     decoded = wkp.decode(encoded)
     assert isinstance(decoded.geometry, Polygon)
@@ -63,8 +67,8 @@ def test_geometry_encode_decode_multipoint():
     geom = MultiPoint([(174.776, -41.289), (174.777, -41.290), (174.778, -41.291)])
     encoded = wkp.encode_multipoint(geom, precision=6)
 
-    assert encoded[6:8] == "04"
-    assert ";" in encoded
+    assert _header_field(encoded, 3) == 4
+    assert b";" in encoded
 
     decoded = wkp.decode(encoded)
     assert isinstance(decoded.geometry, MultiPoint)
@@ -75,8 +79,8 @@ def test_geometry_encode_decode_multilinestring():
     geom = MultiLineString([[(0, 0), (1, 1), (2, 2)], [(3, 3), (4, 4), (5, 5)]])
     encoded = wkp.encode_multilinestring(geom, precision=6)
 
-    assert encoded[6:8] == "05"
-    assert ";" in encoded
+    assert _header_field(encoded, 3) == 5
+    assert b";" in encoded
 
     decoded = wkp.decode(encoded)
     assert isinstance(decoded.geometry, MultiLineString)
@@ -89,9 +93,9 @@ def test_geometry_encode_decode_multipolygon():
     geom = MultiPolygon([polygon1, polygon2])
 
     encoded = wkp.encode_multipolygon(geom, precision=6)
-    assert encoded[6:8] == "06"
-    assert ";" in encoded
-    assert "," in encoded
+    assert _header_field(encoded, 3) == 6
+    assert b";" in encoded
+    assert b"," in encoded
 
     decoded = wkp.decode(encoded)
     assert isinstance(decoded.geometry, MultiPolygon)

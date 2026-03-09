@@ -172,15 +172,22 @@ namespace wkp::core
 
         std::string encode_point(const double *coords, std::size_t point_count, std::size_t dimensions, int precision)
         {
+            const std::size_t group_segment_counts[] = {1};
+            const std::size_t segment_point_counts[] = {1};
             const uint8_t *data = nullptr;
             size_t size = 0;
             char error[512] = {0};
-            const auto status = wkp_workspace_encode_point_f64(
+            const auto status = wkp_workspace_encode_geometry_frame_f64(
                 workspace_,
+                WKP_GEOMETRY_POINT,
                 coords,
                 point_count * dimensions,
                 dimensions,
                 precision,
+                group_segment_counts,
+                1,
+                segment_point_counts,
+                1,
                 &data,
                 &size,
                 error,
@@ -191,15 +198,22 @@ namespace wkp::core
 
         std::string encode_linestring(const double *coords, std::size_t point_count, std::size_t dimensions, int precision)
         {
+            const std::size_t group_segment_counts[] = {1};
+            const std::size_t segment_point_counts[] = {point_count};
             const uint8_t *data = nullptr;
             size_t size = 0;
             char error[512] = {0};
-            const auto status = wkp_workspace_encode_linestring_f64(
+            const auto status = wkp_workspace_encode_geometry_frame_f64(
                 workspace_,
+                WKP_GEOMETRY_LINESTRING,
                 coords,
                 point_count * dimensions,
                 dimensions,
                 precision,
+                group_segment_counts,
+                1,
+                segment_point_counts,
+                1,
                 &data,
                 &size,
                 error,
@@ -236,12 +250,16 @@ namespace wkp::core
             const uint8_t *data = nullptr;
             size_t size = 0;
             char error[512] = {0};
-            const auto status = wkp_workspace_encode_polygon_f64(
+            const std::size_t group_segment_counts[] = {ring_point_counts.size()};
+            const auto status = wkp_workspace_encode_geometry_frame_f64(
                 workspace_,
+                WKP_GEOMETRY_POLYGON,
                 flat.data(),
                 flat.size(),
                 dimensions,
                 precision,
+                group_segment_counts,
+                1,
                 ring_point_counts.data(),
                 ring_point_counts.size(),
                 &data,
@@ -284,13 +302,19 @@ namespace wkp::core
             const uint8_t *data = nullptr;
             size_t size = 0;
             char error[512] = {0};
-            const auto status = wkp_workspace_encode_multipoint_f64(
+            std::vector<std::size_t> group_segment_counts(point_coords.size(), 1);
+            std::vector<std::size_t> segment_point_counts(point_coords.size(), 1);
+            const auto status = wkp_workspace_encode_geometry_frame_f64(
                 workspace_,
+                WKP_GEOMETRY_MULTIPOINT,
                 flat.data(),
                 flat.size(),
                 dimensions,
                 precision,
-                point_coords.size(),
+                group_segment_counts.data(),
+                group_segment_counts.size(),
+                segment_point_counts.data(),
+                segment_point_counts.size(),
                 &data,
                 &size,
                 error,
@@ -331,12 +355,16 @@ namespace wkp::core
             const uint8_t *data = nullptr;
             size_t size = 0;
             char error[512] = {0};
-            const auto status = wkp_workspace_encode_multilinestring_f64(
+            std::vector<std::size_t> group_segment_counts(counts.size(), 1);
+            const auto status = wkp_workspace_encode_geometry_frame_f64(
                 workspace_,
+                WKP_GEOMETRY_MULTILINESTRING,
                 flat.data(),
                 flat.size(),
                 dimensions,
                 precision,
+                group_segment_counts.data(),
+                group_segment_counts.size(),
                 counts.data(),
                 counts.size(),
                 &data,
@@ -391,8 +419,9 @@ namespace wkp::core
             const uint8_t *data = nullptr;
             size_t size = 0;
             char error[512] = {0};
-            const auto status = wkp_workspace_encode_multipolygon_f64(
+            const auto status = wkp_workspace_encode_geometry_frame_f64(
                 workspace_,
+                WKP_GEOMETRY_MULTIPOLYGON,
                 flat.data(),
                 flat.size(),
                 dimensions,
@@ -523,93 +552,8 @@ namespace wkp::core
 
     inline GeometryFrame decode(std::string_view encoded, Workspace *workspace = nullptr)
     {
-        if (workspace == nullptr)
-        {
-            return decode_geometry_frame(encoded);
-        }
-
-        const GeometryHeader header = decode_geometry_header(encoded);
-        const std::size_t body_start = 8;
-        const std::size_t body_end = encoded.size();
-        const std::size_t dims = static_cast<std::size_t>(header.dimensions);
-        const std::vector<int> precisions{header.precision};
-
-        auto split_ranges_local = [&](std::size_t start, std::size_t end, char separator)
-        {
-            std::vector<std::pair<std::size_t, std::size_t>> ranges;
-            if (end <= start)
-            {
-                return ranges;
-            }
-            std::size_t segment_start = start;
-            for (std::size_t i = start; i < end; ++i)
-            {
-                if (encoded[i] == separator)
-                {
-                    if (i <= segment_start)
-                    {
-                        throw std::invalid_argument("Malformed encoded geometry segment");
-                    }
-                    ranges.push_back({segment_start, i});
-                    segment_start = i + 1;
-                }
-            }
-            if (segment_start >= end)
-            {
-                throw std::invalid_argument("Malformed encoded geometry segment");
-            }
-            ranges.push_back({segment_start, end});
-            return ranges;
-        };
-
-        auto decode_segment = [&](std::size_t start, std::size_t end)
-        {
-            if (end <= start)
-            {
-                throw std::invalid_argument("Malformed encoded geometry segment");
-            }
-            return workspace->decode_f64(encoded.substr(start, end - start), dims, precisions);
-        };
-
-        GeometryFrame frame{header, {}};
-        switch (static_cast<EncodedGeometryType>(header.geometry_type))
-        {
-        case EncodedGeometryType::POINT:
-        case EncodedGeometryType::LINESTRING:
-            frame.groups.push_back({decode_segment(body_start, body_end)});
-            break;
-        case EncodedGeometryType::POLYGON:
-        {
-            std::vector<std::vector<double>> rings;
-            for (const auto &r : split_ranges_local(body_start, body_end, ','))
-            {
-                rings.push_back(decode_segment(r.first, r.second));
-            }
-            frame.groups.push_back(std::move(rings));
-            break;
-        }
-        case EncodedGeometryType::MULTIPOINT:
-        case EncodedGeometryType::MULTILINESTRING:
-            for (const auto &r : split_ranges_local(body_start, body_end, ';'))
-            {
-                frame.groups.push_back({decode_segment(r.first, r.second)});
-            }
-            break;
-        case EncodedGeometryType::MULTIPOLYGON:
-            for (const auto &poly : split_ranges_local(body_start, body_end, ';'))
-            {
-                std::vector<std::vector<double>> rings;
-                for (const auto &ring : split_ranges_local(poly.first, poly.second, ','))
-                {
-                    rings.push_back(decode_segment(ring.first, ring.second));
-                }
-                frame.groups.push_back(std::move(rings));
-            }
-            break;
-        default:
-            throw std::invalid_argument("Unsupported geometry type in header");
-        }
-        return frame;
+        (void)workspace;
+        return decode_geometry_frame(encoded);
     }
 
 } // namespace wkp::core

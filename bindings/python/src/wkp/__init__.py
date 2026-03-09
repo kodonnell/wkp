@@ -136,8 +136,8 @@ def _normalize_precisions(n: int, precisions):
 
 
 def _decode_floats_core(encoded: bytes, n: int, precisions, workspace: Workspace | None = None) -> np.ndarray:
-    if not isinstance(encoded, (bytes, bytearray)):
-        raise TypeError("encoded must be bytes or bytearray")
+    if not isinstance(encoded, bytes):
+        raise TypeError("encoded must be bytes")
 
     p = _normalize_precisions(n, precisions)
     ws = _resolve_workspace(workspace)
@@ -190,8 +190,8 @@ def encode_floats_into(floats, n: int, precisions, out_buffer: np.ndarray) -> in
 
 
 def decode_floats_into(encoded: bytes, n: int, precisions, out_buffer: np.ndarray) -> int:
-    if not isinstance(encoded, (bytes, bytearray)):
-        raise TypeError("encoded must be bytes or bytearray")
+    if not isinstance(encoded, bytes):
+        raise TypeError("encoded must be bytes")
     if not isinstance(out_buffer, np.ndarray):
         raise TypeError("out_buffer must be a numpy.ndarray")
     if out_buffer.dtype != np.float64 or out_buffer.ndim != 2:
@@ -205,10 +205,10 @@ def decode_floats_into(encoded: bytes, n: int, precisions, out_buffer: np.ndarra
     return int(_core.decode_floats_into(bytes(encoded), n, p, out_buffer))
 
 
-def decode_header(encoded: bytes | str):
-    if isinstance(encoded, str):
-        encoded = encoded.encode("ascii")
-    return _core.decode_geometry_header(bytes(encoded))
+def decode_header(encoded: bytes):
+    if not isinstance(encoded, bytes):
+        raise TypeError("encoded must be bytes")
+    return _core.decode_geometry_header(encoded)
 
 
 def _geometry_from_groups(geom_type: int, groups):
@@ -271,10 +271,33 @@ def _geometry_from_groups(geom_type: int, groups):
     raise ValueError(f"Unsupported geometry type in header: {geom_type}")
 
 
-def decode(encoded: bytes | str, workspace: Workspace | None = None) -> DecodedGeometry:
-    encoded_bytes = encoded.encode("ascii") if isinstance(encoded, str) else bytes(encoded)
+def decode(encoded: bytes, workspace: Workspace | None = None) -> DecodedGeometry:
+    if not isinstance(encoded, bytes):
+        raise TypeError("encoded must be bytes")
     ws = _resolve_workspace(workspace)
-    version, precision, dimensions, geom_type, groups = ws._core.decode_geometry_frame(encoded_bytes)
+
+    version, precision, dimensions, geom_type = decode_header(encoded)
+
+    # Fast path: POINT/LINESTRING payload is a single float stream after the 4-byte header.
+    # This avoids geometry-frame reconstruction overhead for the common benchmarked path.
+    if geom_type in (EncodedGeometryType.POINT.value, EncodedGeometryType.LINESTRING.value):
+        arr = _decode_floats_core(encoded[4:], dimensions, precision, workspace=ws)
+        if geom_type == EncodedGeometryType.POINT.value:
+            if arr.shape[0] != 1:
+                raise ValueError(f"Expected 1 point for POINT geometry, got {arr.shape[0]}")
+            geometry = Point(arr[0])
+        else:
+            if arr.shape[0] < 2:
+                raise ValueError(f"Expected at least 2 points for LINESTRING geometry, got {arr.shape[0]}")
+            geometry = shapely.linestrings(arr)
+        return DecodedGeometry(
+            version=version,
+            precision=precision,
+            dimensions=dimensions,
+            geometry=geometry,
+        )
+
+    version, precision, dimensions, geom_type, groups = ws._core.decode_geometry_frame(encoded)
     return DecodedGeometry(
         version=version,
         precision=precision,
@@ -295,25 +318,23 @@ def _coords_array(geom, dimensions: int) -> np.ndarray:
     return np.ascontiguousarray(shapely.get_coordinates(geom, include_z=include_z), dtype=np.float64)
 
 
-def encode_point(geom: Point, precision: int, workspace: Workspace | None = None) -> str:
+def encode_point(geom: Point, precision: int, workspace: Workspace | None = None) -> bytes:
     if not isinstance(geom, Point):
         raise TypeError("geom must be shapely.geometry.Point")
     dims = _geometry_dimensions(geom)
     ws = _resolve_workspace(workspace)
-    encoded = ws._core.encode_point(_coords_array(geom, dims), precision)
-    return encoded.decode("ascii")
+    return ws._core.encode_point(_coords_array(geom, dims), precision)
 
 
-def encode_linestring(geom: LineString, precision: int, workspace: Workspace | None = None) -> str:
+def encode_linestring(geom: LineString, precision: int, workspace: Workspace | None = None) -> bytes:
     if not isinstance(geom, LineString):
         raise TypeError("geom must be shapely.geometry.LineString")
     dims = _geometry_dimensions(geom)
     ws = _resolve_workspace(workspace)
-    encoded = ws._core.encode_linestring(_coords_array(geom, dims), precision)
-    return encoded.decode("ascii")
+    return ws._core.encode_linestring(_coords_array(geom, dims), precision)
 
 
-def encode_polygon(geom: Polygon, precision: int, workspace: Workspace | None = None) -> str:
+def encode_polygon(geom: Polygon, precision: int, workspace: Workspace | None = None) -> bytes:
     if not isinstance(geom, Polygon):
         raise TypeError("geom must be shapely.geometry.Polygon")
     dims = _geometry_dimensions(geom)
@@ -322,11 +343,10 @@ def encode_polygon(geom: Polygon, precision: int, workspace: Workspace | None = 
     for ring in [geom.exterior] + list(geom.interiors):
         rings.append(np.ascontiguousarray(shapely.get_coordinates(ring, include_z=include_z), dtype=np.float64))
     ws = _resolve_workspace(workspace)
-    encoded = ws._core.encode_polygon(rings, precision)
-    return encoded.decode("ascii")
+    return ws._core.encode_polygon(rings, precision)
 
 
-def encode_multipoint(geom: MultiPoint, precision: int, workspace: Workspace | None = None) -> str:
+def encode_multipoint(geom: MultiPoint, precision: int, workspace: Workspace | None = None) -> bytes:
     if not isinstance(geom, MultiPoint):
         raise TypeError("geom must be shapely.geometry.MultiPoint")
     dims = _geometry_dimensions(geom)
@@ -335,11 +355,10 @@ def encode_multipoint(geom: MultiPoint, precision: int, workspace: Workspace | N
     for point in geom.geoms:
         parts.append(np.ascontiguousarray(shapely.get_coordinates(point, include_z=include_z), dtype=np.float64))
     ws = _resolve_workspace(workspace)
-    encoded = ws._core.encode_multipoint(parts, precision)
-    return encoded.decode("ascii")
+    return ws._core.encode_multipoint(parts, precision)
 
 
-def encode_multilinestring(geom: MultiLineString, precision: int, workspace: Workspace | None = None) -> str:
+def encode_multilinestring(geom: MultiLineString, precision: int, workspace: Workspace | None = None) -> bytes:
     if not isinstance(geom, MultiLineString):
         raise TypeError("geom must be shapely.geometry.MultiLineString")
     dims = _geometry_dimensions(geom)
@@ -348,11 +367,10 @@ def encode_multilinestring(geom: MultiLineString, precision: int, workspace: Wor
     for line in geom.geoms:
         parts.append(np.ascontiguousarray(shapely.get_coordinates(line, include_z=include_z), dtype=np.float64))
     ws = _resolve_workspace(workspace)
-    encoded = ws._core.encode_multilinestring(parts, precision)
-    return encoded.decode("ascii")
+    return ws._core.encode_multilinestring(parts, precision)
 
 
-def encode_multipolygon(geom: MultiPolygon, precision: int, workspace: Workspace | None = None) -> str:
+def encode_multipolygon(geom: MultiPolygon, precision: int, workspace: Workspace | None = None) -> bytes:
     if not isinstance(geom, MultiPolygon):
         raise TypeError("geom must be shapely.geometry.MultiPolygon")
     dims = _geometry_dimensions(geom)
@@ -364,5 +382,4 @@ def encode_multipolygon(geom: MultiPolygon, precision: int, workspace: Workspace
             rings.append(np.ascontiguousarray(shapely.get_coordinates(ring, include_z=include_z), dtype=np.float64))
         polygons.append(rings)
     ws = _resolve_workspace(workspace)
-    encoded = ws._core.encode_multipolygon(polygons, precision)
-    return encoded.decode("ascii")
+    return ws._core.encode_multipolygon(polygons, precision)

@@ -16,6 +16,9 @@ struct wkp_workspace
 {
     std::vector<uint8_t> u8_work;
     std::vector<double> f64_work;
+    std::vector<size_t> size_work_a;
+    std::vector<size_t> size_work_b;
+    wkp_geometry_frame_f64 geometry_frame_work{};
     std::size_t max_u8_capacity = 0;
     std::size_t max_f64_capacity = 0;
     bool has_u8_limit = false;
@@ -29,6 +32,8 @@ namespace
     constexpr int kGeometryVersion = 1;
     constexpr char kSepRing = ',';
     constexpr char kSepMulti = ';';
+    constexpr int kHeaderFieldOffset = 63;
+    constexpr int kHeaderFieldMax = 63;
 
     void set_error(char *error_message, std::size_t capacity, const std::string &message)
     {
@@ -66,17 +71,47 @@ namespace
         const double *values,
         std::size_t value_count,
         std::size_t dimensions,
-        const std::vector<double> &factors)
+        const std::vector<double> &factors,
+        std::vector<long long> *previous_state = nullptr)
     {
-        std::vector<long long> previous(dimensions, 0LL);
+        std::vector<long long> previous_local;
+        if (previous_state == nullptr)
+        {
+            previous_local.assign(dimensions, 0LL);
+            previous_state = &previous_local;
+        }
+        else if (previous_state->size() != dimensions)
+        {
+            previous_state->assign(dimensions, 0LL);
+        }
+
         for (std::size_t i = 0; i < value_count; ++i)
         {
             const std::size_t dim = i % dimensions;
             const long long scaled = static_cast<long long>(std::llround(values[i] * factors[dim]));
-            const long long delta = scaled - previous[dim];
-            previous[dim] = scaled;
+            const long long delta = scaled - (*previous_state)[dim];
+            (*previous_state)[dim] = scaled;
             append_encoded_signed(out, delta);
         }
+    }
+
+    int decode_header_field(char c)
+    {
+        const int decoded = static_cast<int>(static_cast<unsigned char>(c)) - kHeaderFieldOffset;
+        if (decoded < 0 || decoded > kHeaderFieldMax)
+        {
+            throw std::invalid_argument("Invalid geometry header field");
+        }
+        return decoded;
+    }
+
+    char encode_header_field(int value)
+    {
+        if (value < 0 || value > kHeaderFieldMax)
+        {
+            throw std::invalid_argument("geometry header field out of range");
+        }
+        return static_cast<char>(value + kHeaderFieldOffset);
     }
 
     long long decode_once(std::string_view encoded, std::size_t &index)
@@ -158,21 +193,23 @@ namespace
         {
             throw std::invalid_argument("dimensions must be between 1 and 16");
         }
-        if (precision < 0 || precision > 99)
+        if (precision < 0 || precision > kHeaderFieldMax)
         {
-            throw std::invalid_argument("precision must be between 0 and 99");
+            throw std::invalid_argument("precision must be between 0 and 63");
+        }
+        const int geometry_code = static_cast<int>(geometry_type);
+        if (geometry_code < 0 || geometry_code > kHeaderFieldMax)
+        {
+            throw std::invalid_argument("geometry type must be between 0 and 63");
         }
 
-        char buf[16];
-        std::snprintf(
-            buf,
-            sizeof(buf),
-            "%02d%02d%02d%02d",
-            kGeometryVersion,
-            precision,
-            static_cast<int>(dimensions),
-            static_cast<int>(geometry_type));
-        return std::string(buf);
+        std::string header;
+        header.reserve(4);
+        header.push_back(encode_header_field(kGeometryVersion));
+        header.push_back(encode_header_field(precision));
+        header.push_back(encode_header_field(static_cast<int>(dimensions)));
+        header.push_back(encode_header_field(geometry_code));
+        return header;
     }
 
     void append_coords_segment(
@@ -180,13 +217,14 @@ namespace
         const double *coords,
         std::size_t point_count,
         std::size_t dimensions,
-        const std::vector<double> &factors)
+        const std::vector<double> &factors,
+        std::vector<long long> *previous_state = nullptr)
     {
         if (coords == nullptr)
         {
             throw std::invalid_argument("coords pointer cannot be null");
         }
-        append_encoded_segment(out, coords, point_count * dimensions, dimensions, factors);
+        append_encoded_segment(out, coords, point_count * dimensions, dimensions, factors, previous_state);
     }
 
     std::string encode_geometry_point(
@@ -203,7 +241,7 @@ namespace
 
         const auto factors = build_uniform_factors(dimensions, precision);
         std::string out = build_geometry_header(dimensions, precision, WKP_GEOMETRY_POINT);
-        out.reserve(8 + coord_value_count * 4 + 8);
+        out.reserve(4 + coord_value_count * 4 + 8);
         append_coords_segment(out, coords, point_count, dimensions, factors);
         return out;
     }
@@ -222,7 +260,7 @@ namespace
 
         const auto factors = build_uniform_factors(dimensions, precision);
         std::string out = build_geometry_header(dimensions, precision, WKP_GEOMETRY_LINESTRING);
-        out.reserve(8 + coord_value_count * 4 + 8);
+        out.reserve(4 + coord_value_count * 4 + 8);
         append_coords_segment(out, coords, point_count, dimensions, factors);
         return out;
     }
@@ -256,8 +294,9 @@ namespace
 
         const auto factors = build_uniform_factors(dimensions, precision);
         std::string out = build_geometry_header(dimensions, precision, WKP_GEOMETRY_POLYGON);
-        out.reserve(8 + coord_value_count * 4 + ring_count + 8);
+        out.reserve(4 + coord_value_count * 4 + ring_count + 8);
 
+        std::vector<long long> previous(dimensions, 0LL);
         std::size_t offset = 0;
         for (std::size_t i = 0; i < ring_count; ++i)
         {
@@ -266,7 +305,7 @@ namespace
                 out.push_back(kSepRing);
             }
             const std::size_t point_count = ring_point_counts[i];
-            append_coords_segment(out, coords + offset, point_count, dimensions, factors);
+            append_coords_segment(out, coords + offset, point_count, dimensions, factors, &previous);
             offset += point_count * dimensions;
         }
 
@@ -287,8 +326,9 @@ namespace
 
         const auto factors = build_uniform_factors(dimensions, precision);
         std::string out = build_geometry_header(dimensions, precision, WKP_GEOMETRY_MULTIPOINT);
-        out.reserve(8 + coord_value_count * 4 + point_count + 8);
+        out.reserve(4 + coord_value_count * 4 + point_count + 8);
 
+        std::vector<long long> previous(dimensions, 0LL);
         std::size_t offset = 0;
         for (std::size_t i = 0; i < point_count; ++i)
         {
@@ -296,7 +336,7 @@ namespace
             {
                 out.push_back(kSepMulti);
             }
-            append_coords_segment(out, coords + offset, 1, dimensions, factors);
+            append_coords_segment(out, coords + offset, 1, dimensions, factors, &previous);
             offset += dimensions;
         }
 
@@ -332,8 +372,9 @@ namespace
 
         const auto factors = build_uniform_factors(dimensions, precision);
         std::string out = build_geometry_header(dimensions, precision, WKP_GEOMETRY_MULTILINESTRING);
-        out.reserve(8 + coord_value_count * 4 + linestring_count + 8);
+        out.reserve(4 + coord_value_count * 4 + linestring_count + 8);
 
+        std::vector<long long> previous(dimensions, 0LL);
         std::size_t offset = 0;
         for (std::size_t i = 0; i < linestring_count; ++i)
         {
@@ -342,7 +383,7 @@ namespace
                 out.push_back(kSepMulti);
             }
             const std::size_t point_count = linestring_point_counts[i];
-            append_coords_segment(out, coords + offset, point_count, dimensions, factors);
+            append_coords_segment(out, coords + offset, point_count, dimensions, factors, &previous);
             offset += point_count * dimensions;
         }
 
@@ -386,8 +427,9 @@ namespace
 
         const auto factors = build_uniform_factors(dimensions, precision);
         std::string out = build_geometry_header(dimensions, precision, WKP_GEOMETRY_MULTIPOLYGON);
-        out.reserve(8 + coord_value_count * 4 + ring_count + polygon_count + 8);
+        out.reserve(4 + coord_value_count * 4 + ring_count + polygon_count + 8);
 
+        std::vector<long long> previous(dimensions, 0LL);
         std::size_t coord_offset = 0;
         std::size_t ring_offset = 0;
         for (std::size_t poly_idx = 0; poly_idx < polygon_count; ++poly_idx)
@@ -411,7 +453,7 @@ namespace
                 }
 
                 const std::size_t point_count = ring_point_counts[ring_offset++];
-                append_coords_segment(out, coords + coord_offset, point_count, dimensions, factors);
+                append_coords_segment(out, coords + coord_offset, point_count, dimensions, factors, &previous);
                 coord_offset += point_count * dimensions;
             }
         }
@@ -452,12 +494,12 @@ namespace wkp::core
 
     GeometryHeader decode_geometry_header(std::string_view encoded)
     {
-        if (encoded.size() < 8)
+        if (encoded.size() < 4)
         {
             throw std::invalid_argument("Encoded geometry header too short");
         }
 
-        const int version = std::stoi(std::string(encoded.substr(0, 2)));
+        const int version = decode_header_field(encoded[0]);
         if (version != kGeometryVersion)
         {
             throw std::invalid_argument("Unsupported geometry encoding version");
@@ -465,19 +507,20 @@ namespace wkp::core
 
         return GeometryHeader{
             version,
-            std::stoi(std::string(encoded.substr(2, 2))),
-            std::stoi(std::string(encoded.substr(4, 2))),
-            std::stoi(std::string(encoded.substr(6, 2))),
+            decode_header_field(encoded[1]),
+            decode_header_field(encoded[2]),
+            decode_header_field(encoded[3]),
         };
     }
 
     GeometryFrame decode_geometry_frame(std::string_view encoded)
     {
         const GeometryHeader header = decode_geometry_header(encoded);
-        const std::size_t body_start = 8;
+        const std::size_t body_start = 4;
         const std::size_t body_end = encoded.size();
         const std::size_t dims = static_cast<std::size_t>(header.dimensions);
-        const std::vector<int> precisions{header.precision};
+        const auto factors = build_uniform_factors(dims, header.precision);
+        std::vector<long long> previous(dims, 0LL);
 
         auto decode_segment = [&](std::size_t start, std::size_t end) -> std::vector<double>
         {
@@ -486,7 +529,23 @@ namespace wkp::core
                 throw std::invalid_argument("Malformed encoded geometry segment");
             }
             std::vector<double> decoded;
-            decode_f64_into(encoded.substr(start, end - start), dims, precisions, decoded);
+            std::size_t index = start;
+            std::size_t value_count = 0;
+            while (index < end)
+            {
+                const std::size_t dim = value_count % dims;
+                previous[dim] += decode_once(encoded, index);
+                if (index > end)
+                {
+                    throw std::invalid_argument("Malformed encoded geometry segment");
+                }
+                decoded.push_back(static_cast<double>(previous[dim]) / factors[dim]);
+                ++value_count;
+            }
+            if ((value_count % dims) != 0)
+            {
+                throw std::invalid_argument("Malformed encoded coordinate stream");
+            }
             return decoded;
         };
 
@@ -560,61 +619,15 @@ namespace wkp::core
             throw std::invalid_argument("value_count must be divisible by dimensions");
         }
 
-        const std::size_t min_capacity = 64;
-        if (out_encoded.capacity() < min_capacity)
+        std::vector<double> factors(dimensions, 1.0);
+        for (std::size_t i = 0; i < dimensions; ++i)
         {
-            out_encoded.reserve(min_capacity);
+            factors[i] = std::pow(10.0, static_cast<double>(p[i]));
         }
 
-        char error[512] = {0};
-        for (;;)
-        {
-            const std::size_t capacity = out_encoded.capacity();
-            out_encoded.resize(capacity);
-
-            wkp_u8_buffer out{
-                reinterpret_cast<uint8_t *>(&out_encoded[0]),
-                out_encoded.size()};
-
-            const wkp_status status = wkp_encode_f64_into(
-                values,
-                value_count,
-                dimensions,
-                p.data(),
-                p.size(),
-                &out,
-                error,
-                sizeof(error));
-
-            if (status == WKP_STATUS_BUFFER_TOO_SMALL)
-            {
-                std::size_t next_capacity = capacity * 2;
-                if (next_capacity < out.size)
-                {
-                    next_capacity = out.size;
-                }
-                if (next_capacity < min_capacity)
-                {
-                    next_capacity = min_capacity;
-                }
-                out_encoded.reserve(next_capacity);
-                continue;
-            }
-
-            if (status != WKP_STATUS_OK)
-            {
-                out_encoded.clear();
-                const std::string msg = (error[0] != '\0') ? std::string(error) : std::string("WKP error");
-                if (status == WKP_STATUS_INVALID_ARGUMENT || status == WKP_STATUS_MALFORMED_INPUT)
-                {
-                    throw std::invalid_argument(msg);
-                }
-                throw std::runtime_error(msg);
-            }
-
-            out_encoded.resize(out.size);
-            return;
-        }
+        out_encoded.clear();
+        out_encoded.reserve((value_count * 4) + 8);
+        append_encoded_segment(out_encoded, values, value_count, dimensions, factors);
     }
 
     void decode_f64_into(
@@ -625,57 +638,29 @@ namespace wkp::core
     {
         const std::vector<int> p = normalize_precisions(dimensions, precisions);
 
-        const std::size_t min_capacity = 16;
-        if (out_values.capacity() < min_capacity)
+        std::vector<double> factors(dimensions, 1.0);
+        for (std::size_t i = 0; i < dimensions; ++i)
         {
-            out_values.reserve(min_capacity);
+            factors[i] = std::pow(10.0, static_cast<double>(p[i]));
         }
 
-        char error[512] = {0};
-        for (;;)
+        std::vector<long long> previous(dimensions, 0LL);
+        out_values.clear();
+        out_values.reserve(std::max<std::size_t>(16, encoded.size()));
+
+        std::size_t index = 0;
+        std::size_t value_count = 0;
+        while (index < encoded.size())
         {
-            const std::size_t capacity = out_values.capacity();
-            out_values.resize(capacity);
+            const std::size_t dim = value_count % dimensions;
+            previous[dim] += decode_once(encoded, index);
+            out_values.push_back(static_cast<double>(previous[dim]) / factors[dim]);
+            ++value_count;
+        }
 
-            wkp_f64_buffer out{out_values.data(), out_values.size()};
-            const wkp_status status = wkp_decode_f64_into(
-                reinterpret_cast<const uint8_t *>(encoded.data()),
-                encoded.size(),
-                dimensions,
-                p.data(),
-                p.size(),
-                &out,
-                error,
-                sizeof(error));
-
-            if (status == WKP_STATUS_BUFFER_TOO_SMALL)
-            {
-                std::size_t next_capacity = capacity * 2;
-                if (next_capacity < out.size)
-                {
-                    next_capacity = out.size;
-                }
-                if (next_capacity < min_capacity)
-                {
-                    next_capacity = min_capacity;
-                }
-                out_values.reserve(next_capacity);
-                continue;
-            }
-
-            if (status != WKP_STATUS_OK)
-            {
-                out_values.clear();
-                const std::string msg = (error[0] != '\0') ? std::string(error) : std::string("WKP error");
-                if (status == WKP_STATUS_INVALID_ARGUMENT || status == WKP_STATUS_MALFORMED_INPUT)
-                {
-                    throw std::invalid_argument(msg);
-                }
-                throw std::runtime_error(msg);
-            }
-
-            out_values.resize(out.size);
-            return;
+        if ((value_count % dimensions) != 0)
+        {
+            throw std::invalid_argument("Malformed encoded coordinate stream");
         }
     }
 
@@ -774,71 +759,6 @@ namespace
         }
     }
 
-    template <typename EncodeFn>
-    wkp_status workspace_encode_u8_retry(
-        wkp_workspace *workspace,
-        const uint8_t **out_data,
-        size_t *out_size,
-        char *error_message,
-        size_t error_message_capacity,
-        EncodeFn &&encode_fn)
-    {
-        if (workspace == nullptr || out_data == nullptr || out_size == nullptr)
-        {
-            set_error(error_message, error_message_capacity, "workspace, out_data, and out_size are required");
-            return WKP_STATUS_INVALID_ARGUMENT;
-        }
-
-        if (workspace->u8_work.empty())
-        {
-            constexpr std::size_t kDefaultCapacity = 64;
-            const wkp_status reserve_status = resize_workspace_u8(
-                workspace,
-                kDefaultCapacity,
-                error_message,
-                error_message_capacity);
-            if (reserve_status != WKP_STATUS_OK)
-            {
-                return reserve_status;
-            }
-        }
-
-        for (;;)
-        {
-            wkp_u8_buffer out{
-                workspace->u8_work.data(),
-                workspace->u8_work.size()};
-
-            const wkp_status status = encode_fn(
-                &out,
-                error_message,
-                error_message_capacity);
-
-            if (status == WKP_STATUS_BUFFER_TOO_SMALL)
-            {
-                const wkp_status reserve_status = resize_workspace_u8(
-                    workspace,
-                    out.size,
-                    error_message,
-                    error_message_capacity);
-                if (reserve_status != WKP_STATUS_OK)
-                {
-                    return reserve_status;
-                }
-                continue;
-            }
-
-            if (status != WKP_STATUS_OK)
-            {
-                return status;
-            }
-
-            *out_data = workspace->u8_work.data();
-            *out_size = out.size;
-            return WKP_STATUS_OK;
-        }
-    }
-
     bool normalize_precisions_fixed(
         std::size_t dimensions,
         const int *precisions,
@@ -901,9 +821,11 @@ namespace
         const double *values,
         std::size_t value_count,
         std::size_t dimensions,
-        const double *factors)
+        const double *factors,
+        long long *previous_state = nullptr)
     {
-        long long previous[kMaxDimensions] = {0};
+        long long previous_local[kMaxDimensions] = {0};
+        long long *previous = (previous_state != nullptr) ? previous_state : previous_local;
         for (std::size_t i = 0; i < value_count; ++i)
         {
             const std::size_t dim = i % dimensions;
@@ -927,25 +849,23 @@ namespace
             set_error(error_message, error_message_capacity, "dimensions must be between 1 and 16");
             return false;
         }
-        if (precision < 0 || precision > 99)
+        if (precision < 0 || precision > kHeaderFieldMax)
         {
-            set_error(error_message, error_message_capacity, "precision must be between 0 and 99");
+            set_error(error_message, error_message_capacity, "precision must be between 0 and 63");
             return false;
         }
 
-        char header[16];
-        std::snprintf(
-            header,
-            sizeof(header),
-            "%02d%02d%02d%02d",
-            kGeometryVersion,
-            precision,
-            static_cast<int>(dimensions),
-            static_cast<int>(geometry_type));
-        for (int i = 0; i < 8; ++i)
+        const int geometry_code = static_cast<int>(geometry_type);
+        if (precision > kHeaderFieldMax || static_cast<int>(dimensions) > kHeaderFieldMax || geometry_code < 0 || geometry_code > kHeaderFieldMax)
         {
-            out.push(header[i]);
+            set_error(error_message, error_message_capacity, "geometry header field out of range");
+            return false;
         }
+
+        out.push(static_cast<char>(kGeometryVersion + kHeaderFieldOffset));
+        out.push(static_cast<char>(precision + kHeaderFieldOffset));
+        out.push(static_cast<char>(static_cast<int>(dimensions) + kHeaderFieldOffset));
+        out.push(static_cast<char>(geometry_code + kHeaderFieldOffset));
         return true;
     }
 
@@ -958,205 +878,10 @@ namespace
         }
     }
 
-    wkp_status finalize_encoded_result(
-        OutputWriter &writer,
-        wkp_u8_buffer *out_encoded,
-        char *error_message,
-        std::size_t error_message_capacity)
-    {
-        out_encoded->size = writer.written;
-        if (writer.overflow)
-        {
-            set_error(error_message, error_message_capacity, "output buffer too small");
-            return WKP_STATUS_BUFFER_TOO_SMALL;
-        }
-        return WKP_STATUS_OK;
-    }
-
-    bool validate_encode_inputs(
-        const double *coords,
-        size_t coord_value_count,
-        size_t dimensions,
-        wkp_u8_buffer *out_encoded,
-        char *error_message,
-        size_t error_message_capacity)
-    {
-        if (out_encoded == nullptr)
-        {
-            set_error(error_message, error_message_capacity, "out_encoded is required");
-            return false;
-        }
-        if (coords == nullptr)
-        {
-            set_error(error_message, error_message_capacity, "coords is required");
-            return false;
-        }
-        if (dimensions == 0 || dimensions > kMaxDimensions)
-        {
-            set_error(error_message, error_message_capacity, "dimensions must be between 1 and 16");
-            return false;
-        }
-        if ((coord_value_count % dimensions) != 0)
-        {
-            set_error(error_message, error_message_capacity, "coord_value_count must be divisible by dimensions");
-            return false;
-        }
-        if (out_encoded->size > 0 && out_encoded->data == nullptr)
-        {
-            set_error(error_message, error_message_capacity, "out_encoded->data is null but size > 0");
-            return false;
-        }
-        return true;
-    }
-
 } // namespace
 
 extern "C"
 {
-
-    wkp_status wkp_encode_f64_into(
-        const double *values,
-        size_t value_count,
-        size_t dimensions,
-        const int *precisions,
-        size_t precision_count,
-        wkp_u8_buffer *out_encoded,
-        char *error_message,
-        size_t error_message_capacity)
-    {
-        if (out_encoded == nullptr)
-        {
-            set_error(error_message, error_message_capacity, "out_encoded is required");
-            return WKP_STATUS_INVALID_ARGUMENT;
-        }
-        if (values == nullptr || precisions == nullptr)
-        {
-            set_error(error_message, error_message_capacity, "values and precisions are required");
-            return WKP_STATUS_INVALID_ARGUMENT;
-        }
-        if (dimensions == 0 || dimensions > kMaxDimensions)
-        {
-            set_error(error_message, error_message_capacity, "dimensions must be between 1 and 16");
-            return WKP_STATUS_INVALID_ARGUMENT;
-        }
-        if ((value_count % dimensions) != 0)
-        {
-            set_error(error_message, error_message_capacity, "value_count must be divisible by dimensions");
-            return WKP_STATUS_INVALID_ARGUMENT;
-        }
-        if (out_encoded->size > 0 && out_encoded->data == nullptr)
-        {
-            set_error(error_message, error_message_capacity, "out_encoded->data is null but size > 0");
-            return WKP_STATUS_INVALID_ARGUMENT;
-        }
-        int p[kMaxDimensions] = {0};
-        if (!normalize_precisions_fixed(dimensions, precisions, precision_count, p, error_message, error_message_capacity))
-        {
-            return WKP_STATUS_INVALID_ARGUMENT;
-        }
-
-        double factors[kMaxDimensions] = {0.0};
-        for (std::size_t i = 0; i < dimensions; ++i)
-        {
-            factors[i] = std::pow(10.0, static_cast<double>(p[i]));
-        }
-
-        OutputWriter writer{out_encoded->data, out_encoded->size, 0, false};
-        append_encoded_segment(writer, values, value_count, dimensions, factors);
-        return finalize_encoded_result(writer, out_encoded, error_message, error_message_capacity);
-    }
-
-    wkp_status wkp_decode_f64_into(
-        const uint8_t *encoded,
-        size_t encoded_size,
-        size_t dimensions,
-        const int *precisions,
-        size_t precision_count,
-        wkp_f64_buffer *out_values,
-        char *error_message,
-        size_t error_message_capacity)
-    {
-        if (out_values == nullptr)
-        {
-            set_error(error_message, error_message_capacity, "out_values is required");
-            return WKP_STATUS_INVALID_ARGUMENT;
-        }
-        if (encoded == nullptr || precisions == nullptr)
-        {
-            set_error(error_message, error_message_capacity, "encoded and precisions are required");
-            return WKP_STATUS_INVALID_ARGUMENT;
-        }
-        if (dimensions == 0 || dimensions > kMaxDimensions)
-        {
-            set_error(error_message, error_message_capacity, "dimensions must be between 1 and 16");
-            return WKP_STATUS_INVALID_ARGUMENT;
-        }
-        if (out_values->size > 0 && out_values->data == nullptr)
-        {
-            set_error(error_message, error_message_capacity, "out_values->data is null but size > 0");
-            return WKP_STATUS_INVALID_ARGUMENT;
-        }
-
-        int p[kMaxDimensions] = {0};
-        if (!normalize_precisions_fixed(dimensions, precisions, precision_count, p, error_message, error_message_capacity))
-        {
-            return WKP_STATUS_INVALID_ARGUMENT;
-        }
-
-        double factors[kMaxDimensions] = {0.0};
-        for (std::size_t i = 0; i < dimensions; ++i)
-        {
-            factors[i] = std::pow(10.0, static_cast<double>(p[i]));
-        }
-
-        const std::string_view encoded_view(reinterpret_cast<const char *>(encoded), encoded_size);
-        long long previous[kMaxDimensions] = {0};
-        std::size_t value_count = 0;
-
-        try
-        {
-            std::size_t index = 0;
-            while (index < encoded_view.size())
-            {
-                const std::size_t dim = value_count % dimensions;
-                previous[dim] += decode_once(encoded_view, index);
-                if (value_count < out_values->size && out_values->data != nullptr)
-                {
-                    out_values->data[value_count] = static_cast<double>(previous[dim]) / factors[dim];
-                }
-                ++value_count;
-            }
-        }
-        catch (const std::invalid_argument &ex)
-        {
-            const std::string message = ex.what();
-            set_error(error_message, error_message_capacity, message);
-            return message.find("Malformed") != std::string::npos
-                       ? WKP_STATUS_MALFORMED_INPUT
-                       : WKP_STATUS_INVALID_ARGUMENT;
-        }
-        catch (const std::exception &ex)
-        {
-            set_error(error_message, error_message_capacity, ex.what());
-            return WKP_STATUS_INTERNAL_ERROR;
-        }
-
-        if ((value_count % dimensions) != 0U)
-        {
-            set_error(error_message, error_message_capacity, "Malformed encoded coordinate stream");
-            return WKP_STATUS_MALFORMED_INPUT;
-        }
-
-        if (value_count > out_values->size)
-        {
-            out_values->size = value_count;
-            set_error(error_message, error_message_capacity, "output buffer too small");
-            return WKP_STATUS_BUFFER_TOO_SMALL;
-        }
-
-        out_values->size = value_count;
-        return WKP_STATUS_OK;
-    }
 
     wkp_status wkp_workspace_create(
         size_t initial_u8_capacity,
@@ -1243,222 +968,79 @@ extern "C"
         char *error_message,
         size_t error_message_capacity)
     {
-        return workspace_encode_u8_retry(
-            workspace,
-            out_data,
-            out_size,
-            error_message,
-            error_message_capacity,
-            [&](wkp_u8_buffer *out, char *err, size_t err_cap) -> wkp_status
-            {
-                return wkp_encode_f64_into(
-                    values,
-                    value_count,
-                    dimensions,
-                    precisions,
-                    precision_count,
-                    out,
-                    err,
-                    err_cap);
-            });
-    }
+        if (workspace == nullptr || out_data == nullptr || out_size == nullptr)
+        {
+            set_error(error_message, error_message_capacity, "workspace, out_data, and out_size are required");
+            return WKP_STATUS_INVALID_ARGUMENT;
+        }
+        if (values == nullptr || precisions == nullptr)
+        {
+            set_error(error_message, error_message_capacity, "values and precisions are required");
+            return WKP_STATUS_INVALID_ARGUMENT;
+        }
+        if (dimensions == 0 || dimensions > kMaxDimensions)
+        {
+            set_error(error_message, error_message_capacity, "dimensions must be between 1 and 16");
+            return WKP_STATUS_INVALID_ARGUMENT;
+        }
+        if ((value_count % dimensions) != 0)
+        {
+            set_error(error_message, error_message_capacity, "value_count must be divisible by dimensions");
+            return WKP_STATUS_INVALID_ARGUMENT;
+        }
 
-    wkp_status wkp_workspace_encode_point_f64(
-        wkp_workspace *workspace,
-        const double *coords,
-        size_t coord_value_count,
-        size_t dimensions,
-        int precision,
-        const uint8_t **out_data,
-        size_t *out_size,
-        char *error_message,
-        size_t error_message_capacity)
-    {
-        return workspace_encode_u8_retry(
-            workspace,
-            out_data,
-            out_size,
-            error_message,
-            error_message_capacity,
-            [&](wkp_u8_buffer *out, char *err, size_t err_cap) -> wkp_status
-            {
-                return wkp_encode_point_f64_into(
-                    coords,
-                    coord_value_count,
-                    dimensions,
-                    precision,
-                    out,
-                    err,
-                    err_cap);
-            });
-    }
+        int p[kMaxDimensions] = {0};
+        if (!normalize_precisions_fixed(dimensions, precisions, precision_count, p, error_message, error_message_capacity))
+        {
+            return WKP_STATUS_INVALID_ARGUMENT;
+        }
 
-    wkp_status wkp_workspace_encode_linestring_f64(
-        wkp_workspace *workspace,
-        const double *coords,
-        size_t coord_value_count,
-        size_t dimensions,
-        int precision,
-        const uint8_t **out_data,
-        size_t *out_size,
-        char *error_message,
-        size_t error_message_capacity)
-    {
-        return workspace_encode_u8_retry(
-            workspace,
-            out_data,
-            out_size,
-            error_message,
-            error_message_capacity,
-            [&](wkp_u8_buffer *out, char *err, size_t err_cap) -> wkp_status
-            {
-                return wkp_encode_linestring_f64_into(
-                    coords,
-                    coord_value_count,
-                    dimensions,
-                    precision,
-                    out,
-                    err,
-                    err_cap);
-            });
-    }
+        double factors[kMaxDimensions] = {0.0};
+        for (std::size_t i = 0; i < dimensions; ++i)
+        {
+            factors[i] = std::pow(10.0, static_cast<double>(p[i]));
+        }
 
-    wkp_status wkp_workspace_encode_polygon_f64(
-        wkp_workspace *workspace,
-        const double *coords,
-        size_t coord_value_count,
-        size_t dimensions,
-        int precision,
-        const size_t *ring_point_counts,
-        size_t ring_count,
-        const uint8_t **out_data,
-        size_t *out_size,
-        char *error_message,
-        size_t error_message_capacity)
-    {
-        return workspace_encode_u8_retry(
-            workspace,
-            out_data,
-            out_size,
-            error_message,
-            error_message_capacity,
-            [&](wkp_u8_buffer *out, char *err, size_t err_cap) -> wkp_status
+        if (workspace->u8_work.capacity() == 0)
+        {
+            const wkp_status resize_status = resize_workspace_u8(
+                workspace,
+                64,
+                error_message,
+                error_message_capacity);
+            if (resize_status != WKP_STATUS_OK)
             {
-                return wkp_encode_polygon_f64_into(
-                    coords,
-                    coord_value_count,
-                    dimensions,
-                    precision,
-                    ring_point_counts,
-                    ring_count,
-                    out,
-                    err,
-                    err_cap);
-            });
-    }
+                return resize_status;
+            }
+        }
 
-    wkp_status wkp_workspace_encode_multipoint_f64(
-        wkp_workspace *workspace,
-        const double *coords,
-        size_t coord_value_count,
-        size_t dimensions,
-        int precision,
-        size_t point_count,
-        const uint8_t **out_data,
-        size_t *out_size,
-        char *error_message,
-        size_t error_message_capacity)
-    {
-        return workspace_encode_u8_retry(
-            workspace,
-            out_data,
-            out_size,
-            error_message,
-            error_message_capacity,
-            [&](wkp_u8_buffer *out, char *err, size_t err_cap) -> wkp_status
-            {
-                return wkp_encode_multipoint_f64_into(
-                    coords,
-                    coord_value_count,
-                    dimensions,
-                    precision,
-                    point_count,
-                    out,
-                    err,
-                    err_cap);
-            });
-    }
+        for (;;)
+        {
+            OutputWriter writer{
+                workspace->u8_work.data(),
+                workspace->u8_work.size(),
+                0,
+                false};
+            append_encoded_segment(writer, values, value_count, dimensions, factors);
 
-    wkp_status wkp_workspace_encode_multilinestring_f64(
-        wkp_workspace *workspace,
-        const double *coords,
-        size_t coord_value_count,
-        size_t dimensions,
-        int precision,
-        const size_t *linestring_point_counts,
-        size_t linestring_count,
-        const uint8_t **out_data,
-        size_t *out_size,
-        char *error_message,
-        size_t error_message_capacity)
-    {
-        return workspace_encode_u8_retry(
-            workspace,
-            out_data,
-            out_size,
-            error_message,
-            error_message_capacity,
-            [&](wkp_u8_buffer *out, char *err, size_t err_cap) -> wkp_status
+            if (writer.overflow)
             {
-                return wkp_encode_multilinestring_f64_into(
-                    coords,
-                    coord_value_count,
-                    dimensions,
-                    precision,
-                    linestring_point_counts,
-                    linestring_count,
-                    out,
-                    err,
-                    err_cap);
-            });
-    }
+                const wkp_status resize_status = resize_workspace_u8(
+                    workspace,
+                    writer.written,
+                    error_message,
+                    error_message_capacity);
+                if (resize_status != WKP_STATUS_OK)
+                {
+                    return resize_status;
+                }
+                continue;
+            }
 
-    wkp_status wkp_workspace_encode_multipolygon_f64(
-        wkp_workspace *workspace,
-        const double *coords,
-        size_t coord_value_count,
-        size_t dimensions,
-        int precision,
-        const size_t *polygon_ring_counts,
-        size_t polygon_count,
-        const size_t *ring_point_counts,
-        size_t ring_count,
-        const uint8_t **out_data,
-        size_t *out_size,
-        char *error_message,
-        size_t error_message_capacity)
-    {
-        return workspace_encode_u8_retry(
-            workspace,
-            out_data,
-            out_size,
-            error_message,
-            error_message_capacity,
-            [&](wkp_u8_buffer *out, char *err, size_t err_cap) -> wkp_status
-            {
-                return wkp_encode_multipolygon_f64_into(
-                    coords,
-                    coord_value_count,
-                    dimensions,
-                    precision,
-                    polygon_ring_counts,
-                    polygon_count,
-                    ring_point_counts,
-                    ring_count,
-                    out,
-                    err,
-                    err_cap);
-            });
+            *out_data = workspace->u8_work.data();
+            *out_size = writer.written;
+            return WKP_STATUS_OK;
+        }
     }
 
     wkp_status wkp_workspace_decode_f64(
@@ -1479,58 +1061,400 @@ extern "C"
             return WKP_STATUS_INVALID_ARGUMENT;
         }
 
-        if (workspace->f64_work.empty())
+        if (encoded == nullptr || precisions == nullptr)
         {
-            constexpr std::size_t kDefaultCapacity = 16;
-            const wkp_status reserve_status = resize_workspace_f64(
+            set_error(error_message, error_message_capacity, "encoded and precisions are required");
+            return WKP_STATUS_INVALID_ARGUMENT;
+        }
+        if (dimensions == 0 || dimensions > kMaxDimensions)
+        {
+            set_error(error_message, error_message_capacity, "dimensions must be between 1 and 16");
+            return WKP_STATUS_INVALID_ARGUMENT;
+        }
+
+        int p[kMaxDimensions] = {0};
+        if (!normalize_precisions_fixed(dimensions, precisions, precision_count, p, error_message, error_message_capacity))
+        {
+            return WKP_STATUS_INVALID_ARGUMENT;
+        }
+
+        double factors[kMaxDimensions] = {0.0};
+        for (std::size_t i = 0; i < dimensions; ++i)
+        {
+            factors[i] = std::pow(10.0, static_cast<double>(p[i]));
+        }
+
+        std::size_t current_capacity = workspace->f64_work.size();
+        if (current_capacity == 0)
+        {
+            current_capacity = workspace->has_f64_limit ? std::min<std::size_t>(16, workspace->max_f64_capacity) : 16;
+        }
+        if (current_capacity > 0)
+        {
+            const wkp_status resize_status = resize_workspace_f64(
                 workspace,
-                kDefaultCapacity,
+                current_capacity,
                 error_message,
                 error_message_capacity);
-            if (reserve_status != WKP_STATUS_OK)
+            if (resize_status != WKP_STATUS_OK)
             {
-                return reserve_status;
+                return resize_status;
             }
         }
 
-        for (;;)
+        try
         {
-            wkp_f64_buffer out{
-                workspace->f64_work.data(),
-                workspace->f64_work.size()};
+            const std::string_view encoded_view(reinterpret_cast<const char *>(encoded), encoded_size);
+            long long previous[kMaxDimensions] = {0};
+            std::size_t value_count = 0;
+            std::size_t index = 0;
 
-            const wkp_status status = wkp_decode_f64_into(
-                encoded,
-                encoded_size,
-                dimensions,
-                precisions,
-                precision_count,
-                &out,
-                error_message,
-                error_message_capacity);
-
-            if (status == WKP_STATUS_BUFFER_TOO_SMALL)
+            while (index < encoded_view.size())
             {
-                const wkp_status reserve_status = resize_workspace_f64(
-                    workspace,
-                    out.size,
-                    error_message,
-                    error_message_capacity);
-                if (reserve_status != WKP_STATUS_OK)
+                if (workspace->has_f64_limit && value_count >= workspace->max_f64_capacity)
                 {
-                    return reserve_status;
+                    set_error(error_message, error_message_capacity, "workspace f64 buffer exceeded max_size");
+                    return WKP_STATUS_LIMIT_EXCEEDED;
                 }
-                continue;
+
+                if (value_count >= workspace->f64_work.size())
+                {
+                    std::size_t next_capacity = std::max<std::size_t>(16, workspace->f64_work.size() == 0 ? 16 : workspace->f64_work.size() * 2);
+                    if (workspace->has_f64_limit)
+                    {
+                        next_capacity = std::min(next_capacity, workspace->max_f64_capacity);
+                    }
+                    if (next_capacity <= workspace->f64_work.size())
+                    {
+                        set_error(error_message, error_message_capacity, "workspace f64 buffer exceeded max_size");
+                        return WKP_STATUS_LIMIT_EXCEEDED;
+                    }
+                    const wkp_status resize_status = resize_workspace_f64(
+                        workspace,
+                        next_capacity,
+                        error_message,
+                        error_message_capacity);
+                    if (resize_status != WKP_STATUS_OK)
+                    {
+                        return resize_status;
+                    }
+                }
+
+                const std::size_t dim = value_count % dimensions;
+                previous[dim] += decode_once(encoded_view, index);
+                workspace->f64_work[value_count] = static_cast<double>(previous[dim]) / factors[dim];
+                ++value_count;
             }
 
-            if (status != WKP_STATUS_OK)
+            if ((value_count % dimensions) != 0U)
             {
-                return status;
+                set_error(error_message, error_message_capacity, "Malformed encoded coordinate stream");
+                return WKP_STATUS_MALFORMED_INPUT;
             }
 
+            workspace->f64_work.resize(value_count);
             *out_data = workspace->f64_work.data();
-            *out_size = out.size;
+            *out_size = value_count;
             return WKP_STATUS_OK;
+        }
+        catch (const std::invalid_argument &ex)
+        {
+            const std::string message = ex.what();
+            if (message.find("Malformed") != std::string::npos)
+            {
+                set_error(error_message, error_message_capacity, message);
+                return WKP_STATUS_MALFORMED_INPUT;
+            }
+            set_error(error_message, error_message_capacity, message);
+            return WKP_STATUS_INVALID_ARGUMENT;
+        }
+        catch (const std::bad_alloc &)
+        {
+            set_error(error_message, error_message_capacity, "failed to allocate workspace decode buffer");
+            return WKP_STATUS_ALLOCATION_FAILED;
+        }
+        catch (const std::exception &ex)
+        {
+            set_error(error_message, error_message_capacity, ex.what());
+            return WKP_STATUS_INTERNAL_ERROR;
+        }
+    }
+
+    wkp_status wkp_workspace_encode_geometry_frame_f64(
+        wkp_workspace *workspace,
+        int geometry_type,
+        const double *coords,
+        size_t coord_value_count,
+        size_t dimensions,
+        int precision,
+        const size_t *group_segment_counts,
+        size_t group_count,
+        const size_t *segment_point_counts,
+        size_t segment_count,
+        const uint8_t **out_data,
+        size_t *out_size,
+        char *error_message,
+        size_t error_message_capacity)
+    {
+        if (workspace == nullptr || out_data == nullptr || out_size == nullptr)
+        {
+            set_error(error_message, error_message_capacity, "workspace, out_data, and out_size are required");
+            return WKP_STATUS_INVALID_ARGUMENT;
+        }
+        if (coords == nullptr)
+        {
+            set_error(error_message, error_message_capacity, "coords is required");
+            return WKP_STATUS_INVALID_ARGUMENT;
+        }
+        if (dimensions == 0 || dimensions > kMaxDimensions)
+        {
+            set_error(error_message, error_message_capacity, "dimensions must be between 1 and 16");
+            return WKP_STATUS_INVALID_ARGUMENT;
+        }
+        if ((coord_value_count % dimensions) != 0)
+        {
+            set_error(error_message, error_message_capacity, "coord_value_count must be divisible by dimensions");
+            return WKP_STATUS_INVALID_ARGUMENT;
+        }
+        if (group_segment_counts == nullptr || segment_point_counts == nullptr)
+        {
+            set_error(error_message, error_message_capacity, "group_segment_counts and segment_point_counts are required");
+            return WKP_STATUS_INVALID_ARGUMENT;
+        }
+
+        std::string encoded;
+
+        try
+        {
+            switch (geometry_type)
+            {
+            case WKP_GEOMETRY_POINT:
+                if (group_count != 1 || segment_count != 1 || group_segment_counts[0] != 1 || segment_point_counts[0] != 1)
+                {
+                    set_error(error_message, error_message_capacity, "POINT frame requires one group with one single-point segment");
+                    return WKP_STATUS_INVALID_ARGUMENT;
+                }
+                encoded = encode_geometry_point(coords, coord_value_count, dimensions, precision);
+                break;
+
+            case WKP_GEOMETRY_LINESTRING:
+                if (group_count != 1 || segment_count != 1 || group_segment_counts[0] != 1)
+                {
+                    set_error(error_message, error_message_capacity, "LINESTRING frame requires one group with one segment");
+                    return WKP_STATUS_INVALID_ARGUMENT;
+                }
+                encoded = encode_geometry_linestring(coords, coord_value_count, dimensions, precision);
+                break;
+
+            case WKP_GEOMETRY_POLYGON:
+                if (group_count != 1 || group_segment_counts[0] != segment_count)
+                {
+                    set_error(error_message, error_message_capacity, "POLYGON frame requires one group with segment_count rings");
+                    return WKP_STATUS_INVALID_ARGUMENT;
+                }
+                encoded = encode_geometry_polygon(coords, coord_value_count, dimensions, precision, segment_point_counts, segment_count);
+                break;
+
+            case WKP_GEOMETRY_MULTIPOINT:
+                if (group_count != segment_count)
+                {
+                    set_error(error_message, error_message_capacity, "MULTIPOINT requires one segment per group");
+                    return WKP_STATUS_INVALID_ARGUMENT;
+                }
+                for (size_t i = 0; i < group_count; ++i)
+                {
+                    if (group_segment_counts[i] != 1)
+                    {
+                        set_error(error_message, error_message_capacity, "MULTIPOINT groups must each contain one segment");
+                        return WKP_STATUS_INVALID_ARGUMENT;
+                    }
+                }
+                for (size_t i = 0; i < segment_count; ++i)
+                {
+                    if (segment_point_counts[i] != 1)
+                    {
+                        set_error(error_message, error_message_capacity, "MULTIPOINT segments must each contain one point");
+                        return WKP_STATUS_INVALID_ARGUMENT;
+                    }
+                }
+                encoded = encode_geometry_multipoint(coords, coord_value_count, dimensions, precision, segment_count);
+                break;
+
+            case WKP_GEOMETRY_MULTILINESTRING:
+                if (group_count != segment_count)
+                {
+                    set_error(error_message, error_message_capacity, "MULTILINESTRING requires one segment per group");
+                    return WKP_STATUS_INVALID_ARGUMENT;
+                }
+                for (size_t i = 0; i < group_count; ++i)
+                {
+                    if (group_segment_counts[i] != 1)
+                    {
+                        set_error(error_message, error_message_capacity, "MULTILINESTRING groups must each contain one segment");
+                        return WKP_STATUS_INVALID_ARGUMENT;
+                    }
+                }
+                encoded = encode_geometry_multilinestring(coords, coord_value_count, dimensions, precision, segment_point_counts, segment_count);
+                break;
+
+            case WKP_GEOMETRY_MULTIPOLYGON:
+            {
+                size_t summed_segments = 0;
+                for (size_t i = 0; i < group_count; ++i)
+                {
+                    summed_segments += group_segment_counts[i];
+                }
+                if (summed_segments != segment_count)
+                {
+                    set_error(error_message, error_message_capacity, "MULTIPOLYGON group_segment_counts must sum to segment_count");
+                    return WKP_STATUS_INVALID_ARGUMENT;
+                }
+                encoded = encode_geometry_multipolygon(
+                    coords,
+                    coord_value_count,
+                    dimensions,
+                    precision,
+                    group_segment_counts,
+                    group_count,
+                    segment_point_counts,
+                    segment_count);
+                break;
+            }
+
+            default:
+                set_error(error_message, error_message_capacity, "Unsupported geometry_type for geometry frame encoding");
+                return WKP_STATUS_INVALID_ARGUMENT;
+            }
+        }
+        catch (const std::invalid_argument &ex)
+        {
+            set_error(error_message, error_message_capacity, ex.what());
+            return WKP_STATUS_INVALID_ARGUMENT;
+        }
+        catch (const std::bad_alloc &)
+        {
+            set_error(error_message, error_message_capacity, "failed to allocate geometry encoding output");
+            return WKP_STATUS_ALLOCATION_FAILED;
+        }
+        catch (const std::exception &ex)
+        {
+            set_error(error_message, error_message_capacity, ex.what());
+            return WKP_STATUS_INTERNAL_ERROR;
+        }
+
+        const wkp_status resize_status = resize_workspace_u8(
+            workspace,
+            encoded.size(),
+            error_message,
+            error_message_capacity);
+        if (resize_status != WKP_STATUS_OK)
+        {
+            return resize_status;
+        }
+
+        if (!encoded.empty())
+        {
+            std::memcpy(workspace->u8_work.data(), encoded.data(), encoded.size());
+        }
+
+        *out_data = workspace->u8_work.data();
+        *out_size = encoded.size();
+        return WKP_STATUS_OK;
+    }
+
+    wkp_status wkp_workspace_decode_geometry_frame_f64(
+        wkp_workspace *workspace,
+        const uint8_t *encoded,
+        size_t encoded_size,
+        const wkp_geometry_frame_f64 **out_frame,
+        char *error_message,
+        size_t error_message_capacity)
+    {
+        if (workspace == nullptr || encoded == nullptr || out_frame == nullptr)
+        {
+            set_error(error_message, error_message_capacity, "workspace, encoded, and out_frame are required");
+            return WKP_STATUS_INVALID_ARGUMENT;
+        }
+
+        try
+        {
+            const auto frame = wkp::core::decode_geometry_frame(
+                std::string_view(reinterpret_cast<const char *>(encoded), encoded_size));
+
+            std::size_t total_values = 0;
+            std::size_t total_segments = 0;
+            for (const auto &group : frame.groups)
+            {
+                total_segments += group.size();
+                for (const auto &segment : group)
+                {
+                    total_values += segment.size();
+                }
+            }
+
+            if (workspace->has_f64_limit && total_values > workspace->max_f64_capacity)
+            {
+                set_error(error_message, error_message_capacity, "workspace f64 buffer exceeded max_size");
+                return WKP_STATUS_LIMIT_EXCEEDED;
+            }
+
+            workspace->f64_work.clear();
+            workspace->f64_work.reserve(total_values);
+            workspace->size_work_a.clear();
+            workspace->size_work_a.reserve(total_segments);
+            workspace->size_work_b.clear();
+            workspace->size_work_b.reserve(frame.groups.size());
+
+            const std::size_t dims = static_cast<std::size_t>(frame.header.dimensions);
+            for (const auto &group : frame.groups)
+            {
+                workspace->size_work_b.push_back(group.size());
+                for (const auto &segment : group)
+                {
+                    if ((segment.size() % dims) != 0)
+                    {
+                        set_error(error_message, error_message_capacity, "Decoded geometry segment has invalid coordinate length");
+                        return WKP_STATUS_INTERNAL_ERROR;
+                    }
+                    workspace->size_work_a.push_back(segment.size() / dims);
+                    workspace->f64_work.insert(workspace->f64_work.end(), segment.begin(), segment.end());
+                }
+            }
+
+            workspace->geometry_frame_work.version = frame.header.version;
+            workspace->geometry_frame_work.precision = frame.header.precision;
+            workspace->geometry_frame_work.dimensions = frame.header.dimensions;
+            workspace->geometry_frame_work.geometry_type = frame.header.geometry_type;
+            workspace->geometry_frame_work.coords = workspace->f64_work.empty() ? nullptr : workspace->f64_work.data();
+            workspace->geometry_frame_work.coord_value_count = workspace->f64_work.size();
+            workspace->geometry_frame_work.segment_point_counts = workspace->size_work_a.empty() ? nullptr : workspace->size_work_a.data();
+            workspace->geometry_frame_work.segment_count = workspace->size_work_a.size();
+            workspace->geometry_frame_work.group_segment_counts = workspace->size_work_b.empty() ? nullptr : workspace->size_work_b.data();
+            workspace->geometry_frame_work.group_count = workspace->size_work_b.size();
+
+            *out_frame = &workspace->geometry_frame_work;
+            return WKP_STATUS_OK;
+        }
+        catch (const std::invalid_argument &ex)
+        {
+            const std::string message = ex.what();
+            if (message.find("Malformed") != std::string::npos)
+            {
+                set_error(error_message, error_message_capacity, message);
+                return WKP_STATUS_MALFORMED_INPUT;
+            }
+            set_error(error_message, error_message_capacity, message);
+            return WKP_STATUS_INVALID_ARGUMENT;
+        }
+        catch (const std::bad_alloc &)
+        {
+            set_error(error_message, error_message_capacity, "failed to allocate geometry frame workspace buffers");
+            return WKP_STATUS_ALLOCATION_FAILED;
+        }
+        catch (const std::exception &ex)
+        {
+            set_error(error_message, error_message_capacity, ex.what());
+            return WKP_STATUS_INTERNAL_ERROR;
         }
     }
 
@@ -1584,341 +1508,6 @@ extern "C"
             set_error(error_message, error_message_capacity, ex.what());
             return WKP_STATUS_INTERNAL_ERROR;
         }
-    }
-
-    wkp_status wkp_encode_point_f64_into(
-        const double *coords,
-        size_t coord_value_count,
-        size_t dimensions,
-        int precision,
-        wkp_u8_buffer *out_encoded,
-        char *error_message,
-        size_t error_message_capacity)
-    {
-        if (!validate_encode_inputs(coords, coord_value_count, dimensions, out_encoded, error_message, error_message_capacity))
-        {
-            return WKP_STATUS_INVALID_ARGUMENT;
-        }
-        if ((coord_value_count / dimensions) != 1)
-        {
-            set_error(error_message, error_message_capacity, "POINT requires exactly 1 coordinate");
-            return WKP_STATUS_INVALID_ARGUMENT;
-        }
-
-        double factors[kMaxDimensions] = {0.0};
-        init_uniform_factors(dimensions, precision, factors);
-
-        OutputWriter writer{out_encoded->data, out_encoded->size, 0, false};
-        if (!write_geometry_header(writer, dimensions, precision, WKP_GEOMETRY_POINT, error_message, error_message_capacity))
-        {
-            return WKP_STATUS_INVALID_ARGUMENT;
-        }
-        append_encoded_segment(writer, coords, coord_value_count, dimensions, factors);
-        return finalize_encoded_result(writer, out_encoded, error_message, error_message_capacity);
-    }
-
-    wkp_status wkp_encode_linestring_f64_into(
-        const double *coords,
-        size_t coord_value_count,
-        size_t dimensions,
-        int precision,
-        wkp_u8_buffer *out_encoded,
-        char *error_message,
-        size_t error_message_capacity)
-    {
-        if (!validate_encode_inputs(coords, coord_value_count, dimensions, out_encoded, error_message, error_message_capacity))
-        {
-            return WKP_STATUS_INVALID_ARGUMENT;
-        }
-        if ((coord_value_count / dimensions) < 2)
-        {
-            set_error(error_message, error_message_capacity, "LINESTRING requires at least 2 coordinates");
-            return WKP_STATUS_INVALID_ARGUMENT;
-        }
-
-        double factors[kMaxDimensions] = {0.0};
-        init_uniform_factors(dimensions, precision, factors);
-
-        OutputWriter writer{out_encoded->data, out_encoded->size, 0, false};
-        if (!write_geometry_header(writer, dimensions, precision, WKP_GEOMETRY_LINESTRING, error_message, error_message_capacity))
-        {
-            return WKP_STATUS_INVALID_ARGUMENT;
-        }
-        append_encoded_segment(writer, coords, coord_value_count, dimensions, factors);
-        return finalize_encoded_result(writer, out_encoded, error_message, error_message_capacity);
-    }
-
-    wkp_status wkp_encode_polygon_f64_into(
-        const double *coords,
-        size_t coord_value_count,
-        size_t dimensions,
-        int precision,
-        const size_t *ring_point_counts,
-        size_t ring_count,
-        wkp_u8_buffer *out_encoded,
-        char *error_message,
-        size_t error_message_capacity)
-    {
-        if (!validate_encode_inputs(coords, coord_value_count, dimensions, out_encoded, error_message, error_message_capacity))
-        {
-            return WKP_STATUS_INVALID_ARGUMENT;
-        }
-        if (ring_point_counts == nullptr)
-        {
-            set_error(error_message, error_message_capacity, "ring_point_counts is required");
-            return WKP_STATUS_INVALID_ARGUMENT;
-        }
-        if (ring_count == 0)
-        {
-            set_error(error_message, error_message_capacity, "POLYGON requires at least one ring");
-            return WKP_STATUS_INVALID_ARGUMENT;
-        }
-
-        std::size_t total_points = 0;
-        for (std::size_t i = 0; i < ring_count; ++i)
-        {
-            total_points += ring_point_counts[i];
-        }
-        if (total_points * dimensions != coord_value_count)
-        {
-            set_error(error_message, error_message_capacity, "ring point counts do not match coord_value_count");
-            return WKP_STATUS_INVALID_ARGUMENT;
-        }
-
-        double factors[kMaxDimensions] = {0.0};
-        init_uniform_factors(dimensions, precision, factors);
-
-        OutputWriter writer{out_encoded->data, out_encoded->size, 0, false};
-        if (!write_geometry_header(writer, dimensions, precision, WKP_GEOMETRY_POLYGON, error_message, error_message_capacity))
-        {
-            return WKP_STATUS_INVALID_ARGUMENT;
-        }
-
-        std::size_t offset = 0;
-        for (std::size_t i = 0; i < ring_count; ++i)
-        {
-            if (i > 0)
-            {
-                writer.push(kSepRing);
-            }
-            const std::size_t point_count = ring_point_counts[i];
-            append_encoded_segment(writer, coords + offset, point_count * dimensions, dimensions, factors);
-            offset += point_count * dimensions;
-        }
-
-        return finalize_encoded_result(writer, out_encoded, error_message, error_message_capacity);
-    }
-
-    wkp_status wkp_encode_multipoint_f64_into(
-        const double *coords,
-        size_t coord_value_count,
-        size_t dimensions,
-        int precision,
-        size_t point_count,
-        wkp_u8_buffer *out_encoded,
-        char *error_message,
-        size_t error_message_capacity)
-    {
-        if (!validate_encode_inputs(coords, coord_value_count, dimensions, out_encoded, error_message, error_message_capacity))
-        {
-            return WKP_STATUS_INVALID_ARGUMENT;
-        }
-        if (point_count * dimensions != coord_value_count)
-        {
-            set_error(error_message, error_message_capacity, "point_count does not match coord_value_count");
-            return WKP_STATUS_INVALID_ARGUMENT;
-        }
-
-        double factors[kMaxDimensions] = {0.0};
-        init_uniform_factors(dimensions, precision, factors);
-
-        OutputWriter writer{out_encoded->data, out_encoded->size, 0, false};
-        if (!write_geometry_header(writer, dimensions, precision, WKP_GEOMETRY_MULTIPOINT, error_message, error_message_capacity))
-        {
-            return WKP_STATUS_INVALID_ARGUMENT;
-        }
-
-        std::size_t offset = 0;
-        for (std::size_t i = 0; i < point_count; ++i)
-        {
-            if (i > 0)
-            {
-                writer.push(kSepMulti);
-            }
-            append_encoded_segment(writer, coords + offset, dimensions, dimensions, factors);
-            offset += dimensions;
-        }
-
-        return finalize_encoded_result(writer, out_encoded, error_message, error_message_capacity);
-    }
-
-    wkp_status wkp_encode_multilinestring_f64_into(
-        const double *coords,
-        size_t coord_value_count,
-        size_t dimensions,
-        int precision,
-        const size_t *linestring_point_counts,
-        size_t linestring_count,
-        wkp_u8_buffer *out_encoded,
-        char *error_message,
-        size_t error_message_capacity)
-    {
-        if (!validate_encode_inputs(coords, coord_value_count, dimensions, out_encoded, error_message, error_message_capacity))
-        {
-            return WKP_STATUS_INVALID_ARGUMENT;
-        }
-        if (linestring_point_counts == nullptr)
-        {
-            set_error(error_message, error_message_capacity, "linestring_point_counts is required");
-            return WKP_STATUS_INVALID_ARGUMENT;
-        }
-
-        std::size_t total_points = 0;
-        for (std::size_t i = 0; i < linestring_count; ++i)
-        {
-            if (linestring_point_counts[i] < 2)
-            {
-                set_error(error_message, error_message_capacity, "Each MULTILINESTRING part must contain at least two coordinates");
-                return WKP_STATUS_INVALID_ARGUMENT;
-            }
-            total_points += linestring_point_counts[i];
-        }
-        if (total_points * dimensions != coord_value_count)
-        {
-            set_error(error_message, error_message_capacity, "linestring point counts do not match coord_value_count");
-            return WKP_STATUS_INVALID_ARGUMENT;
-        }
-
-        double factors[kMaxDimensions] = {0.0};
-        init_uniform_factors(dimensions, precision, factors);
-
-        OutputWriter writer{out_encoded->data, out_encoded->size, 0, false};
-        if (!write_geometry_header(writer, dimensions, precision, WKP_GEOMETRY_MULTILINESTRING, error_message, error_message_capacity))
-        {
-            return WKP_STATUS_INVALID_ARGUMENT;
-        }
-
-        std::size_t offset = 0;
-        for (std::size_t i = 0; i < linestring_count; ++i)
-        {
-            if (i > 0)
-            {
-                writer.push(kSepMulti);
-            }
-            const std::size_t point_count = linestring_point_counts[i];
-            append_encoded_segment(writer, coords + offset, point_count * dimensions, dimensions, factors);
-            offset += point_count * dimensions;
-        }
-
-        return finalize_encoded_result(writer, out_encoded, error_message, error_message_capacity);
-    }
-
-    wkp_status wkp_encode_multipolygon_f64_into(
-        const double *coords,
-        size_t coord_value_count,
-        size_t dimensions,
-        int precision,
-        const size_t *polygon_ring_counts,
-        size_t polygon_count,
-        const size_t *ring_point_counts,
-        size_t ring_count,
-        wkp_u8_buffer *out_encoded,
-        char *error_message,
-        size_t error_message_capacity)
-    {
-        if (!validate_encode_inputs(coords, coord_value_count, dimensions, out_encoded, error_message, error_message_capacity))
-        {
-            return WKP_STATUS_INVALID_ARGUMENT;
-        }
-        if (polygon_ring_counts == nullptr || ring_point_counts == nullptr)
-        {
-            set_error(error_message, error_message_capacity, "polygon_ring_counts and ring_point_counts are required");
-            return WKP_STATUS_INVALID_ARGUMENT;
-        }
-
-        std::size_t ring_total = 0;
-        for (std::size_t i = 0; i < polygon_count; ++i)
-        {
-            ring_total += polygon_ring_counts[i];
-        }
-        if (ring_total != ring_count)
-        {
-            set_error(error_message, error_message_capacity, "polygon_ring_counts must sum to ring_count");
-            return WKP_STATUS_INVALID_ARGUMENT;
-        }
-
-        std::size_t total_points = 0;
-        for (std::size_t i = 0; i < ring_count; ++i)
-        {
-            total_points += ring_point_counts[i];
-        }
-        if (total_points * dimensions != coord_value_count)
-        {
-            set_error(error_message, error_message_capacity, "ring_point_counts do not match coord_value_count");
-            return WKP_STATUS_INVALID_ARGUMENT;
-        }
-
-        double factors[kMaxDimensions] = {0.0};
-        init_uniform_factors(dimensions, precision, factors);
-
-        OutputWriter writer{out_encoded->data, out_encoded->size, 0, false};
-        if (!write_geometry_header(writer, dimensions, precision, WKP_GEOMETRY_MULTIPOLYGON, error_message, error_message_capacity))
-        {
-            return WKP_STATUS_INVALID_ARGUMENT;
-        }
-
-        std::size_t coord_offset = 0;
-        std::size_t ring_offset = 0;
-        for (std::size_t poly_idx = 0; poly_idx < polygon_count; ++poly_idx)
-        {
-            if (poly_idx > 0)
-            {
-                writer.push(kSepMulti);
-            }
-
-            const std::size_t poly_ring_count = polygon_ring_counts[poly_idx];
-            if (poly_ring_count == 0)
-            {
-                set_error(error_message, error_message_capacity, "Each MULTIPOLYGON part requires at least one ring");
-                return WKP_STATUS_INVALID_ARGUMENT;
-            }
-
-            for (std::size_t ring_idx = 0; ring_idx < poly_ring_count; ++ring_idx)
-            {
-                if (ring_idx > 0)
-                {
-                    writer.push(kSepRing);
-                }
-
-                const std::size_t point_count = ring_point_counts[ring_offset++];
-                append_encoded_segment(writer, coords + coord_offset, point_count * dimensions, dimensions, factors);
-                coord_offset += point_count * dimensions;
-            }
-        }
-
-        return finalize_encoded_result(writer, out_encoded, error_message, error_message_capacity);
-    }
-
-    void wkp_free_u8_buffer(wkp_u8_buffer *buffer)
-    {
-        if (buffer == nullptr)
-        {
-            return;
-        }
-
-        buffer->data = nullptr;
-        buffer->size = 0;
-    }
-
-    void wkp_free_f64_buffer(wkp_f64_buffer *buffer)
-    {
-        if (buffer == nullptr)
-        {
-            return;
-        }
-
-        buffer->data = nullptr;
-        buffer->size = 0;
     }
 
 } // extern "C"
