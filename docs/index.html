@@ -178,7 +178,35 @@
         </section>
     </main>
 
-    <script type="module" src="./app.js"></script>
+    <script type="module">
+        const packageCandidates = [
+            './web/package.json',
+            '../bindings/javascript/packages/web/package.json'
+        ];
+
+        let cacheKey = '';
+        for (const candidate of packageCandidates) {
+            try {
+                const response = await fetch(new URL(candidate, import.meta.url), { cache: 'no-store' });
+                if (!response.ok) {
+                    continue;
+                }
+                const pkg = await response.json();
+                if (typeof pkg.version === 'string' && pkg.version.trim().length > 0) {
+                    cacheKey = pkg.version.trim();
+                    break;
+                }
+            } catch {
+                // Try next candidate.
+            }
+        }
+
+        if (!cacheKey) {
+            cacheKey = document.lastModified || String(Date.now());
+        }
+
+        await import(`./app.js?v=${encodeURIComponent(cacheKey)}`);
+    </script>
 </body>
 
 </html>

@@ -47,10 +47,8 @@ const ui = {
     webBindingVersion: $('webBindingVersion')
 };
 
-const WEB_MODULE_CANDIDATES = [
-    '../bindings/javascript/packages/web/src/index.js',
-    './web/src/index.js'
-];
+const WEB_LOCAL_MODULE_CANDIDATE = '../bindings/javascript/packages/web/src/index.js';
+const WEB_PAGES_UNVERSIONED_MODULE_CANDIDATE = './web/src/index.js';
 
 const WEB_PACKAGE_CANDIDATES = [
     '../bindings/javascript/packages/web/package.json',
@@ -62,6 +60,7 @@ let ctx = null;
 let worker = null;
 let appReady = false;
 let settingsDirty = false;
+let resolvedWebVersion = null;
 
 const baseMetrics = {
     encode: [],
@@ -83,6 +82,39 @@ async function importFirstAvailable(specifiers) {
         }
     }
     throw lastError || new Error('Unable to load WKP web module');
+}
+
+async function resolveWebBindingVersion() {
+    if (resolvedWebVersion) {
+        return resolvedWebVersion;
+    }
+    for (const candidate of WEB_PACKAGE_CANDIDATES) {
+        try {
+            const packageUrl = new URL(candidate, import.meta.url);
+            const response = await fetch(packageUrl, { cache: 'no-store' });
+            if (!response.ok) {
+                continue;
+            }
+            const pkg = await response.json();
+            if (typeof pkg.version === 'string' && pkg.version.trim().length > 0) {
+                resolvedWebVersion = pkg.version.trim();
+                return resolvedWebVersion;
+            }
+        } catch {
+            // Try next candidate.
+        }
+    }
+    return null;
+}
+
+async function resolveWebModuleCandidates() {
+    const candidates = [WEB_LOCAL_MODULE_CANDIDATE];
+    const version = await resolveWebBindingVersion();
+    if (version) {
+        candidates.push(`./web/${version}/src/index.js`);
+    }
+    candidates.push(WEB_PAGES_UNVERSIONED_MODULE_CANDIDATE);
+    return candidates;
 }
 
 function setControlsEnabled(enabled) {
@@ -342,23 +374,8 @@ function setWebBindingVersion(text) {
 }
 
 async function loadWebBindingVersion() {
-    for (const candidate of WEB_PACKAGE_CANDIDATES) {
-        try {
-            const packageUrl = new URL(candidate, import.meta.url);
-            const response = await fetch(packageUrl, { cache: 'no-store' });
-            if (!response.ok) {
-                continue;
-            }
-            const pkg = await response.json();
-            if (typeof pkg.version === 'string' && pkg.version.trim().length > 0) {
-                setWebBindingVersion(pkg.version.trim());
-                return;
-            }
-        } catch {
-            // Try next candidate.
-        }
-    }
-    setWebBindingVersion('unknown');
+    const version = await resolveWebBindingVersion();
+    setWebBindingVersion(version || 'unknown');
 }
 
 function geometryTypeName(typeId) {
@@ -549,7 +566,7 @@ async function init() {
     }
 
     try {
-        const webModule = await importFirstAvailable(WEB_MODULE_CANDIDATES);
+        const webModule = await importFirstAvailable(await resolveWebModuleCandidates());
         if (!webModule || typeof webModule.createWkp !== 'function') {
             throw new Error('WKP web module loaded but did not export createWkp()');
         }

@@ -2,9 +2,12 @@ import { parseWkt, geometryToWkt } from './wkt.js';
 
 let wkpPromise = null;
 let ctx = null;
-const WEB_MODULE_CANDIDATES = [
-    '../bindings/javascript/packages/web/src/index.js',
-    './web/src/index.js'
+let resolvedWebVersion = null;
+const WEB_LOCAL_MODULE_CANDIDATE = '../bindings/javascript/packages/web/src/index.js';
+const WEB_PAGES_UNVERSIONED_MODULE_CANDIDATE = './web/src/index.js';
+const WEB_PACKAGE_CANDIDATES = [
+    '../bindings/javascript/packages/web/package.json',
+    './web/package.json'
 ];
 const MAX_ITERATIONS = 1000000;
 const MAX_DURATION_MS = 1000;
@@ -27,9 +30,42 @@ async function importFirstAvailable(specifiers) {
     throw lastError || new Error('Unable to load WKP web module');
 }
 
+async function resolveWebBindingVersion() {
+    if (resolvedWebVersion) {
+        return resolvedWebVersion;
+    }
+    for (const candidate of WEB_PACKAGE_CANDIDATES) {
+        try {
+            const packageUrl = new URL(candidate, import.meta.url);
+            const response = await fetch(packageUrl, { cache: 'no-store' });
+            if (!response.ok) {
+                continue;
+            }
+            const pkg = await response.json();
+            if (typeof pkg.version === 'string' && pkg.version.trim().length > 0) {
+                resolvedWebVersion = pkg.version.trim();
+                return resolvedWebVersion;
+            }
+        } catch {
+            // Try next candidate.
+        }
+    }
+    return null;
+}
+
+async function resolveWebModuleCandidates() {
+    const candidates = [WEB_LOCAL_MODULE_CANDIDATE];
+    const version = await resolveWebBindingVersion();
+    if (version) {
+        candidates.push(`./web/${version}/src/index.js`);
+    }
+    candidates.push(WEB_PAGES_UNVERSIONED_MODULE_CANDIDATE);
+    return candidates;
+}
+
 function ensureWkp() {
     if (!wkpPromise) {
-        wkpPromise = importFirstAvailable(WEB_MODULE_CANDIDATES).then((mod) => {
+        wkpPromise = resolveWebModuleCandidates().then((candidates) => importFirstAvailable(candidates)).then((mod) => {
             if (!mod || typeof mod.createWkp !== 'function') {
                 throw new Error('WKP web module did not export createWkp()');
             }

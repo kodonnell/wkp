@@ -78,7 +78,17 @@ jobs:
           mkdir -p .pages-tmp/pkg
           tar -xzf "$TARBALL" -C .pages-tmp/pkg
 
+          WEB_PUBLISHED_VERSION="$(node -p "require('./.pages-tmp/pkg/package/package.json').version")"
+          echo "Using @wkpjs/web version: $WEB_PUBLISHED_VERSION"
+
           mkdir -p .pages-dist/web
+          mkdir -p ".pages-dist/web/$WEB_PUBLISHED_VERSION"
+
+          # Versioned path is the primary docs load target to avoid stale cache collisions.
+          cp -R .pages-tmp/pkg/package/src ".pages-dist/web/$WEB_PUBLISHED_VERSION/src"
+          cp -R .pages-tmp/pkg/package/dist ".pages-dist/web/$WEB_PUBLISHED_VERSION/dist"
+
+          # Legacy unversioned path kept as fallback for older clients.
           cp -R .pages-tmp/pkg/package/src .pages-dist/web/src
           cp -R .pages-tmp/pkg/package/dist .pages-dist/web/dist
           cp .pages-tmp/pkg/package/package.json .pages-dist/web/package.json
