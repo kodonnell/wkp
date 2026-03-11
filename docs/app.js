@@ -655,7 +655,7 @@ ui.decodeBtn.addEventListener('click', () => {
         }
 
         const decoded = wkp.decode(ctx, encoded);
-        const wkt = geometryToWkt(decoded.geometry);
+        const wkt = geometryToWkt(decoded.geometry, decoded.precision);
         ui.wktOutputText.textContent = wkt;
 
         const wktBytes = te.encode(wkt).length;

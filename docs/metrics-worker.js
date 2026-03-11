@@ -1,4 +1,4 @@
-import { parseWkt, geometryToWkt } from './wkt.js';
+import { parseWkt } from './wkt.js';
 
 let wkpPromise = null;
 let ctx = null;
@@ -171,8 +171,7 @@ self.onmessage = async (event) => {
         const encoded = msg.encoded;
         const stats = runTimedLoop(
             () => {
-                const decoded = wkp.decode(ctx, encoded);
-                geometryToWkt(decoded.geometry);
+                wkp.decode(ctx, encoded);
             },
             (firstMs, progressStats) => {
                 self.postMessage({ phase: 'first', kind: 'decode', firstMs, ...progressStats });
