@@ -88,7 +88,7 @@ extensions.append(
         sources=[
             "src/wkp/core_nb.cpp",
             os.path.join(nanobind_source_dir, "nb_combined.cpp"),
-            "../../core/src/core.cpp",
+            "../../core/src/core.c",
         ],
         include_dirs=[
             "../../core/include",

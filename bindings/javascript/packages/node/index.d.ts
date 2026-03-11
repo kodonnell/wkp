@@ -45,6 +45,8 @@ export interface DecodedGeometry {
     geometry: Geometry;
 }
 
+export declare class Context { }
+
 export declare const EncodedGeometryType: {
     readonly POINT: 1;
     readonly LINESTRING: 2;
@@ -54,23 +56,11 @@ export declare const EncodedGeometryType: {
     readonly MULTIPOLYGON: 6;
 };
 
-export declare class Workspace {
-    constructor(initialCapacity?: number);
-    readonly initialCapacity: number;
-    encodeF64(values: readonly number[] | Float64Array, dimensions: number, precisions: readonly number[]): Buffer;
-    decodeF64(encoded: string | Buffer | Uint8Array, dimensions: number, precisions: readonly number[]): Float64Array;
-}
-
 export function decodeHeader(encoded: string | Buffer | Uint8Array): [number, number, number, number];
-export function decode(encoded: string | Buffer | Uint8Array, workspace?: Workspace): DecodedGeometry;
-export function encodePoint(geometry: PointGeometry, precision: number, workspace?: Workspace): string;
-export function encodeLineString(geometry: LineStringGeometry, precision: number, workspace?: Workspace): string;
-export function encodePolygon(geometry: PolygonGeometry, precision: number, workspace?: Workspace): string;
-export function encodeMultiPoint(geometry: MultiPointGeometry, precision: number, workspace?: Workspace): string;
-export function encodeMultiLineString(geometry: MultiLineStringGeometry, precision: number, workspace?: Workspace): string;
-export function encodeMultiPolygon(geometry: MultiPolygonGeometry, precision: number, workspace?: Workspace): string;
-export function encodeF64(values: readonly number[] | Float64Array, dimensions: number, precisions: readonly number[], workspace?: Workspace): Buffer;
-export function decodeF64(encoded: string | Buffer | Uint8Array, dimensions: number, precisions: readonly number[], workspace?: Workspace): Float64Array;
+export function decode(ctx: Context, encoded: string | Buffer | Uint8Array): DecodedGeometry;
+export function encode(ctx: Context, geometry: Geometry, precision: number): string;
+export function encodeFloats(ctx: Context, floats: number[][], precisions: number | number[]): Buffer;
+export function decodeFloats(ctx: Context, encoded: string | Buffer | Uint8Array, precisions: number | number[]): number[][];
 export function coreVersion(): string;
 export const bindingVersion: string;
 export const coreCompatibility: string;

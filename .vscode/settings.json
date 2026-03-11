@@ -14,9 +14,6 @@
     "search.exclude": {
         "**/.ignore": true
     },
-    "files.exclude": {
-        "**/.ignore": true
-    },
     "cSpell.words": [
         "asarray",
         "ascontiguousarray",

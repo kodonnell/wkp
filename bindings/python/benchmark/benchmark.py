@@ -9,7 +9,7 @@ import numpy as np
 import shapely
 import shapely.wkb
 import shapely.wkt
-from wkp import Workspace, decode, encode_linestring
+from wkp import Context, decode, encode
 
 
 @dataclass
@@ -20,6 +20,8 @@ class TestResult:
     encode_size: float
     decode_ms: float
     decode_std: float
+    total_ms: float
+    total_std: float
     iterations: int
 
 
@@ -44,9 +46,7 @@ def timeit(f, warmup=3, max_iterations=10, max_duration=None):
         x = f()
         single_t1 = time.perf_counter_ns()
         times.append((single_t1 - single_t0) / 1_000_000)  # convert to ms
-    ms = sum(times) / len(times) if times else 0.0
-    std = stddev(times) if times else 0.0
-    return ms, std, x, len(times)
+    return x, times
 
 
 def make_geom_pool(geom, count):
@@ -73,19 +73,39 @@ def timeit_with_pool(pool, f, warmup=3, max_iterations=10, max_duration=None):
         x = f(p)
         single_t1 = time.perf_counter_ns()
         times.append((single_t1 - single_t0) / 1_000_000)  # convert to ms
-    ms = sum(times) / len(times) if times else 0.0
-    std = stddev(times) if times else 0.0
-    return ms, std, x, len(times)
+    return x, times
 
 
-def bench_wkp(geom, dimensions, precision, warmup=3, max_iterations=10, max_duration=None, as_bytes=False):
+def stats(encodes, decodes):
+    encode_ms = np.mean(encodes)
+    encode_std = np.std(encodes)
+    encode_iters = len(encodes)
+    decode_ms = np.mean(decodes)
+    decode_std = np.std(decodes)
+    decode_iters = len(decodes)
+    common_iters = min(len(encodes), len(decodes))
+    total = [encode_ms + decode_ms for encode_ms, decode_ms in zip(encodes[:common_iters], decodes[:common_iters])]
+    total_ms = np.mean(total)
+    total_std = np.std(total)
+    return encode_ms, encode_std, encode_iters, decode_ms, decode_std, decode_iters, total_ms, total_std
+
+
+def bench_wkp(
+    geom,
+    dimensions,
+    precision,
+    warmup=3,
+    max_iterations=10,
+    max_duration=None,
+    as_bytes=False,
+):
     if dimensions != 2:
         raise ValueError("benchmark currently supports only 2D linestring geometry")
-    workspace = Workspace()
+    ctx = Context()
     geom_pool = make_geom_pool(geom, warmup + max_iterations)
-    encode_ms, encode_std, payload, encode_iters = timeit_with_pool(
+    payload, encode_times = timeit_with_pool(
         geom_pool,
-        lambda g: encode_linestring(g, precision=precision, workspace=workspace),
+        lambda g: encode(ctx, g, precision=precision),
         warmup=warmup,
         max_iterations=max_iterations,
         max_duration=max_duration,
@@ -94,15 +114,19 @@ def bench_wkp(geom, dimensions, precision, warmup=3, max_iterations=10, max_dura
     if as_bytes and not isinstance(payload, bytes):
         payload = payload.encode("ascii")
 
-    decode_ms, decode_std, decoded, decode_iters = timeit(
-        lambda: decode(payload, workspace=workspace),
+    decoded, decode_times = timeit(
+        lambda: decode(ctx, payload),
         warmup=warmup,
-        max_iterations=encode_iters,
+        max_iterations=max_iterations,
         max_duration=max_duration,
     )
 
     assert decoded.geometry.equals_exact(geom, tolerance=10 ** (-precision)), (
         f"Decoded geometry does not match original for test wkp-{dimensions}d-{precision}p"
+    )
+
+    encode_ms, encode_std, encode_iters, decode_ms, decode_std, decode_iters, total_ms, total_std = stats(
+        encode_times, decode_times
     )
     yield TestResult(
         f"wkp-{precision}p{'-bytes' if as_bytes else '-str'}",
@@ -111,19 +135,26 @@ def bench_wkp(geom, dimensions, precision, warmup=3, max_iterations=10, max_dura
         encode_std=encode_std,
         decode_ms=decode_ms,
         decode_std=decode_std,
+        total_ms=total_ms,
+        total_std=total_std,
         iterations=encode_iters + decode_iters,
     )
 
 
 def bench_shapely_wkb(geom, warmup=3, max_iterations=10, max_duration=None):
     geom_pool = make_geom_pool(geom, warmup + max_iterations)
-    encode_ms, encode_std, bites, encode_iters = timeit_with_pool(
+    bites, encode_times = timeit_with_pool(
         geom_pool, lambda g: g.wkb, warmup=warmup, max_iterations=max_iterations, max_duration=max_duration
     )
-    decode_ms, decode_std, decoded, decode_iters = timeit(
-        lambda: shapely.wkb.loads(bites), warmup=warmup, max_iterations=encode_iters, max_duration=max_duration
+    decoded, decode_times = timeit(
+        lambda: shapely.wkb.loads(bites), warmup=warmup, max_iterations=max_iterations, max_duration=max_duration
     )
     assert decoded.equals_exact(geom, tolerance=0), "Decoded geometry does not match original for test shapely_wkb"
+
+    encode_ms, encode_std, encode_iters, decode_ms, decode_std, decode_iters, total_ms, total_std = stats(
+        encode_times, decode_times
+    )
+
     yield TestResult(
         "shapely_wkb",
         encode_ms=encode_ms,
@@ -131,22 +162,27 @@ def bench_shapely_wkb(geom, warmup=3, max_iterations=10, max_duration=None):
         encode_std=encode_std,
         decode_ms=decode_ms,
         decode_std=decode_std,
+        total_ms=total_ms,
+        total_std=total_std,
         iterations=encode_iters + decode_iters,
     )
 
 
 def bench_shapely_wkt(geom, precision, warmup=3, max_iterations=10, max_duration=None):
     geom_pool = make_geom_pool(geom, warmup + max_iterations)
-    encode_ms, encode_std, bites, encode_iters = timeit_with_pool(
+    bites, encode_times = timeit_with_pool(
         geom_pool, lambda g: g.wkt, warmup=warmup, max_iterations=max_iterations, max_duration=max_duration
     )
-    decode_ms, decode_std, decoded, decode_iters = timeit(
-        lambda: shapely.wkt.loads(bites), warmup=warmup, max_iterations=encode_iters, max_duration=max_duration
+    decoded, decode_times = timeit(
+        lambda: shapely.wkt.loads(bites), warmup=warmup, max_iterations=max_iterations, max_duration=max_duration
     )
     if precision is not None:
         assert decoded.equals_exact(geom, tolerance=10 ** (-precision)), (
             "Decoded geometry does not match original for test shapely_wkt"
         )
+    encode_ms, encode_std, encode_iters, decode_ms, decode_std, decode_iters, total_ms, total_std = stats(
+        encode_times, decode_times
+    )
     yield TestResult(
         f"shapely_wkt_{precision}dp" if precision is not None else "shapely_wkt",
         encode_ms=encode_ms,
@@ -154,6 +190,8 @@ def bench_shapely_wkt(geom, precision, warmup=3, max_iterations=10, max_duration
         encode_size=len(bites),
         decode_ms=decode_ms,
         decode_std=decode_std,
+        total_ms=total_ms,
+        total_std=total_std,
         iterations=encode_iters + decode_iters,
     )
 
@@ -187,47 +225,48 @@ def load_realistic_geometry(num_points):
         return shapely.geometry.LineString(coords)
 
 
-def bench_methods(linestring, precisions, warmup=3, max_iterations=10, max_duration=None):
+def bench_methods(linestring, precisions, warmup, max_iterations, max_duration, methods):
     for precision in sorted(precisions):
-        print(f"{time.monotonic()} testing wkp with precision={precision}", end="\r")
-        yield from bench_wkp(
-            geom=linestring,
-            dimensions=2,
-            precision=precision,
-            warmup=warmup,
-            max_iterations=max_iterations,
-            max_duration=max_duration,
-        )
-        yield from bench_wkp(
-            geom=linestring,
-            dimensions=2,
-            precision=precision,
-            warmup=warmup,
-            max_iterations=max_iterations,
-            max_duration=max_duration,
-            as_bytes=True,
-        )
+        if "wkp" in methods:
+            print(f"{time.monotonic()} testing wkp with precision={precision}", end="\r")
+            for as_bytes in [False, True]:
+                yield from bench_wkp(
+                    geom=linestring,
+                    dimensions=2,
+                    precision=precision,
+                    warmup=warmup,
+                    max_iterations=max_iterations,
+                    max_duration=max_duration,
+                    as_bytes=as_bytes,
+                )
 
         # Now round it:
-        rounded = shapely.geometry.LineString(
-            [(round(x, precision), round(y, precision)) for x, y in linestring.coords]
-        )
-        print(f"{time.monotonic()} testing rounded shapely wkt at precision={precision}", end="\r")
-        yield from bench_shapely_wkt(
-            geom=rounded, precision=precision, warmup=warmup, max_iterations=max_iterations, max_duration=max_duration
-        )
+        if "wkt" in methods:
+            rounded = shapely.geometry.LineString(
+                [(round(x, precision), round(y, precision)) for x, y in linestring.coords]
+            )
+            print(f"{time.monotonic()} testing rounded shapely wkt at precision={precision}", end="\r")
+            yield from bench_shapely_wkt(
+                geom=rounded,
+                precision=precision,
+                warmup=warmup,
+                max_iterations=max_iterations,
+                max_duration=max_duration,
+            )
 
     # Shapely wkb and wkt on the *unrounded* geometry - but it's unaffected by precision.
-    print(f"{time.monotonic()} testing shapely wkb", end="\r")
-    yield from bench_shapely_wkb(
-        geom=linestring, warmup=warmup, max_iterations=max_iterations, max_duration=max_duration
-    )
+    if "wkb" in methods:
+        print(f"{time.monotonic()} testing shapely wkb", end="\r")
+        yield from bench_shapely_wkb(
+            geom=linestring, warmup=warmup, max_iterations=max_iterations, max_duration=max_duration
+        )
 
     # Shapely wkt on the unrounded geometry - but it's unaffected by precision.
-    print(f"{time.monotonic()} testing shapely wkt at full precision", end="\r")
-    yield from bench_shapely_wkt(
-        geom=linestring, precision=None, warmup=warmup, max_iterations=max_iterations, max_duration=max_duration
-    )
+    if "wkt" in methods:
+        print(f"{time.monotonic()} testing shapely wkt at full precision", end="\r")
+        yield from bench_shapely_wkt(
+            geom=linestring, precision=None, warmup=warmup, max_iterations=max_iterations, max_duration=max_duration
+        )
 
     print(f"{time.monotonic()} done testing", end="\r")
 
@@ -256,9 +295,9 @@ def totable(results: List[TestResult]):
             elif name.endswith(("_ms", "_std")):
                 v = f"{v:.2f}"
             item[name] = str(v)
-        item["total_ms"] = f"{float(item['encode_ms']) + float(item['decode_ms']):.2f}"
         item["encode_ms"] = f"{item['encode_ms']} ± {item['encode_std']}"
         item["decode_ms"] = f"{item['decode_ms']} ± {item['decode_std']}"
+        item["total_ms"] = f"{item['total_ms']} ± {item['total_std']}"
         items.append(item)
 
     # Add header:
@@ -289,7 +328,7 @@ def progress(iter):
         yield res
 
 
-def benchmark(warmup, max_iterations, max_duration, linestring_points, precisions):
+def benchmark(warmup, max_iterations, max_duration, linestring_points, precisions, methods):
     random_linestring = create_random_geometry(linestring_points)
     realistic_linestring = load_realistic_geometry(linestring_points)
     results = []
@@ -302,6 +341,7 @@ def benchmark(warmup, max_iterations, max_duration, linestring_points, precision
                 warmup=warmup,
                 max_iterations=max_iterations,
                 max_duration=max_duration,
+                methods=methods,
             )
         ):
             results.append({**asdict(r), "source": src_name})
@@ -323,6 +363,9 @@ if __name__ == "__main__":
     parser.add_argument("--warmup", type=int, default=10, help="Warmup iterations")
     parser.add_argument("--max-iterations", type=int, default=1000, help="Maximum test iterations")
     parser.add_argument("--max-duration", type=float, default=1, help="Maximum duration per test (seconds)")
+    parser.add_argument(
+        "--methods", type=str, nargs="+", default=["wkp", "wkb", "wkt"], help="Which methods to benchmark"
+    )
     args = parser.parse_args()
     benchmark(
         linestring_points=args.linestring_points,
@@ -330,4 +373,5 @@ if __name__ == "__main__":
         warmup=args.warmup,
         max_iterations=args.max_iterations,
         max_duration=args.max_duration,
+        methods=args.methods,
     )

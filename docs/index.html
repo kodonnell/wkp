@@ -29,9 +29,16 @@
             </p>
         </header>
 
+        <div id="loadFailureBanner" class="app-alert hidden" role="alert"></div>
+
         <section class=" stack">
             <article class="card">
-                <h2>Encode WKT -> WKP</h2>
+                <div class="card-heading">
+                    <h2>Encode WKT -> WKP</h2>
+                    <div id="settingsReminder" class="settings-reminder-inline" role="status" aria-live="polite">
+                        Settings changed - click `Generate Random` to apply.
+                    </div>
+                </div>
 
                 <div class="example-panel">
                     <div class="settings-line">

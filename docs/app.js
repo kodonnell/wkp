@@ -1,12 +1,13 @@
-import { createWkp } from './web/src/index.js';
 import { parseWkt, geometryToWkt } from './wkt.js';
 
 const $ = (id) => document.getElementById(id);
 const te = new TextEncoder();
 
 const ui = {
+    loadFailureBanner: $('loadFailureBanner'),
     exampleGeometry: $('exampleGeometry'),
     generateExampleBtn: $('generateExampleBtn'),
+    settingsReminder: $('settingsReminder'),
     settingsRows: Array.from(document.querySelectorAll('#exampleSettings [data-show-for]')),
     settingDimensions: $('settingDimensions'),
     settingDp: $('settingDp'),
@@ -46,14 +47,71 @@ const ui = {
     webBindingVersion: $('webBindingVersion')
 };
 
+const WEB_MODULE_CANDIDATES = [
+    '../bindings/javascript/packages/web/src/index.js',
+    './web/src/index.js'
+];
+
+const WEB_PACKAGE_CANDIDATES = [
+    '../bindings/javascript/packages/web/package.json',
+    './web/package.json'
+];
+
 let wkp = null;
-let workspace = null;
+let ctx = null;
 let worker = null;
+let appReady = false;
+let settingsDirty = false;
 
 const baseMetrics = {
     encode: [],
     decode: []
 };
+
+async function importFirstAvailable(specifiers) {
+    let lastError = null;
+    for (const specifier of specifiers) {
+        try {
+            const url = new URL(specifier, import.meta.url);
+            const probe = await fetch(url, { method: 'HEAD', cache: 'no-store' });
+            if (!probe.ok) {
+                continue;
+            }
+            return await import(specifier);
+        } catch (error) {
+            lastError = error;
+        }
+    }
+    throw lastError || new Error('Unable to load WKP web module');
+}
+
+function setControlsEnabled(enabled) {
+    const controls = document.querySelectorAll('button, input, select, textarea');
+    for (const control of controls) {
+        control.disabled = !enabled;
+    }
+    const cards = document.querySelectorAll('.card');
+    for (const card of cards) {
+        card.classList.toggle('degraded', !enabled);
+    }
+}
+
+function enterDegradedMode(message) {
+    appReady = false;
+    setControlsEnabled(false);
+    if (ui.loadFailureBanner) {
+        ui.loadFailureBanner.textContent = message;
+        ui.loadFailureBanner.classList.remove('hidden');
+    }
+}
+
+function clearDegradedMode() {
+    if (ui.loadFailureBanner) {
+        ui.loadFailureBanner.textContent = '';
+        ui.loadFailureBanner.classList.add('hidden');
+    }
+    setControlsEnabled(true);
+}
 
 function clampInt(value, min, max, fallback) {
     const n = Number.parseInt(String(value), 10);
@@ -241,6 +299,16 @@ function generateExampleWkt() {
     updateActionButtons();
 }
 
+function setSettingsDirty(value) {
+    settingsDirty = Boolean(value);
+    if (ui.settingsReminder) {
+        ui.settingsReminder.classList.toggle('is-visible', settingsDirty);
+    }
+    if (ui.generateExampleBtn) {
+        ui.generateExampleBtn.classList.toggle('button-attention', settingsDirty);
+    }
+}
+
 function fmt(ms) {
     return `${ms.toFixed(3)} ms`;
 }
@@ -274,19 +342,21 @@ function setWebBindingVersion(text) {
 }
 
 async function loadWebBindingVersion() {
-    try {
-        const packageUrl = new URL('./web/package.json', import.meta.url);
-        const response = await fetch(packageUrl, { cache: 'no-store' });
-        if (!response.ok) {
-            throw new Error(`HTTP ${response.status}`);
+    for (const candidate of WEB_PACKAGE_CANDIDATES) {
+        try {
+            const packageUrl = new URL(candidate, import.meta.url);
+            const response = await fetch(packageUrl, { cache: 'no-store' });
+            if (!response.ok) {
+                continue;
+            }
+            const pkg = await response.json();
+            if (typeof pkg.version === 'string' && pkg.version.trim().length > 0) {
+                setWebBindingVersion(pkg.version.trim());
+                return;
+            }
+        } catch {
+            // Try next candidate.
         }
-        const pkg = await response.json();
-        if (typeof pkg.version === 'string' && pkg.version.trim().length > 0) {
-            setWebBindingVersion(pkg.version.trim());
-            return;
-        }
-    } catch {
-        // Keep UI functional even if version metadata cannot be loaded.
     }
     setWebBindingVersion('unknown');
 }
@@ -304,19 +374,7 @@ function geometryTypeName(typeId) {
 }
 
 function encodeGeometry(geometry, precision) {
-    const byType = {
-        Point: wkp.encodePoint,
-        LineString: wkp.encodeLineString,
-        Polygon: wkp.encodePolygon,
-        MultiPoint: wkp.encodeMultiPoint,
-        MultiLineString: wkp.encodeMultiLineString,
-        MultiPolygon: wkp.encodeMultiPolygon
-    };
-    const fn = byType[geometry.type];
-    if (!fn) {
-        throw new TypeError(`Unsupported geometry type: ${geometry.type}`);
-    }
-    return fn(geometry, precision, workspace);
+    return wkp.encode(ctx, geometry, precision);
 }
 
 function updateHeader(encoded) {
@@ -332,8 +390,8 @@ function updateHeader(encoded) {
 function updateActionButtons() {
     const wktHasInput = ui.wktInput.value.trim().length > 0;
     const encodedHasInput = ui.encodedInput.value.trim().length > 0;
-    ui.encodeBtn.disabled = !wktHasInput;
-    ui.decodeBtn.disabled = !encodedHasInput;
+    ui.encodeBtn.disabled = !appReady || !wktHasInput;
+    ui.decodeBtn.disabled = !appReady || !encodedHasInput;
 }
 
 function progressElements(kind) {
@@ -388,6 +446,15 @@ function renderCombinedMetrics(kind, timing = null) {
 function postWorker(msg) {
     if (!worker) {
         worker = new Worker(new URL('./metrics-worker.js', import.meta.url), { type: 'module' });
+        worker.onerror = (event) => {
+            const detail = event?.message || 'Failed to load metrics worker';
+            setError(ui.encodeStatus, detail);
+            setError(ui.decodeStatus, detail);
+        };
+        worker.onmessageerror = () => {
+            setError(ui.encodeStatus, 'Metrics worker message could not be parsed.');
+            setError(ui.decodeStatus, 'Metrics worker message could not be parsed.');
+        };
         worker.onmessage = (event) => {
             const data = event.data;
             if (!data) {
@@ -434,6 +501,27 @@ function postWorker(msg) {
 
 ui.exampleGeometry.addEventListener('change', () => {
     updateSettingsVisibility();
+    setSettingsDirty(true);
+});
+
+[
+    ui.settingDimensions,
+    ui.settingDp,
+    ui.settingSort,
+    ui.settingPointCount,
+    ui.settingRingCount,
+    ui.settingPointsPerRing,
+    ui.settingLineCount,
+    ui.settingPointsPerLine,
+    ui.settingPolygonCount,
+    ui.settingRingsPerPolygon,
+    ui.settingMpPointsPerRing
+].forEach((input) => {
+    if (!input) {
+        return;
+    }
+    input.addEventListener('input', () => setSettingsDirty(true));
+    input.addEventListener('change', () => setSettingsDirty(true));
 });
 
 ui.wktInput.addEventListener('input', updateActionButtons);
@@ -443,24 +531,42 @@ ui.generateExampleBtn.addEventListener('click', () => {
     try {
         clearError(ui.encodeStatus);
         generateExampleWkt();
+        setSettingsDirty(false);
     } catch (error) {
         setError(ui.encodeStatus, error?.message || String(error));
     }
 });
 
 async function init() {
+    updateSettingsVisibility();
     await loadWebBindingVersion();
 
     if (window.location.protocol === 'file:') {
+        enterDegradedMode('Oops: this demo must be served over HTTP(S), not file://. Use scripts/run_docs_demo.py from the repo root.');
         setError(ui.encodeStatus, 'Run this page from HTTP(S), not file://');
         setError(ui.decodeStatus, 'Run this page from HTTP(S), not file://');
         return;
     }
 
-    wkp = await createWkp();
-    workspace = new wkp.Workspace();
+    try {
+        const webModule = await importFirstAvailable(WEB_MODULE_CANDIDATES);
+        if (!webModule || typeof webModule.createWkp !== 'function') {
+            throw new Error('WKP web module loaded but did not export createWkp()');
+        }
+        wkp = await webModule.createWkp();
+        ctx = new wkp.Context();
+    } catch (error) {
+        const detail = error?.message || String(error);
+        enterDegradedMode(
+            `Oops: WKP/WASM failed to load (${detail}). Run scripts/run_docs_demo.py from the repo root, then open /docs/.`
+        );
+        setError(ui.encodeStatus, detail);
+        setError(ui.decodeStatus, detail);
+        return;
+    }
 
-    updateSettingsVisibility();
+    appReady = true;
+    clearDegradedMode();
 
     ui.wktInput.value = '';
     ui.encodedInput.value = '';
@@ -477,6 +583,7 @@ async function init() {
     renderInfoInline(ui.decodeHeaderMetrics, []);
 
     updateActionButtons();
+    setSettingsDirty(false);
 
     initProgress('encode');
     initProgress('decode');
@@ -530,7 +637,7 @@ ui.decodeBtn.addEventListener('click', () => {
             throw new TypeError('Encoded WKP is required');
         }
 
-        const decoded = wkp.decode(encoded, workspace);
+        const decoded = wkp.decode(ctx, encoded);
         const wkt = geometryToWkt(decoded.geometry);
         ui.wktOutputText.textContent = wkt;
 
@@ -569,6 +676,7 @@ ui.copyWktBtn.addEventListener('click', async () => {
 });
 
 init().catch((error) => {
+    enterDegradedMode('Oops: WKP demo failed to initialize. Check console for details.');
     setError(ui.encodeStatus, error?.message || String(error));
     setError(ui.decodeStatus, error?.message || String(error));
 });

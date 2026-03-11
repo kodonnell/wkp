@@ -49,6 +49,13 @@ h2 {
     font-size: 1rem;
 }
 
+.card-heading {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+}
+
 p {
     margin: 6px 0;
     color: var(--muted);
@@ -70,6 +77,21 @@ a {
     border-radius: 12px;
     padding: 10px;
     box-shadow: 0 10px 24px #0000003d;
+}
+
+.app-alert {
+    margin-bottom: 10px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    border: 1px solid #9b4e5f;
+    background: #3d1c27;
+    color: #ffd4db;
+    font-size: 0.9rem;
+}
+
+.degraded {
+    opacity: 0.78;
+    pointer-events: none;
 }
 
 textarea,
@@ -132,6 +154,38 @@ textarea {
     align-items: center;
     gap: 8px;
     flex-wrap: wrap;
+}
+
+.settings-reminder-inline {
+    font-size: 0.82rem;
+    color: #ffd08a;
+    opacity: 0;
+    white-space: nowrap;
+    transition: opacity 120ms ease-out;
+    pointer-events: none;
+}
+
+.settings-reminder-inline.is-visible {
+    opacity: 1;
+}
+
+.button-attention {
+    box-shadow: 0 0 0 0 rgba(255, 176, 80, 0.45);
+    animation: remind-pulse 1.4s ease-out infinite;
+}
+
+@keyframes remind-pulse {
+    0% {
+        box-shadow: 0 0 0 0 rgba(255, 176, 80, 0.45);
+    }
+
+    70% {
+        box-shadow: 0 0 0 10px rgba(255, 176, 80, 0);
+    }
+
+    100% {
+        box-shadow: 0 0 0 0 rgba(255, 176, 80, 0);
+    }
 }
 
 .settings-inline {

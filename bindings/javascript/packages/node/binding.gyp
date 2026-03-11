@@ -2,7 +2,7 @@
     "targets": [
         {
             "target_name": "wkp_node",
-            "sources": ["src/addon.cc", "../../../../core/src/core.cpp"],
+            "sources": ["src/addon.cc", "../../../../core/src/core.c"],
             "include_dirs": ["<!@(node -p \"require('node-addon-api').include\")", "../../../../core/include"],
             "defines": ["NAPI_CPP_EXCEPTIONS"],
             "cflags!": ["-fno-exceptions"],

@@ -38,41 +38,32 @@ npm --workspace @wkpjs/node run benchmark -- --points=10000 --precision=5 --iter
 
 Exports:
 
-- `Workspace`
+- `Context`
 - `decodeHeader(encoded)`
-- `decode(encoded, workspace?)`
-- `encodePoint/encodeLineString/encodePolygon/encodeMultiPoint/encodeMultiLineString/encodeMultiPolygon`
-- `encodeF64(values, dimensions, precisions, workspace?)`
-- `decodeF64(encoded, dimensions, precisions, workspace?)`
+- `decode(ctx, encoded)`
+- `encode(ctx, geometry, precision)`
+- `encodeFloats(ctx, floats, precisions)`
+- `decodeFloats(ctx, encoded, precisions)`
 
 ## Example
 
 ```js
-const { Workspace, decode, encodeLineString } = require('@wkpjs/node');
+const { Context, decode, encode } = require('@wkpjs/node');
 
-const workspace = new Workspace();
+const ctx = new Context();
 const geometry = {
   type: 'LineString',
   coordinates: [[174.776, -41.289], [174.777, -41.290], [174.778, -41.291]],
 };
 
-const encoded = encodeLineString(geometry, 6, workspace);
-const decoded = decode(encoded, workspace);
+const encoded = encode(ctx, geometry, 6);
+const decoded = decode(ctx, encoded);
 
 console.log(encoded);
 console.log(decoded.geometry);
 ```
 
-Convenience path (no workspace):
-
-```js
-const { decode, encodeLineString } = require('@wkpjs/node');
-
-const encoded = encodeLineString({ type: 'LineString', coordinates: [[0, 0], [1, 1]] }, 6);
-const decoded = decode(encoded);
-```
-
-Omitting `workspace` is simpler, but slower for repeated operations because buffers are not reused as effectively.
+`ctx` is required for encode/decode operations.
 
 ## Publishing
 

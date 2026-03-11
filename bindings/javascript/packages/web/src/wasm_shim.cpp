@@ -1,6 +1,7 @@
 #include <cstddef>
 #include <cstring>
 #include <cstdint>
+#include <cstdlib>
 
 #include "wkp/_version.h"
 #include "wkp/core.h"
@@ -13,27 +14,52 @@ extern "C"
         size_t initial_f64_capacity,
         int32_t max_u8_capacity,
         int32_t max_f64_capacity,
-        wkp_workspace **out_workspace,
+        wkp_context **out_workspace,
         char *error_message,
         size_t error_message_capacity)
     {
-        return static_cast<int>(wkp_workspace_create(
-            initial_u8_capacity,
-            initial_f64_capacity,
-            static_cast<int64_t>(max_u8_capacity),
-            static_cast<int64_t>(max_f64_capacity),
-            out_workspace,
-            error_message,
-            error_message_capacity));
+        (void)initial_u8_capacity;
+        (void)initial_f64_capacity;
+        (void)max_u8_capacity;
+        (void)max_f64_capacity;
+        (void)error_message;
+        (void)error_message_capacity;
+
+        if (out_workspace == nullptr)
+        {
+            return static_cast<int>(WKP_STATUS_INVALID_ARGUMENT);
+        }
+
+        auto *ctx = static_cast<wkp_context *>(std::malloc(sizeof(wkp_context)));
+        if (ctx == nullptr)
+        {
+            return static_cast<int>(WKP_STATUS_ALLOCATION_FAILED);
+        }
+
+        std::memset(ctx, 0, sizeof(wkp_context));
+        const wkp_status status = wkp_context_init(ctx);
+        if (status != WKP_STATUS_OK)
+        {
+            std::free(ctx);
+            return static_cast<int>(status);
+        }
+
+        *out_workspace = ctx;
+        return static_cast<int>(WKP_STATUS_OK);
     }
 
-    void wkp_wasm_workspace_destroy(wkp_workspace *workspace)
+    void wkp_wasm_workspace_destroy(wkp_context *workspace)
     {
-        wkp_workspace_destroy(workspace);
+        if (workspace == nullptr)
+        {
+            return;
+        }
+        wkp_context_free(workspace);
+        std::free(workspace);
     }
 
     int wkp_wasm_workspace_encode_f64(
-        wkp_workspace *workspace,
+        wkp_context *workspace,
         const double *values,
         size_t value_count,
         size_t dimensions,
@@ -44,7 +70,9 @@ extern "C"
         char *error_message,
         size_t error_message_capacity)
     {
-        return static_cast<int>(wkp_workspace_encode_f64(
+        (void)error_message;
+        (void)error_message_capacity;
+        return static_cast<int>(wkp_encode_f64(
             workspace,
             values,
             value_count,
@@ -52,13 +80,11 @@ extern "C"
             precisions,
             precision_count,
             out_data,
-            out_size,
-            error_message,
-            error_message_capacity));
+            out_size));
     }
 
     int wkp_wasm_workspace_decode_f64(
-        wkp_workspace *workspace,
+        wkp_context *workspace,
         const uint8_t *encoded,
         size_t encoded_size,
         size_t dimensions,
@@ -69,7 +95,9 @@ extern "C"
         char *error_message,
         size_t error_message_capacity)
     {
-        return static_cast<int>(wkp_workspace_decode_f64(
+        (void)error_message;
+        (void)error_message_capacity;
+        return static_cast<int>(wkp_decode_f64(
             workspace,
             encoded,
             encoded_size,
@@ -77,13 +105,11 @@ extern "C"
             precisions,
             precision_count,
             out_data,
-            out_size,
-            error_message,
-            error_message_capacity));
+            out_size));
     }
 
     int wkp_wasm_workspace_encode_geometry_frame_f64(
-        wkp_workspace *workspace,
+        wkp_context *workspace,
         int geometry_type,
         const double *coords,
         size_t coord_value_count,
@@ -98,7 +124,9 @@ extern "C"
         char *error_message,
         size_t error_message_capacity)
     {
-        return static_cast<int>(wkp_workspace_encode_geometry_frame_f64(
+        (void)error_message;
+        (void)error_message_capacity;
+        return static_cast<int>(wkp_encode_geometry_frame(
             workspace,
             geometry_type,
             coords,
@@ -110,13 +138,11 @@ extern "C"
             segment_point_counts,
             segment_count,
             out_data,
-            out_size,
-            error_message,
-            error_message_capacity));
+            out_size));
     }
 
     int wkp_wasm_workspace_decode_geometry_frame_f64(
-        wkp_workspace *workspace,
+        wkp_context *workspace,
         const uint8_t *encoded,
         size_t encoded_size,
         int *out_version,
@@ -132,6 +158,8 @@ extern "C"
         char *error_message,
         size_t error_message_capacity)
     {
+        (void)error_message;
+        (void)error_message_capacity;
         if (out_version == nullptr || out_precision == nullptr || out_dimensions == nullptr || out_geometry_type == nullptr ||
             out_coords == nullptr || out_coord_value_count == nullptr ||
             out_segment_point_counts == nullptr || out_segment_count == nullptr ||
@@ -141,13 +169,11 @@ extern "C"
         }
 
         const wkp_geometry_frame_f64 *frame = nullptr;
-        const wkp_status status = wkp_workspace_decode_geometry_frame_f64(
+        const wkp_status status = wkp_decode_geometry_frame(
             workspace,
             encoded,
             encoded_size,
-            &frame,
-            error_message,
-            error_message_capacity);
+            &frame);
 
         if (status != WKP_STATUS_OK)
         {
@@ -177,15 +203,15 @@ extern "C"
         char *error_message,
         size_t error_message_capacity)
     {
+        (void)error_message;
+        (void)error_message_capacity;
         return static_cast<int>(wkp_decode_geometry_header(
             encoded,
             encoded_size,
             out_version,
             out_precision,
             out_dimensions,
-            out_geometry_type,
-            error_message,
-            error_message_capacity));
+            out_geometry_type));
     }
 
     const char *wkp_wasm_core_version()

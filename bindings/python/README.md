@@ -1,6 +1,6 @@
 # wkp (Python binding)
 
-Python package that provides high-level geometry APIs on top of WKP core.
+Python package with a minimal Shapely-first API on top of WKP core geometry-frame C ABI.
 
 ## Architecture
 
@@ -36,13 +36,27 @@ python -m build bindings/python
 pytest bindings/python/tests
 ```
 
-## Workspace API example
+## API
+
+Public functions:
+
+- `Context() -> Context`
+- `encode(ctx, geom, precision) -> bytes`
+- `decode(ctx, bites) -> DecodedGeometry`
+- `decode_header(bites) -> (version, precision, dimensions, geometry_type)`
+
+Float helpers also require context:
+
+- `encode_floats(ctx, floats, precisions) -> bytes`
+- `decode_floats(ctx, encoded, precisions) -> list[tuple[float, ...]]`
+
+`Context` is required for all encode/decode operations. Reuse one context per thread across repeated calls.
+
+## Example
 
 ```python
 from shapely.geometry import LineString
-from wkp import Workspace, decode, encode_linestring
-
-workspace = Workspace()
+from wkp import Context, decode, decode_header, encode
 
 geom = LineString([
 	(174.776, -41.289),
@@ -50,30 +64,15 @@ geom = LineString([
 	(174.778, -41.291),
 ])
 
-encoded = encode_linestring(geom, precision=6, workspace=workspace)
-decoded = decode(encoded, workspace=workspace)
+ctx = Context()
+encoded = encode(ctx, geom, precision=6)
+decoded = decode(ctx, encoded)
+header = decode_header(encoded)
 
 print(encoded)
-print(decoded.version, decoded.precision, decoded.dimensions)
+print(header)
 print(decoded.geometry.wkt)
 ```
-
-This workspace-first pattern is recommended for performance because it reuses internal buffers across calls.
-
-## Convenience usage (no workspace)
-
-You can call the same functions without passing a workspace:
-
-```python
-from shapely.geometry import LineString
-from wkp import decode, encode_linestring
-
-geom = LineString([(0, 0), (1, 1), (2, 2)])
-encoded = encode_linestring(geom, precision=6)
-decoded = decode(encoded)
-```
-
-This is simpler, but slower for repeated operations because it does not let you explicitly reuse a dedicated workspace.
 
 ## Benchmark
 

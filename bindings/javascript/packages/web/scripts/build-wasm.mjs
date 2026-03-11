@@ -9,7 +9,7 @@ const __dirname = dirname(__filename);
 const pkgRoot = resolve(__dirname, '..');
 const outDir = resolve(pkgRoot, 'dist');
 const shimCpp = resolve(pkgRoot, 'src', 'wasm_shim.cpp');
-const coreCpp = resolve(pkgRoot, '../../../../core/src/core.cpp');
+const coreCpp = resolve(pkgRoot, '../../../../core/src/core.c');
 const coreInclude = resolve(pkgRoot, '../../../../core/include');
 const outJs = resolve(outDir, 'wkp_core.js');
 const emcc = process.env.EMCC || 'emcc';
@@ -21,6 +21,7 @@ const args = [
     '-std=c++17',
     '-I', coreInclude,
     shimCpp,
+    '-x', 'c++',
     coreCpp,
     '-s', 'MODULARIZE=1',
     '-s', 'EXPORT_ES6=1',
