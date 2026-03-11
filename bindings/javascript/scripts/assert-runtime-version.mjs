@@ -26,7 +26,7 @@ function parseSemverMajorMinor(version) {
 
 function assertCompatible(runtimeCoreVersion, compatibility, label) {
     const [runtimeMajor, runtimeMinor] = parseSemverMajorMinor(runtimeCoreVersion);
-    const match = /^([0-9]+)\.([0-9]+)\.x$/.exec(compatibility);
+    const match = /^([0-9]+)\.([0-9]+)\.(?:x|[0-9]+)$/.exec(compatibility);
     if (!match) {
         throw new Error(`Invalid compatibility range '${compatibility}' from ${label}`);
     }
