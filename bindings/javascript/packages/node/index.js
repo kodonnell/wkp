@@ -39,6 +39,10 @@ function assertCoreCompatibility(runtimeCoreVersion) {
 }
 
 assertCoreCompatibility(core.coreVersion());
+if (typeof core.runSelfTest !== 'function') {
+    throw new Error('Native binding is missing runSelfTest()');
+}
+core.runSelfTest();
 
 const EncodedGeometryType = Object.freeze({ ...core.EncodedGeometryType });
 
@@ -304,6 +308,7 @@ module.exports = {
     encode,
     encodeFloats,
     decodeFloats,
+    runSelfTest: core.runSelfTest,
     coreVersion: core.coreVersion,
     EncodedGeometryType
 };

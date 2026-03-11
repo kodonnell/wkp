@@ -219,6 +219,11 @@ extern "C"
         return WKP_CORE_VERSION;
     }
 
+    int wkp_wasm_basic_self_test(int *out_failed_check)
+    {
+        return static_cast<int>(wkp_basic_self_test(out_failed_check));
+    }
+
     int wkp_wasm_geometry_point() { return WKP_GEOMETRY_POINT; }
     int wkp_wasm_geometry_linestring() { return WKP_GEOMETRY_LINESTRING; }
     int wkp_wasm_geometry_polygon() { return WKP_GEOMETRY_POLYGON; }

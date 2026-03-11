@@ -1,6 +1,7 @@
 from random import random
 
 import numpy as np
+import wkp
 from wkp import decode_floats, encode_floats
 
 
@@ -34,3 +35,7 @@ def test_decode_roundtrip():
     encoded = encode_floats(ctx, out, [3, 4, 2])
     decoded = decode_floats(ctx, encoded, [3, 4, 2])
     np.testing.assert_allclose(np.asarray(decoded, dtype=np.float64), np.asarray(out, dtype=np.float64), rtol=0, atol=0)
+
+
+def test_run_core_self_test():
+    assert wkp._core.run_self_test() is True

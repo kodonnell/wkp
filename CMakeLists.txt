@@ -74,6 +74,18 @@ if(WKP_BUILD_TESTS)
     target_link_libraries(wkp_cpp_test_vectors PRIVATE wkp_core_static doctest::doctest)
     doctest_discover_tests(wkp_cpp_test_vectors)
 
+    add_executable(wkp_cpp_test_integration
+        bindings/cpp/tests/test_integration_txt.cpp
+    )
+    target_include_directories(wkp_cpp_test_integration PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/bindings/cpp/include
+    )
+    target_compile_definitions(wkp_cpp_test_integration PRIVATE
+        WKP_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
+    )
+    target_link_libraries(wkp_cpp_test_integration PRIVATE wkp_core_static doctest::doctest)
+    doctest_discover_tests(wkp_cpp_test_integration)
+
     add_executable(wkp_core_test_capi
         core/tests/test_c_api.cpp
     )

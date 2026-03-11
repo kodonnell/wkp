@@ -153,9 +153,27 @@ NB_MODULE(_core, m)
 {
     m.doc() = "WKP nanobind core wrapper";
     m.attr("__version__") = WKP_CORE_VERSION;
+    {
+        int failed_check = 0;
+        const auto status = wkp_basic_self_test(&failed_check);
+        if (status != WKP_STATUS_OK)
+        {
+            throw std::runtime_error("WKP core self-test failed during module initialization (check " + std::to_string(failed_check) + ")");
+        }
+    }
 
     m.def("core_version", []()
           { return std::string(WKP_CORE_VERSION); });
+
+    m.def("run_self_test", []()
+          {
+              int failed_check = 0;
+              const auto status = wkp_basic_self_test(&failed_check);
+              if (status != WKP_STATUS_OK)
+              {
+                  throw std::runtime_error("WKP core self-test failed (check " + std::to_string(failed_check) + ")");
+              }
+              return true; });
 
     nb::class_<Context>(m, "Context")
         .def(nb::init<>());

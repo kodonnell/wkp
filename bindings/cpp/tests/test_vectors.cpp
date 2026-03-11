@@ -1,4 +1,4 @@
-#include "wkp/core.h"
+#include "wkp/core.hpp"
 
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include <doctest/doctest.h>
@@ -20,30 +20,7 @@ namespace
         std::size_t dimensions,
         const std::vector<int> &precisions)
     {
-        wkp_context ctx{};
-        if (wkp_context_init(&ctx) != WKP_STATUS_OK)
-        {
-            throw std::runtime_error("context init failed");
-        }
-        const uint8_t *data = nullptr;
-        std::size_t out_size = 0;
-        const auto s = wkp_encode_f64(
-            &ctx,
-            values.data(),
-            values.size(),
-            dimensions,
-            precisions.data(),
-            precisions.size(),
-            &data,
-            &out_size);
-        if (s != WKP_STATUS_OK)
-        {
-            wkp_context_free(&ctx);
-            throw std::runtime_error("encode failed");
-        }
-        std::string result(reinterpret_cast<const char *>(data), out_size);
-        wkp_context_free(&ctx);
-        return result;
+        return wkp::core::encode_f64(values.data(), values.size(), dimensions, precisions);
     }
 
     std::vector<double> decode_values(
@@ -51,30 +28,7 @@ namespace
         std::size_t dimensions,
         const std::vector<int> &precisions)
     {
-        wkp_context ctx{};
-        if (wkp_context_init(&ctx) != WKP_STATUS_OK)
-        {
-            throw std::runtime_error("context init failed");
-        }
-        const double *out = nullptr;
-        std::size_t out_size = 0;
-        const auto s = wkp_decode_f64(
-            &ctx,
-            reinterpret_cast<const uint8_t *>(encoded.data()),
-            encoded.size(),
-            dimensions,
-            precisions.data(),
-            precisions.size(),
-            &out,
-            &out_size);
-        if (s != WKP_STATUS_OK)
-        {
-            wkp_context_free(&ctx);
-            throw std::runtime_error("decode failed");
-        }
-        std::vector<double> result(out, out + out_size);
-        wkp_context_free(&ctx);
-        return result;
+        return wkp::core::decode_f64(encoded, dimensions, precisions);
     }
 }
 

@@ -1,0 +1,6 @@
+# We want to check that encoding a multilinestring carries the deltas over from the end of
+# one linestring to start of next. We can check this by doing them individually and seeing
+# it's not just a concat of the shorter
+5	LINESTRING(1.0001 1.0001, 1.0002 1.0002)	@DAAsibEsibESS
+# Check below - if we encoded them separately, we'd get above twice (less header) i.e. @DAAsibEsibESSsibEsibESS, which we don't, yay:
+5	MULTILINESTRING((1.0001 1.0001, 1.0002 1.0002),(1.0001 1.0001, 1.0002 1.0002))	@DADsibEsibESS;RRSS

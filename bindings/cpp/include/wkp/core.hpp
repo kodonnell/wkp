@@ -35,8 +35,24 @@ namespace wkp::core
         throw std::runtime_error(msg);
     }
 
+    inline void ensure_basic_self_test()
+    {
+        static const bool passed = []()
+        {
+            int failed_check = 0;
+            const auto status = wkp_basic_self_test(&failed_check);
+            if (status != WKP_STATUS_OK)
+            {
+                throw std::runtime_error("WKP core self-test failed (check " + std::to_string(failed_check) + ")");
+            }
+            return true;
+        }();
+        (void)passed;
+    }
+
     inline wkp_context &thread_ctx()
     {
+        ensure_basic_self_test();
         thread_local wkp_context ctx{};
         thread_local bool initialized = false;
         if (!initialized)
@@ -119,6 +135,7 @@ namespace wkp::core
 
     inline GeometryHeader decode_geometry_header(std::string_view encoded)
     {
+        ensure_basic_self_test();
         GeometryHeader h{};
         const auto status = wkp_decode_geometry_header(
             reinterpret_cast<const uint8_t *>(encoded.data()),

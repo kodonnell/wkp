@@ -63,6 +63,14 @@ namespace
         wkp_context_free(&ctx);
     }
 
+    TEST_CASE("c api run self-tests")
+    {
+        int failed_check = 0;
+        const auto s = wkp_basic_self_test(&failed_check);
+        CHECK(s == WKP_STATUS_OK);
+        CHECK(failed_check == 0);
+    }
+
     TEST_CASE("c api f64 auto wrappers")
     {
         const std::vector<double> values = {38.5, -120.2, 40.7, -120.95, 43.252, -126.453};

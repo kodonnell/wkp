@@ -1,24 +1,8 @@
 from random import random
 
 import polyline
-import pytest
 import shapely
 import wkp
-
-
-@pytest.mark.parametrize(
-    "input,n,precision,expected",
-    [
-        ([[1.0, 1.1, 1.2], [2.1, 2.2, 2.3]], 3, (3, 3, 3), "o}@wcA_jAwcAwcAwcA"),
-        ([[1.0, 1.1, 1.2], [2.1, 2.2, 2.3]], 3, 3, "o}@wcA_jAwcAwcAwcA"),
-        ([[4.712723, 7.846801], [36.651759, 9.693021]], 2, 5, "omw[oq{n@_b}aE{qgJ"),
-        ([(38.5, -120.2), (40.7, -120.95), (43.252, -126.453)], 2, 5, "_p~iF~ps|U_ulLnnqC_mqNvxq`@"),
-    ],
-)
-def test_known_encodes(input, n, precision, expected):
-    ctx = wkp.Context()
-    precisions = [precision] * n if isinstance(precision, int) else list(precision)
-    assert wkp.encode_floats(ctx, input, precisions) == expected.encode("ascii")
 
 
 def test_known_encode3():

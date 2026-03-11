@@ -657,6 +657,18 @@ namespace
         return out;
     }
 
+    Napi::Value RunSelfTest(const Napi::CallbackInfo &info)
+    {
+        Napi::Env env = info.Env();
+        int failed_check = 0;
+        const wkp_status status = wkp_basic_self_test(&failed_check);
+        if (status != WKP_STATUS_OK)
+        {
+            throw Napi::Error::New(env, "WKP core self-test failed (check " + std::to_string(failed_check) + ")");
+        }
+        return Napi::Boolean::New(env, true);
+    }
+
 } // namespace
 
 Napi::Object Init(Napi::Env env, Napi::Object exports)
@@ -672,6 +684,7 @@ Napi::Object Init(Napi::Env env, Napi::Object exports)
     exports.Set("encodeMultiPointF64", Napi::Function::New(env, EncodeMultiPointF64));
     exports.Set("encodeMultiLineStringF64", Napi::Function::New(env, EncodeMultiLineStringF64));
     exports.Set("encodeMultiPolygonF64", Napi::Function::New(env, EncodeMultiPolygonF64));
+    exports.Set("runSelfTest", Napi::Function::New(env, RunSelfTest));
     exports.Set("coreVersion", Napi::Function::New(env, [](const Napi::CallbackInfo &info)
                                                    { return Napi::String::New(info.Env(), WKP_CORE_VERSION); }));
 

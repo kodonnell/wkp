@@ -460,6 +460,7 @@ export async function createWkp(options) {
     );
 
     const coreVersionNative = module.cwrap('wkp_wasm_core_version', 'number', []);
+    const basicSelfTestNative = module.cwrap('wkp_wasm_basic_self_test', 'number', ['number']);
 
     const EncodedGeometryType = Object.freeze({
         POINT: module.cwrap('wkp_wasm_geometry_point', 'number', [])(),
@@ -753,7 +754,20 @@ export async function createWkp(options) {
         return readCString(module, ptr);
     }
 
+    function runSelfTest() {
+        return withTempAllocation(4, 'basic self test failed check', (failedCheckPtr) => {
+            module.HEAP32[failedCheckPtr >>> 2] = 0;
+            const status = basicSelfTestNative(failedCheckPtr);
+            if (status !== STATUS.OK) {
+                const failedCheck = module.HEAP32[failedCheckPtr >>> 2];
+                throw new Error(`WKP core self-test failed (check ${failedCheck})`);
+            }
+            return true;
+        });
+    }
+
     assertCoreCompatibility(coreVersion());
+    runSelfTest();
 
     function decodeHeader(encoded) {
         const e = normalizeEncoded(encoded);
@@ -839,6 +853,7 @@ export async function createWkp(options) {
         encode,
         encodeFloats,
         decodeFloats,
+        runSelfTest,
         coreVersion,
         EncodedGeometryType
     };

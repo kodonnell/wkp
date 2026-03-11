@@ -679,3 +679,191 @@ wkp_status wkp_decode_geometry_header(const uint8_t *encoded, size_t encoded_siz
         out_dimensions,
         out_geometry_type);
 }
+
+wkp_status wkp_basic_self_test(int *out_failed_check)
+{
+    wkp_context ctx;
+    wkp_status s;
+    const double values[] = {38.5, -120.2, 40.7, -120.95, 43.252, -126.453};
+    const int precisions[] = {5};
+    const size_t groups[] = {1};
+    const size_t segments[] = {3};
+    const char expected_floats[] = "_p~iF~ps|U_ulLnnqC_mqNvxq`@";
+    const char expected_geometry[] = "@DAA_p~iF~ps|U_ulLnnqC_mqNvxq`@";
+    const uint8_t *encoded = NULL;
+    size_t encoded_size = 0;
+    const double *decoded = NULL;
+    size_t decoded_size = 0;
+    const wkp_geometry_frame_f64 *frame = NULL;
+    int version = 0;
+    int precision = 0;
+    int dimensions = 0;
+    int geometry_type = 0;
+    size_t i;
+
+    if (out_failed_check != NULL)
+        *out_failed_check = 0;
+
+    s = wkp_context_init(&ctx);
+    if (s != WKP_STATUS_OK)
+    {
+        if (out_failed_check != NULL)
+            *out_failed_check = 1;
+        return s;
+    }
+
+    s = wkp_encode_f64(
+        &ctx,
+        values,
+        sizeof(values) / sizeof(values[0]),
+        2,
+        precisions,
+        1,
+        &encoded,
+        &encoded_size);
+    if (s != WKP_STATUS_OK)
+    {
+        if (out_failed_check != NULL)
+            *out_failed_check = 2;
+        wkp_context_free(&ctx);
+        return s;
+    }
+
+    if (encoded_size != sizeof(expected_floats) - 1)
+    {
+        if (out_failed_check != NULL)
+            *out_failed_check = 3;
+        wkp_context_free(&ctx);
+        return WKP_STATUS_INTERNAL_ERROR;
+    }
+
+    for (i = 0; i < encoded_size; ++i)
+    {
+        if (encoded[i] != (uint8_t)expected_floats[i])
+        {
+            if (out_failed_check != NULL)
+                *out_failed_check = 4;
+            wkp_context_free(&ctx);
+            return WKP_STATUS_INTERNAL_ERROR;
+        }
+    }
+
+    s = wkp_decode_f64(
+        &ctx,
+        encoded,
+        encoded_size,
+        2,
+        precisions,
+        1,
+        &decoded,
+        &decoded_size);
+    if (s != WKP_STATUS_OK)
+    {
+        if (out_failed_check != NULL)
+            *out_failed_check = 5;
+        wkp_context_free(&ctx);
+        return s;
+    }
+
+    if (decoded_size != sizeof(values) / sizeof(values[0]))
+    {
+        if (out_failed_check != NULL)
+            *out_failed_check = 6;
+        wkp_context_free(&ctx);
+        return WKP_STATUS_INTERNAL_ERROR;
+    }
+
+    for (i = 0; i < decoded_size; ++i)
+    {
+        if (fabs(decoded[i] - values[i]) > 1e-9)
+        {
+            if (out_failed_check != NULL)
+                *out_failed_check = 7;
+            wkp_context_free(&ctx);
+            return WKP_STATUS_INTERNAL_ERROR;
+        }
+    }
+
+    s = wkp_encode_geometry_frame(
+        &ctx,
+        WKP_GEOMETRY_LINESTRING,
+        values,
+        sizeof(values) / sizeof(values[0]),
+        2,
+        5,
+        groups,
+        1,
+        segments,
+        1,
+        &encoded,
+        &encoded_size);
+    if (s != WKP_STATUS_OK)
+    {
+        if (out_failed_check != NULL)
+            *out_failed_check = 8;
+        wkp_context_free(&ctx);
+        return s;
+    }
+
+    if (encoded_size != sizeof(expected_geometry) - 1)
+    {
+        if (out_failed_check != NULL)
+            *out_failed_check = 9;
+        wkp_context_free(&ctx);
+        return WKP_STATUS_INTERNAL_ERROR;
+    }
+
+    for (i = 0; i < encoded_size; ++i)
+    {
+        if (encoded[i] != (uint8_t)expected_geometry[i])
+        {
+            if (out_failed_check != NULL)
+                *out_failed_check = 10;
+            wkp_context_free(&ctx);
+            return WKP_STATUS_INTERNAL_ERROR;
+        }
+    }
+
+    s = wkp_decode_geometry_header(
+        encoded,
+        encoded_size,
+        &version,
+        &precision,
+        &dimensions,
+        &geometry_type);
+    if (s != WKP_STATUS_OK)
+    {
+        if (out_failed_check != NULL)
+            *out_failed_check = 11;
+        wkp_context_free(&ctx);
+        return s;
+    }
+
+    if (version != 1 || precision != 5 || dimensions != 2 || geometry_type != WKP_GEOMETRY_LINESTRING)
+    {
+        if (out_failed_check != NULL)
+            *out_failed_check = 12;
+        wkp_context_free(&ctx);
+        return WKP_STATUS_INTERNAL_ERROR;
+    }
+
+    s = wkp_decode_geometry_frame(&ctx, encoded, encoded_size, &frame);
+    if (s != WKP_STATUS_OK)
+    {
+        if (out_failed_check != NULL)
+            *out_failed_check = 13;
+        wkp_context_free(&ctx);
+        return s;
+    }
+
+    if (frame == NULL || frame->coord_value_count != sizeof(values) / sizeof(values[0]))
+    {
+        if (out_failed_check != NULL)
+            *out_failed_check = 14;
+        wkp_context_free(&ctx);
+        return WKP_STATUS_INTERNAL_ERROR;
+    }
+
+    wkp_context_free(&ctx);
+    return WKP_STATUS_OK;
+}

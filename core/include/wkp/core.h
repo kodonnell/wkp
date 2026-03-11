@@ -119,6 +119,12 @@ extern "C"
         int *out_dimensions,
         int *out_geometry_type);
 
+    // Runs a minimal built-in self-test suite for core encode/decode paths.
+    // Returns WKP_STATUS_OK when all checks pass.
+    // If non-NULL, out_failed_check receives a 1-based check index for failures.
+    wkp_status wkp_basic_self_test(
+        int *out_failed_check);
+
 #ifdef __cplusplus
 }
 #endif
