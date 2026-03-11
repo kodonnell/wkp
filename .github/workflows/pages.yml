@@ -4,7 +4,15 @@ on:
   push:
     branches:
       - main
+  repository_dispatch:
+    types:
+      - js-published
   workflow_dispatch:
+    inputs:
+      web_version:
+        description: "Optional @wkpjs/web version to deploy (defaults to latest)"
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -28,7 +36,7 @@ jobs:
         with:
           node-version: 24
 
-      - name: Build Pages artifact from docs + latest @wkpjs/web
+      - name: Build Pages artifact from docs + web runtime
         shell: bash
         run: |
           set -euo pipefail
@@ -38,7 +46,47 @@ jobs:
 
           cp -R docs/. .pages-dist/
 
-          npm pack @wkpjs/web@latest --pack-destination .pages-tmp
+          if [[ "${{ github.event_name }}" == "push" ]]; then
+            pushd bindings/javascript >/dev/null
+            npm ci
+            npm run build:web
+            popd >/dev/null
+
+            mkdir -p .pages-dist/web
+            cp -R bindings/javascript/packages/web/src .pages-dist/web/src
+            cp -R bindings/javascript/packages/web/dist .pages-dist/web/dist
+            cp bindings/javascript/packages/web/package.json .pages-dist/web/package.json
+            exit 0
+          fi
+
+          WEB_VERSION=""
+          if [[ "${{ github.event_name }}" == "repository_dispatch" ]]; then
+            WEB_VERSION='${{ github.event.client_payload.web_version }}'
+          elif [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            WEB_VERSION='${{ github.event.inputs.web_version }}'
+          fi
+
+          if [[ -n "$WEB_VERSION" ]]; then
+            PACKAGE_SPEC="@wkpjs/web@$WEB_VERSION"
+          else
+            PACKAGE_SPEC="@wkpjs/web@latest"
+          fi
+
+          if [[ -n "$WEB_VERSION" ]]; then
+            for attempt in {1..20}; do
+              if npm view "@wkpjs/web@$WEB_VERSION" version >/dev/null 2>&1; then
+                break
+              fi
+              if [[ "$attempt" -eq 20 ]]; then
+                echo "Timed out waiting for @wkpjs/web@$WEB_VERSION on npm"
+                exit 1
+              fi
+              echo "@wkpjs/web@$WEB_VERSION not visible yet (attempt $attempt/20); waiting 15s"
+              sleep 15
+            done
+          fi
+
+          npm pack "$PACKAGE_SPEC" --pack-destination .pages-tmp
           TARBALL="$(ls .pages-tmp/wkpjs-web-*.tgz | head -n 1)"
           mkdir -p .pages-tmp/pkg
           tar -xzf "$TARBALL" -C .pages-tmp/pkg
