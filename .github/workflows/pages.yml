@@ -46,19 +46,6 @@ jobs:
 
           cp -R docs/. .pages-dist/
 
-          if [[ "${{ github.event_name }}" == "push" ]]; then
-            pushd bindings/javascript >/dev/null
-            npm ci
-            npm run build:web
-            popd >/dev/null
-
-            mkdir -p .pages-dist/web
-            cp -R bindings/javascript/packages/web/src .pages-dist/web/src
-            cp -R bindings/javascript/packages/web/dist .pages-dist/web/dist
-            cp bindings/javascript/packages/web/package.json .pages-dist/web/package.json
-            exit 0
-          fi
-
           WEB_VERSION=""
           if [[ "${{ github.event_name }}" == "repository_dispatch" ]]; then
             WEB_VERSION='${{ github.event.client_payload.web_version }}'
