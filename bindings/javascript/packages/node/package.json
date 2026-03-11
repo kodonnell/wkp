@@ -1,7 +1,7 @@
 {
   "name": "@wkpjs/node",
-  "version": "0.3.1",
-  "wkpCoreCompatibility": "0.3.x",
+  "version": "0.4.0",
+  "wkpCoreCompatibility": "0.4.0",
   "description": "Node.js bindings for WKP core via Node-API",
   "repository": {
     "type": "git",
@@ -24,7 +24,7 @@
     "build": "node-gyp rebuild",
     "clean": "node-gyp clean || exit 0",
     "benchmark": "node ./benchmark/benchmark.js",
-    "test": "node --test ./tests/test-geometry-encoder.js"
+    "test": "node --test ./tests/*.js"
   },
   "dependencies": {
     "node-addon-api": "^8.3.0",

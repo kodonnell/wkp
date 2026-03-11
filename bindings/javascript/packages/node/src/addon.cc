@@ -141,33 +141,30 @@ namespace
 
         std::vector<int> precisions = to_precisions(env, info[2]);
 
-        char error_message[512] = {0};
-        wkp_workspace *workspace = nullptr;
-        auto status = wkp_workspace_create(4096, 256, -1, -1, &workspace, error_message, sizeof(error_message));
-        throw_for_status(env, status, error_message);
+        wkp_context ctx{};
+        auto status = wkp_context_init(&ctx);
+        throw_for_status(env, status, nullptr);
 
         const uint8_t *encoded_data = nullptr;
         size_t encoded_size = 0;
-        status = wkp_workspace_encode_f64(
-            workspace,
+        status = wkp_encode_f64(
+            &ctx,
             values.data(),
             values.size(),
             dimensions,
             precisions.data(),
             precisions.size(),
             &encoded_data,
-            &encoded_size,
-            error_message,
-            sizeof(error_message));
+            &encoded_size);
 
         if (status != WKP_STATUS_OK)
         {
-            wkp_workspace_destroy(workspace);
-            throw_for_status(env, status, error_message);
+            wkp_context_free(&ctx);
+            throw_for_status(env, status, nullptr);
         }
 
         Napi::Value out = Napi::Buffer<uint8_t>::Copy(env, encoded_data, encoded_size);
-        wkp_workspace_destroy(workspace);
+        wkp_context_free(&ctx);
         return out;
     }
 
@@ -190,29 +187,26 @@ namespace
 
         std::vector<int> precisions = to_precisions(env, info[2]);
 
-        char error_message[512] = {0};
-        wkp_workspace *workspace = nullptr;
-        auto status = wkp_workspace_create(4096, 256, -1, -1, &workspace, error_message, sizeof(error_message));
-        throw_for_status(env, status, error_message);
+        wkp_context ctx{};
+        auto status = wkp_context_init(&ctx);
+        throw_for_status(env, status, nullptr);
 
         const double *decoded_data = nullptr;
         size_t decoded_size = 0;
-        status = wkp_workspace_decode_f64(
-            workspace,
+        status = wkp_decode_f64(
+            &ctx,
             encoded.data(),
             encoded.size(),
             dimensions,
             precisions.data(),
             precisions.size(),
             &decoded_data,
-            &decoded_size,
-            error_message,
-            sizeof(error_message));
+            &decoded_size);
 
         if (status != WKP_STATUS_OK)
         {
-            wkp_workspace_destroy(workspace);
-            throw_for_status(env, status, error_message);
+            wkp_context_free(&ctx);
+            throw_for_status(env, status, nullptr);
         }
 
         Napi::ArrayBuffer buffer = Napi::ArrayBuffer::New(env, decoded_size * sizeof(double));
@@ -220,7 +214,7 @@ namespace
         {
             std::memcpy(buffer.Data(), decoded_data, decoded_size * sizeof(double));
         }
-        wkp_workspace_destroy(workspace);
+        wkp_context_free(&ctx);
         return Napi::Float64Array::New(env, decoded_size, buffer, 0, napi_float64_array);
     }
 
@@ -238,19 +232,15 @@ namespace
         int precision = 0;
         int dimensions = 0;
         int geometry_type = 0;
-        char error_message[512] = {0};
-
         const wkp_status status = wkp_decode_geometry_header(
             encoded.data(),
             encoded.size(),
             &version,
             &precision,
             &dimensions,
-            &geometry_type,
-            error_message,
-            sizeof(error_message));
+            &geometry_type);
 
-        throw_for_status(env, status, error_message);
+        throw_for_status(env, status, nullptr);
 
         Napi::Array out = Napi::Array::New(env, 4);
         out.Set(static_cast<uint32_t>(0), Napi::Number::New(env, version));
@@ -296,15 +286,14 @@ namespace
         const std::vector<size_t> &group_segment_counts,
         const std::vector<size_t> &segment_point_counts)
     {
-        char error_message[512] = {0};
-        wkp_workspace *workspace = nullptr;
-        wkp_status status = wkp_workspace_create(4096, 256, -1, -1, &workspace, error_message, sizeof(error_message));
-        throw_for_status(env, status, error_message);
+        wkp_context ctx{};
+        wkp_status status = wkp_context_init(&ctx);
+        throw_for_status(env, status, nullptr);
 
         const uint8_t *out_data = nullptr;
         size_t out_size = 0;
-        status = wkp_workspace_encode_geometry_frame_f64(
-            workspace,
+        status = wkp_encode_geometry_frame(
+            &ctx,
             geometry_type,
             coords.data(),
             coords.size(),
@@ -315,9 +304,7 @@ namespace
             segment_point_counts.data(),
             segment_point_counts.size(),
             &out_data,
-            &out_size,
-            error_message,
-            sizeof(error_message));
+            &out_size);
 
         Napi::Value result = env.Null();
         if (status == WKP_STATUS_OK)
@@ -325,8 +312,8 @@ namespace
             result = Napi::Buffer<uint8_t>::Copy(env, out_data, out_size);
         }
 
-        wkp_workspace_destroy(workspace);
-        throw_for_status(env, status, error_message);
+        wkp_context_free(&ctx);
+        throw_for_status(env, status, nullptr);
         return result;
     }
 
@@ -354,6 +341,42 @@ namespace
             precision,
             std::vector<size_t>{1},
             std::vector<size_t>{1});
+    }
+
+    Napi::Value EncodeGeometryFrameF64(const Napi::CallbackInfo &info)
+    {
+        Napi::Env env = info.Env();
+        if (info.Length() < 6)
+        {
+            throw Napi::TypeError::New(env, "encodeGeometryFrameF64(geometryType, coords, dimensions, precision, groupSegmentCounts, segmentPointCounts) expects 6 arguments");
+        }
+
+        if (!info[0].IsNumber())
+        {
+            throw Napi::TypeError::New(env, "geometryType must be a number");
+        }
+
+        const int geometry_type = info[0].As<Napi::Number>().Int32Value();
+        std::vector<double> coords = to_values(env, info[1]);
+
+        if (!info[2].IsNumber() || !info[3].IsNumber())
+        {
+            throw Napi::TypeError::New(env, "dimensions and precision must be numbers");
+        }
+
+        const size_t dimensions = static_cast<size_t>(info[2].As<Napi::Number>().Uint32Value());
+        const int precision = info[3].As<Napi::Number>().Int32Value();
+        std::vector<size_t> group_segment_counts = to_counts(env, info[4], "groupSegmentCounts");
+        std::vector<size_t> segment_point_counts = to_counts(env, info[5], "segmentPointCounts");
+
+        return encode_geometry_frame_with_workspace(
+            env,
+            geometry_type,
+            coords,
+            dimensions,
+            precision,
+            group_segment_counts,
+            segment_point_counts);
     }
 
     Napi::Value EncodeLineStringF64(const Napi::CallbackInfo &info)
@@ -523,32 +546,28 @@ namespace
         }
 
         std::vector<uint8_t> encoded = to_encoded_bytes(env, info[0]);
-        char error_message[512] = {0};
+        wkp_context ctx{};
+        wkp_status status = wkp_context_init(&ctx);
+        throw_for_status(env, status, nullptr);
 
-        wkp_workspace *workspace = nullptr;
-        wkp_status status = wkp_workspace_create(4096, 256, -1, -1, &workspace, error_message, sizeof(error_message));
-        throw_for_status(env, status, error_message);
-
-        struct WorkspaceHolder
+        struct ContextHolder
         {
-            wkp_workspace *ptr;
-            ~WorkspaceHolder()
+            wkp_context *ptr;
+            ~ContextHolder()
             {
-                wkp_workspace_destroy(ptr);
+                wkp_context_free(ptr);
             }
-        } workspace_holder{workspace};
+        } context_holder{&ctx};
 
         const wkp_geometry_frame_f64 *frame = nullptr;
-        status = wkp_workspace_decode_geometry_frame_f64(
-            workspace,
+        status = wkp_decode_geometry_frame(
+            &ctx,
             encoded.data(),
             encoded.size(),
-            &frame,
-            error_message,
-            sizeof(error_message));
+            &frame);
         if (status != WKP_STATUS_OK)
         {
-            throw_for_status(env, status, error_message);
+            throw_for_status(env, status, nullptr);
         }
 
         Napi::Object geometry = Napi::Object::New(env);
@@ -638,6 +657,18 @@ namespace
         return out;
     }
 
+    Napi::Value RunSelfTest(const Napi::CallbackInfo &info)
+    {
+        Napi::Env env = info.Env();
+        int failed_check = 0;
+        const wkp_status status = wkp_basic_self_test(&failed_check);
+        if (status != WKP_STATUS_OK)
+        {
+            throw Napi::Error::New(env, "WKP core self-test failed (check " + std::to_string(failed_check) + ")");
+        }
+        return Napi::Boolean::New(env, true);
+    }
+
 } // namespace
 
 Napi::Object Init(Napi::Env env, Napi::Object exports)
@@ -646,12 +677,14 @@ Napi::Object Init(Napi::Env env, Napi::Object exports)
     exports.Set("decodeF64", Napi::Function::New(env, DecodeF64));
     exports.Set("decodeGeometryHeader", Napi::Function::New(env, DecodeGeometryHeader));
     exports.Set("decodeGeometryFrame", Napi::Function::New(env, DecodeGeometryFrame));
+    exports.Set("encodeGeometryFrameF64", Napi::Function::New(env, EncodeGeometryFrameF64));
     exports.Set("encodePointF64", Napi::Function::New(env, EncodePointF64));
     exports.Set("encodeLineStringF64", Napi::Function::New(env, EncodeLineStringF64));
     exports.Set("encodePolygonF64", Napi::Function::New(env, EncodePolygonF64));
     exports.Set("encodeMultiPointF64", Napi::Function::New(env, EncodeMultiPointF64));
     exports.Set("encodeMultiLineStringF64", Napi::Function::New(env, EncodeMultiLineStringF64));
     exports.Set("encodeMultiPolygonF64", Napi::Function::New(env, EncodeMultiPolygonF64));
+    exports.Set("runSelfTest", Napi::Function::New(env, RunSelfTest));
     exports.Set("coreVersion", Napi::Function::New(env, [](const Napi::CallbackInfo &info)
                                                    { return Napi::String::New(info.Env(), WKP_CORE_VERSION); }));
 

@@ -1,15 +1,40 @@
-import { createWkp } from './web/src/index.js';
 import { parseWkt, geometryToWkt } from './wkt.js';
 
 let wkpPromise = null;
-let workspace = null;
+let ctx = null;
+const WEB_MODULE_CANDIDATES = [
+    '../bindings/javascript/packages/web/src/index.js',
+    './web/src/index.js'
+];
 const MAX_ITERATIONS = 1000000;
 const MAX_DURATION_MS = 1000;
 const PROGRESS_INTERVAL_MS = 100;
 
+async function importFirstAvailable(specifiers) {
+    let lastError = null;
+    for (const specifier of specifiers) {
+        try {
+            const url = new URL(specifier, import.meta.url);
+            const probe = await fetch(url, { method: 'HEAD', cache: 'no-store' });
+            if (!probe.ok) {
+                continue;
+            }
+            return await import(specifier);
+        } catch (error) {
+            lastError = error;
+        }
+    }
+    throw lastError || new Error('Unable to load WKP web module');
+}
+
 function ensureWkp() {
     if (!wkpPromise) {
-        wkpPromise = createWkp();
+        wkpPromise = importFirstAvailable(WEB_MODULE_CANDIDATES).then((mod) => {
+            if (!mod || typeof mod.createWkp !== 'function') {
+                throw new Error('WKP web module did not export createWkp()');
+            }
+            return mod.createWkp();
+        });
     }
     return wkpPromise;
 }
@@ -83,8 +108,8 @@ self.onmessage = async (event) => {
 
     try {
         const wkp = await ensureWkp();
-        if (!workspace) {
-            workspace = new wkp.Workspace();
+        if (!ctx) {
+            ctx = new wkp.Context();
         }
 
         if (msg.type === 'encode') {
@@ -93,15 +118,7 @@ self.onmessage = async (event) => {
 
             const stats = runTimedLoop(
                 () => {
-                    const fn = {
-                        Point: wkp.encodePoint,
-                        LineString: wkp.encodeLineString,
-                        Polygon: wkp.encodePolygon,
-                        MultiPoint: wkp.encodeMultiPoint,
-                        MultiLineString: wkp.encodeMultiLineString,
-                        MultiPolygon: wkp.encodeMultiPolygon
-                    }[geometry.type];
-                    fn(geometry, precision, workspace);
+                    wkp.encode(ctx, geometry, precision);
                 },
                 (firstMs, progressStats) => {
                     self.postMessage({ phase: 'first', kind: 'encode', firstMs, ...progressStats });
@@ -118,7 +135,7 @@ self.onmessage = async (event) => {
         const encoded = msg.encoded;
         const stats = runTimedLoop(
             () => {
-                const decoded = wkp.decode(encoded, workspace);
+                const decoded = wkp.decode(ctx, encoded);
                 geometryToWkt(decoded.geometry);
             },
             (firstMs, progressStats) => {

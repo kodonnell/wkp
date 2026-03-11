@@ -8,37 +8,34 @@ from pathlib import Path
 
 import numpy as np
 import shapely
-from shapely.geometry import LineString, MultiLineString, MultiPoint, MultiPolygon, Point, Polygon
+from shapely.geometry import GeometryCollection, LineString, MultiLineString, MultiPoint, MultiPolygon, Point, Polygon
 
 from . import _core
 
 __core_version__ = _core.core_version()
-__core_compatibility__ = "0.3.x"
+__core_compatibility__ = "0.4.x"
 
 __all__ = [
-    "__version__",
-    "__core_version__",
-    "__core_compatibility__",
-    "EncodedGeometryType",
+    "Context",
     "DecodedGeometry",
-    "Workspace",
-    "decode_header",
     "decode",
-    "encode_point",
-    "encode_linestring",
-    "encode_polygon",
-    "encode_multipoint",
-    "encode_multilinestring",
-    "encode_multipolygon",
+    "decode_header",
+    "encode",
     "encode_floats",
-    "encode_floats_array",
-    "encode_floats_into",
     "decode_floats",
-    "decode_floats_into",
 ]
 
 
 EncodedGeometryType = _core.EncodedGeometryType
+Context = _core.Context
+
+
+@dataclass
+class DecodedGeometry:
+    version: int
+    precision: int
+    dimensions: int
+    geometry: shapely.geometry.base.BaseGeometry
 
 
 def _binding_version() -> str:
@@ -87,127 +84,24 @@ def _assert_core_compatibility() -> None:
 _assert_core_compatibility()
 
 
-@dataclass
-class DecodedGeometry:
-    version: int
-    precision: int
-    dimensions: int
-    geometry: shapely.geometry.base.BaseGeometry
+def _as_encoded_bytes(bites) -> bytes:
+    try:
+        return bytes(bites)
+    except TypeError as exc:
+        raise TypeError("bites must be bytes-like") from exc
 
 
-class Workspace:
-    def __init__(
-        self,
-        initial_u8_capacity: int = 4096,
-        initial_f64_capacity: int = 256,
-        max_u8_size: int = -1,
-        max_f64_size: int = -1,
-    ) -> None:
-        self._core = _core.WorkspaceCore(initial_u8_capacity, initial_f64_capacity, max_u8_size, max_f64_size)
-
-    def encode_floats(self, floats, n: int, precisions):
-        return encode_floats(floats, n, precisions, workspace=self)
-
-    def decode_floats(self, encoded: bytes, n: int, precisions):
-        return decode_floats(encoded, n, precisions, workspace=self)
-
-
-_default_workspace: Workspace | None = None
-
-
-def _resolve_workspace(workspace: Workspace | None) -> Workspace:
-    global _default_workspace
-    if workspace is None:
-        if _default_workspace is None:
-            _default_workspace = Workspace()
-        return _default_workspace
-    if not isinstance(workspace, Workspace):
-        raise TypeError("workspace must be a wkp.Workspace or None")
-    return workspace
-
-
-def _normalize_precisions(n: int, precisions):
+def _normalize_precisions(precisions) -> list[int]:
     if isinstance(precisions, int):
-        return [precisions] * n
-    p = list(precisions)
-    if len(p) != n:
-        raise ValueError(f"Expected {n} precisions, got {len(p)}")
-    return p
+        return [int(precisions)]
+    values = [int(p) for p in list(precisions)]
+    if len(values) == 0:
+        raise ValueError("precisions cannot be empty")
+    return values
 
 
-def _decode_floats_core(encoded: bytes, n: int, precisions, workspace: Workspace | None = None) -> np.ndarray:
-    if not isinstance(encoded, bytes):
-        raise TypeError("encoded must be bytes")
-
-    p = _normalize_precisions(n, precisions)
-    ws = _resolve_workspace(workspace)
-    arr = ws._core.decode_floats(bytes(encoded), n, p)
-    if not isinstance(arr, np.ndarray):
-        arr = np.asarray(arr, dtype=np.float64)
-    if arr.size % n != 0:
-        raise RuntimeError("decoded output has invalid length")
-    return arr.reshape((-1, n))
-
-
-def encode_floats_array(floats: np.ndarray, n: int, precisions, workspace: Workspace | None = None):
-    arr = np.asarray(floats, dtype=np.float64)
-    if arr.ndim != 2:
-        raise ValueError("Expected a 2D coordinate array")
-    if arr.shape[1] != n:
-        raise ValueError(f"Expected coordinates with {n} dimensions, got {arr.shape[1]}")
-    p = _normalize_precisions(n, precisions)
-    ws = _resolve_workspace(workspace)
-    arr = np.ascontiguousarray(arr, dtype=np.float64)
-    return ws._core.encode_floats(arr, n, p)
-
-
-def encode_floats(floats, n: int, precisions, workspace: Workspace | None = None):
-    arr = np.asarray(floats, dtype=np.float64)
-    return encode_floats_array(arr, n, precisions, workspace=workspace)
-
-
-def decode_floats(encoded: bytes, n: int, precisions, workspace: Workspace | None = None):
-    arr = _decode_floats_core(encoded, n, precisions, workspace=workspace)
-    return [tuple(row) for row in arr.tolist()]
-
-
-def encode_floats_into(floats, n: int, precisions, out_buffer: np.ndarray) -> int:
-    arr = np.asarray(floats, dtype=np.float64)
-    if arr.ndim != 2:
-        raise ValueError("Expected 2D array-like floats")
-    if arr.shape[1] != n:
-        raise ValueError(f"Expected coordinates with {n} dimensions, got {arr.shape[1]}")
-    if not isinstance(out_buffer, np.ndarray):
-        raise TypeError("out_buffer must be a numpy.ndarray")
-    if out_buffer.dtype != np.uint8 or out_buffer.ndim != 1:
-        raise ValueError("out_buffer must be a 1D numpy.ndarray with dtype=uint8")
-    if not out_buffer.flags.c_contiguous:
-        raise ValueError("out_buffer must be C-contiguous")
-
-    p = _normalize_precisions(n, precisions)
-    arr = np.ascontiguousarray(arr, dtype=np.float64)
-    return int(_core.encode_floats_into(arr, n, p, out_buffer))
-
-
-def decode_floats_into(encoded: bytes, n: int, precisions, out_buffer: np.ndarray) -> int:
-    if not isinstance(encoded, bytes):
-        raise TypeError("encoded must be bytes")
-    if not isinstance(out_buffer, np.ndarray):
-        raise TypeError("out_buffer must be a numpy.ndarray")
-    if out_buffer.dtype != np.float64 or out_buffer.ndim != 2:
-        raise ValueError("out_buffer must be a 2D numpy.ndarray with dtype=float64")
-    if out_buffer.shape[1] != n:
-        raise ValueError(f"out_buffer must have {n} columns")
-    if not out_buffer.flags.c_contiguous:
-        raise ValueError("out_buffer must be C-contiguous")
-
-    p = _normalize_precisions(n, precisions)
-    return int(_core.decode_floats_into(bytes(encoded), n, p, out_buffer))
-
-
-def decode_header(encoded: bytes):
-    if not isinstance(encoded, bytes):
-        raise TypeError("encoded must be bytes")
+def decode_header(bites):
+    encoded = _as_encoded_bytes(bites)
     return _core.decode_geometry_header(encoded)
 
 
@@ -271,33 +165,34 @@ def _geometry_from_groups(geom_type: int, groups):
     raise ValueError(f"Unsupported geometry type in header: {geom_type}")
 
 
-def decode(encoded: bytes, workspace: Workspace | None = None) -> DecodedGeometry:
-    if not isinstance(encoded, bytes):
-        raise TypeError("encoded must be bytes")
-    ws = _resolve_workspace(workspace)
+def _geometry_from_frame_counts(
+    geom_type: int,
+    dimensions: int,
+    coords_flat: np.ndarray,
+    group_segment_counts: list[int],
+    segment_point_counts: list[int],
+):
+    groups = []
+    coord_index = 0
+    segment_index = 0
 
-    version, precision, dimensions, geom_type = decode_header(encoded)
+    for group_segments in group_segment_counts:
+        group = []
+        for _ in range(group_segments):
+            point_count = int(segment_point_counts[segment_index])
+            segment_index += 1
+            value_count = point_count * dimensions
+            segment_flat = coords_flat[coord_index : coord_index + value_count]
+            coord_index += value_count
+            group.append(segment_flat.reshape((point_count, dimensions)))
+        groups.append(group)
 
-    # Fast path: POINT/LINESTRING payload is a single float stream after the 4-byte header.
-    # This avoids geometry-frame reconstruction overhead for the common benchmarked path.
-    if geom_type in (EncodedGeometryType.POINT.value, EncodedGeometryType.LINESTRING.value):
-        arr = _decode_floats_core(encoded[4:], dimensions, precision, workspace=ws)
-        if geom_type == EncodedGeometryType.POINT.value:
-            if arr.shape[0] != 1:
-                raise ValueError(f"Expected 1 point for POINT geometry, got {arr.shape[0]}")
-            geometry = Point(arr[0])
-        else:
-            if arr.shape[0] < 2:
-                raise ValueError(f"Expected at least 2 points for LINESTRING geometry, got {arr.shape[0]}")
-            geometry = shapely.linestrings(arr)
-        return DecodedGeometry(
-            version=version,
-            precision=precision,
-            dimensions=dimensions,
-            geometry=geometry,
-        )
+    return _geometry_from_groups(geom_type, groups)
 
-    version, precision, dimensions, geom_type, groups = ws._core.decode_geometry_frame(encoded)
+
+def decode(ctx, bites):
+    encoded = _as_encoded_bytes(bites)
+    version, precision, dimensions, geom_type, groups = _core.decode_geometry_frame(ctx, encoded)
     return DecodedGeometry(
         version=version,
         precision=precision,
@@ -318,68 +213,95 @@ def _coords_array(geom, dimensions: int) -> np.ndarray:
     return np.ascontiguousarray(shapely.get_coordinates(geom, include_z=include_z), dtype=np.float64)
 
 
-def encode_point(geom: Point, precision: int, workspace: Workspace | None = None) -> bytes:
-    if not isinstance(geom, Point):
-        raise TypeError("geom must be shapely.geometry.Point")
-    dims = _geometry_dimensions(geom)
-    ws = _resolve_workspace(workspace)
-    return ws._core.encode_point(_coords_array(geom, dims), precision)
+def _geometry_to_frame(geom):
+    if isinstance(geom, GeometryCollection):
+        raise ValueError("GeometryCollection is not supported by the current WKP core geometry frame ABI")
 
-
-def encode_linestring(geom: LineString, precision: int, workspace: Workspace | None = None) -> bytes:
-    if not isinstance(geom, LineString):
-        raise TypeError("geom must be shapely.geometry.LineString")
-    dims = _geometry_dimensions(geom)
-    ws = _resolve_workspace(workspace)
-    return ws._core.encode_linestring(_coords_array(geom, dims), precision)
-
-
-def encode_polygon(geom: Polygon, precision: int, workspace: Workspace | None = None) -> bytes:
-    if not isinstance(geom, Polygon):
-        raise TypeError("geom must be shapely.geometry.Polygon")
     dims = _geometry_dimensions(geom)
     include_z = dims == 3
-    rings = []
-    for ring in [geom.exterior] + list(geom.interiors):
-        rings.append(np.ascontiguousarray(shapely.get_coordinates(ring, include_z=include_z), dtype=np.float64))
-    ws = _resolve_workspace(workspace)
-    return ws._core.encode_polygon(rings, precision)
+
+    if isinstance(geom, Point):
+        coords = _coords_array(geom, dims)
+        return EncodedGeometryType.POINT.value, coords, [1], [1]
+
+    if isinstance(geom, LineString):
+        coords = _coords_array(geom, dims)
+        return EncodedGeometryType.LINESTRING.value, coords, [1], [coords.shape[0]]
+
+    if isinstance(geom, Polygon):
+        rings = [geom.exterior, *list(geom.interiors)]
+        segments = [
+            np.ascontiguousarray(shapely.get_coordinates(r, include_z=include_z), dtype=np.float64) for r in rings
+        ]
+        coords = np.ascontiguousarray(np.vstack(segments), dtype=np.float64)
+        return EncodedGeometryType.POLYGON.value, coords, [len(segments)], [arr.shape[0] for arr in segments]
+
+    if isinstance(geom, MultiPoint):
+        segments = [
+            np.ascontiguousarray(shapely.get_coordinates(point, include_z=include_z), dtype=np.float64)
+            for point in geom.geoms
+        ]
+        coords = np.ascontiguousarray(np.vstack(segments), dtype=np.float64)
+        return EncodedGeometryType.MULTIPOINT.value, coords, [1] * len(segments), [1] * len(segments)
+
+    if isinstance(geom, MultiLineString):
+        segments = [
+            np.ascontiguousarray(shapely.get_coordinates(line, include_z=include_z), dtype=np.float64)
+            for line in geom.geoms
+        ]
+        coords = np.ascontiguousarray(np.vstack(segments), dtype=np.float64)
+        return (
+            EncodedGeometryType.MULTILINESTRING.value,
+            coords,
+            [1] * len(segments),
+            [arr.shape[0] for arr in segments],
+        )
+
+    if isinstance(geom, MultiPolygon):
+        all_segments: list[np.ndarray] = []
+        group_counts: list[int] = []
+        for poly in geom.geoms:
+            rings = [poly.exterior, *list(poly.interiors)]
+            poly_segments = [
+                np.ascontiguousarray(shapely.get_coordinates(r, include_z=include_z), dtype=np.float64) for r in rings
+            ]
+            all_segments.extend(poly_segments)
+            group_counts.append(len(poly_segments))
+        coords = np.ascontiguousarray(np.vstack(all_segments), dtype=np.float64)
+        return EncodedGeometryType.MULTIPOLYGON.value, coords, group_counts, [arr.shape[0] for arr in all_segments]
+
+    raise TypeError("geom must be a Shapely Point, LineString, Polygon, MultiPoint, MultiLineString, or MultiPolygon")
 
 
-def encode_multipoint(geom: MultiPoint, precision: int, workspace: Workspace | None = None) -> bytes:
-    if not isinstance(geom, MultiPoint):
-        raise TypeError("geom must be shapely.geometry.MultiPoint")
-    dims = _geometry_dimensions(geom)
-    include_z = dims == 3
-    parts = []
-    for point in geom.geoms:
-        parts.append(np.ascontiguousarray(shapely.get_coordinates(point, include_z=include_z), dtype=np.float64))
-    ws = _resolve_workspace(workspace)
-    return ws._core.encode_multipoint(parts, precision)
+def encode(ctx, geom, precision: int):
+    if not isinstance(precision, int):
+        raise TypeError("precision must be an int")
+
+    if getattr(geom, "is_empty", False):
+        raise ValueError("empty geometries are unsupported")
+
+    geom_type, coords, group_segment_counts, segment_point_counts = _geometry_to_frame(geom)
+
+    return _core.encode_geometry_frame(ctx, geom_type, coords, precision, group_segment_counts, segment_point_counts)
 
 
-def encode_multilinestring(geom: MultiLineString, precision: int, workspace: Workspace | None = None) -> bytes:
-    if not isinstance(geom, MultiLineString):
-        raise TypeError("geom must be shapely.geometry.MultiLineString")
-    dims = _geometry_dimensions(geom)
-    include_z = dims == 3
-    parts = []
-    for line in geom.geoms:
-        parts.append(np.ascontiguousarray(shapely.get_coordinates(line, include_z=include_z), dtype=np.float64))
-    ws = _resolve_workspace(workspace)
-    return ws._core.encode_multilinestring(parts, precision)
+def encode_floats(ctx, floats, precisions):
+    p = _normalize_precisions(precisions)
+    dimensions = len(p)
+    values = np.asarray(floats, dtype=np.float64)
+    if values.ndim != 2:
+        raise ValueError("floats must be a 2D array-like")
+    if values.shape[1] != dimensions:
+        raise ValueError(f"floats must have {dimensions} columns")
+    values = np.ascontiguousarray(values, dtype=np.float64)
+
+    return _core.encode_f64(ctx, values, dimensions, p)
 
 
-def encode_multipolygon(geom: MultiPolygon, precision: int, workspace: Workspace | None = None) -> bytes:
-    if not isinstance(geom, MultiPolygon):
-        raise TypeError("geom must be shapely.geometry.MultiPolygon")
-    dims = _geometry_dimensions(geom)
-    include_z = dims == 3
-    polygons = []
-    for poly in geom.geoms:
-        rings = []
-        for ring in [poly.exterior] + list(poly.interiors):
-            rings.append(np.ascontiguousarray(shapely.get_coordinates(ring, include_z=include_z), dtype=np.float64))
-        polygons.append(rings)
-    ws = _resolve_workspace(workspace)
-    return ws._core.encode_multipolygon(polygons, precision)
+def decode_floats(ctx, encoded, precisions):
+    p = _normalize_precisions(precisions)
+    dimensions = len(p)
+    bites = _as_encoded_bytes(encoded)
+
+    arr = np.asarray(_core.decode_f64(ctx, bites, dimensions, p), dtype=np.float64)
+    return [tuple(row) for row in arr.tolist()]

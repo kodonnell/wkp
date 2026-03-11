@@ -10,7 +10,7 @@ Monorepo workspace for JavaScript bindings over the shared WKP C ABI.
 ## Architecture
 
 - Both packages consume `core/include/wkp/core.h`
-- Core algorithm code lives once in `core/src/core.cpp`
+- Core algorithm code lives once in `core/src/core.c`
 - JS packages stay thin wrappers for language/runtime ergonomics
 
 ## Dependencies
@@ -22,8 +22,8 @@ Monorepo workspace for JavaScript bindings over the shared WKP C ABI.
 
 ## Versioning
 
-Node/Web package versions are managed independently (currently `0.3.0`).
-Both runtimes enforce WKP core compatibility at runtime (`0.3.x`).
+Node/Web package versions are managed independently (currently `0.4.0`).
+Both runtimes enforce WKP core compatibility at runtime (`0.4.0`).
 
 From `bindings/javascript`:
 
@@ -84,9 +84,9 @@ All JS packages in this workspace (`@wkpjs/node` and `@wkpjs/web`) use this same
 ### Node (`@wkpjs/node`)
 
 ```js
-const { Workspace, decode, encodeLineString } = require('@wkpjs/node');
+const { Context, decode, encode } = require('@wkpjs/node');
 
-const workspace = new Workspace();
+const ctx = new Context();
 const geom = {
     type: 'LineString',
     coordinates: [
@@ -96,21 +96,10 @@ const geom = {
     ],
 };
 
-const encoded = encodeLineString(geom, 6, workspace);
-const decoded = decode(encoded, workspace);
+const encoded = encode(ctx, geom, 6);
+const decoded = decode(ctx, encoded);
 console.log(encoded, decoded.geometry.type);
 ```
-
-Convenience path (no workspace):
-
-```js
-const { decode, encodeLineString } = require('@wkpjs/node');
-
-const encoded = encodeLineString({ type: 'LineString', coordinates: [[0, 0], [1, 1]] }, 6);
-const decoded = decode(encoded);
-```
-
-Omitting `workspace` is simpler, but slower for repeated encode/decode workloads.
 
 ### Web (`@wkpjs/web`)
 
@@ -118,8 +107,8 @@ Omitting `workspace` is simpler, but slower for repeated encode/decode workloads
 import { createWkp } from '@wkpjs/web';
 
 const wkp = await createWkp();
-const workspace = new wkp.Workspace();
-const encoded = wkp.encodeLineString({ type: 'LineString', coordinates: [[0, 0], [1, 1]] }, 6, workspace);
-const decoded = wkp.decode(encoded, workspace);
+const ctx = new wkp.Context();
+const encoded = wkp.encode(ctx, { type: 'LineString', coordinates: [[0, 0], [1, 1]] }, 6);
+const decoded = wkp.decode(ctx, encoded);
 console.log(decoded.geometry.type);
 ```

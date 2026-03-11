@@ -7,7 +7,7 @@ if(NOT WKP_VERSION_MATCH)
 endif()
 set(WKP_CORE_VERSION "${CMAKE_MATCH_1}")
 
-project(wkp_native VERSION ${WKP_CORE_VERSION} LANGUAGES CXX)
+project(wkp_native VERSION ${WKP_CORE_VERSION} LANGUAGES C CXX)
 
 option(WKP_BUILD_TESTS "Build C++ tests" ON)
 option(WKP_BUILD_BENCHMARKS "Build C++ benchmarks" ON)
@@ -18,7 +18,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 add_library(wkp_core_static STATIC
-    core/src/core.cpp
+    core/src/core.c
 )
 
 target_include_directories(wkp_core_static
@@ -27,7 +27,7 @@ target_include_directories(wkp_core_static
 )
 
 add_library(wkp_core_shared SHARED
-    core/src/core.cpp
+    core/src/core.c
 )
 
 target_include_directories(wkp_core_shared
@@ -74,29 +74,35 @@ if(WKP_BUILD_TESTS)
     target_link_libraries(wkp_cpp_test_vectors PRIVATE wkp_core_static doctest::doctest)
     doctest_discover_tests(wkp_cpp_test_vectors)
 
+    add_executable(wkp_cpp_test_integration
+        bindings/cpp/tests/test_integration_txt.cpp
+    )
+    target_include_directories(wkp_cpp_test_integration PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/bindings/cpp/include
+    )
+    target_compile_definitions(wkp_cpp_test_integration PRIVATE
+        WKP_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
+    )
+    target_link_libraries(wkp_cpp_test_integration PRIVATE wkp_core_static doctest::doctest)
+    doctest_discover_tests(wkp_cpp_test_integration)
+
     add_executable(wkp_core_test_capi
         core/tests/test_c_api.cpp
     )
     target_link_libraries(wkp_core_test_capi PRIVATE wkp_core_static doctest::doctest)
     doctest_discover_tests(wkp_core_test_capi)
 
-    add_executable(wkp_cpp_test_errors
-        bindings/cpp/tests/test_errors.cpp
+    add_executable(wkp_core_test_errors
+        core/tests/test_c_api_errors.cpp
     )
-    target_include_directories(wkp_cpp_test_errors PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/bindings/cpp/include
-    )
-    target_link_libraries(wkp_cpp_test_errors PRIVATE wkp_core_static doctest::doctest)
-    doctest_discover_tests(wkp_cpp_test_errors)
+    target_link_libraries(wkp_core_test_errors PRIVATE wkp_core_static doctest::doctest)
+    doctest_discover_tests(wkp_core_test_errors)
 
-    add_executable(wkp_cpp_test_geometry
-        bindings/cpp/tests/test_geometry_encoder.cpp
+    add_executable(wkp_core_test_geometry
+        core/tests/test_c_api_geometry.cpp
     )
-    target_include_directories(wkp_cpp_test_geometry PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/bindings/cpp/include
-    )
-    target_link_libraries(wkp_cpp_test_geometry PRIVATE wkp_core_static doctest::doctest)
-    doctest_discover_tests(wkp_cpp_test_geometry)
+    target_link_libraries(wkp_core_test_geometry PRIVATE wkp_core_static doctest::doctest)
+    doctest_discover_tests(wkp_core_test_geometry)
 endif()
 
 if(WKP_BUILD_BENCHMARKS)
@@ -122,7 +128,7 @@ if(WKP_BUILD_PYTHON_BINDINGS)
 
     nanobind_add_module(wkp_python_core
         bindings/python/src/wkp/core_nb.cpp
-        core/src/core.cpp
+        core/src/core.c
     )
 
     target_include_directories(wkp_python_core PRIVATE

@@ -60,12 +60,12 @@ Then open:
 
 Use `createWkp()` to load the WASM module, then call:
 
-- `Workspace`
+- `Context`
 - `decodeHeader(encoded)`
-- `decode(encoded, workspace?)`
-- `encodePoint/encodeLineString/encodePolygon/encodeMultiPoint/encodeMultiLineString/encodeMultiPolygon`
-- `encodeF64(values, dimensions, precisions, workspace?)`
-- `decodeF64(encoded, dimensions, precisions, workspace?)`
+- `decode(ctx, encoded)`
+- `encode(ctx, geometry, precision)`
+- `encodeFloats(ctx, floats, precisions)`
+- `decodeFloats(ctx, encoded, precisions)`
 
 ## Example
 
@@ -73,9 +73,9 @@ Use `createWkp()` to load the WASM module, then call:
 import { createWkp } from '@wkpjs/web';
 
 const wkp = await createWkp();
-const workspace = new wkp.Workspace();
-const encoded = wkp.encodeLineString({ type: 'LineString', coordinates: [[0, 0], [1, 1]] }, 6, workspace);
-const decoded = wkp.decode(encoded, workspace);
+const ctx = new wkp.Context();
+const encoded = wkp.encode(ctx, { type: 'LineString', coordinates: [[0, 0], [1, 1]] }, 6);
+const decoded = wkp.decode(ctx, encoded);
 const header = wkp.decodeHeader(encoded);
 
 console.log(encoded);
@@ -83,7 +83,7 @@ console.log(decoded.geometry);
 console.log(header);
 ```
 
-You can omit `workspace` for convenience, but reusing an explicit workspace is faster for repeated operations.
+`ctx` is required for encode/decode operations.
 
 ## Publishing
 

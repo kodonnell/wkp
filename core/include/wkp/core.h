@@ -25,8 +25,6 @@ extern "C"
         size_t size;
     } wkp_size_buffer;
 
-    typedef struct wkp_workspace wkp_workspace;
-
     typedef enum wkp_geometry_type
     {
         WKP_GEOMETRY_POINT = 1,
@@ -51,43 +49,50 @@ extern "C"
         size_t group_count;
     } wkp_geometry_frame_f64;
 
-    wkp_status wkp_workspace_create(
-        size_t initial_u8_capacity,
-        size_t initial_f64_capacity,
-        int64_t max_u8_capacity,
-        int64_t max_f64_capacity,
-        wkp_workspace **out_workspace,
-        char *error_message,
-        size_t error_message_capacity);
+    // Reusable caller-owned buffers for convenience wrapper APIs.
+    // Callers must use one context per thread when using wrappers concurrently.
+    typedef struct wkp_context
+    {
+        uint8_t *u8;
+        size_t u8_cap;
+        double *f64;
+        size_t f64_cap;
+        size_t *sizes_a;
+        size_t sizes_a_cap;
+        size_t *sizes_b;
+        size_t sizes_b_cap;
+        wkp_geometry_frame_f64 frame;
+    } wkp_context;
 
-    void wkp_workspace_destroy(wkp_workspace *workspace);
+    wkp_status wkp_context_init(
+        wkp_context *ctx);
 
-    wkp_status wkp_workspace_encode_f64(
-        wkp_workspace *workspace,
+    void wkp_context_free(
+        wkp_context *ctx);
+
+    // Utility APIs that auto-resize buffers inside the provided context on BUFFER_TOO_SMALL.
+    wkp_status wkp_encode_f64(
+        wkp_context *ctx,
         const double *values,
         size_t value_count,
         size_t dimensions,
         const int *precisions,
         size_t precision_count,
         const uint8_t **out_data,
-        size_t *out_size,
-        char *error_message,
-        size_t error_message_capacity);
+        size_t *out_size);
 
-    wkp_status wkp_workspace_decode_f64(
-        wkp_workspace *workspace,
+    wkp_status wkp_decode_f64(
+        wkp_context *ctx,
         const uint8_t *encoded,
         size_t encoded_size,
         size_t dimensions,
         const int *precisions,
         size_t precision_count,
-        const double **out_data,
-        size_t *out_size,
-        char *error_message,
-        size_t error_message_capacity);
+        const double **out_values,
+        size_t *out_size);
 
-    wkp_status wkp_workspace_encode_geometry_frame_f64(
-        wkp_workspace *workspace,
+    wkp_status wkp_encode_geometry_frame(
+        wkp_context *ctx,
         int geometry_type,
         const double *coords,
         size_t coord_value_count,
@@ -98,17 +103,13 @@ extern "C"
         const size_t *segment_point_counts,
         size_t segment_count,
         const uint8_t **out_data,
-        size_t *out_size,
-        char *error_message,
-        size_t error_message_capacity);
+        size_t *out_size);
 
-    wkp_status wkp_workspace_decode_geometry_frame_f64(
-        wkp_workspace *workspace,
+    wkp_status wkp_decode_geometry_frame(
+        wkp_context *ctx,
         const uint8_t *encoded,
         size_t encoded_size,
-        const wkp_geometry_frame_f64 **out_frame,
-        char *error_message,
-        size_t error_message_capacity);
+        const wkp_geometry_frame_f64 **out_frame);
 
     wkp_status wkp_decode_geometry_header(
         const uint8_t *encoded,
@@ -116,9 +117,13 @@ extern "C"
         int *out_version,
         int *out_precision,
         int *out_dimensions,
-        int *out_geometry_type,
-        char *error_message,
-        size_t error_message_capacity);
+        int *out_geometry_type);
+
+    // Runs a minimal built-in self-test suite for core encode/decode paths.
+    // Returns WKP_STATUS_OK when all checks pass.
+    // If non-NULL, out_failed_check receives a 1-based check index for failures.
+    wkp_status wkp_basic_self_test(
+        int *out_failed_check);
 
 #ifdef __cplusplus
 }

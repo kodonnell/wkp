@@ -4,6 +4,7 @@
 #include <doctest/doctest.h>
 
 #include <cmath>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -12,6 +13,22 @@ namespace
     bool almost_equal(double a, double b, double eps = 1e-12)
     {
         return std::fabs(a - b) <= eps;
+    }
+
+    std::string encode_values(
+        const std::vector<double> &values,
+        std::size_t dimensions,
+        const std::vector<int> &precisions)
+    {
+        return wkp::core::encode_f64(values.data(), values.size(), dimensions, precisions);
+    }
+
+    std::vector<double> decode_values(
+        const std::string &encoded,
+        std::size_t dimensions,
+        const std::vector<int> &precisions)
+    {
+        return wkp::core::decode_f64(encoded, dimensions, precisions);
     }
 }
 
@@ -26,8 +43,7 @@ TEST_CASE("known google polyline")
         -126.453,
     };
     const std::string expected = "_p~iF~ps|U_ulLnnqC_mqNvxq`@";
-    std::string encoded;
-    wkp::core::encode_f64_into(values.data(), values.size(), 2, {5}, encoded);
+    const std::string encoded = encode_values(values, 2, {5});
     CHECK(encoded == expected);
 }
 
@@ -42,8 +58,7 @@ TEST_CASE("known 3d vector")
         2.3,
     };
     const std::string expected = "o}@wcA_jAwcAwcAwcA";
-    std::string encoded;
-    wkp::core::encode_f64_into(values.data(), values.size(), 3, {3, 3, 3}, encoded);
+    const std::string encoded = encode_values(values, 3, {3, 3, 3});
     CHECK(encoded == expected);
 }
 
@@ -56,8 +71,7 @@ TEST_CASE("known 2d vector case 1")
         9.693021,
     };
     const std::string expected = "omw[oq{n@_b}aE{qgJ";
-    std::string encoded;
-    wkp::core::encode_f64_into(values.data(), values.size(), 2, {5, 5}, encoded);
+    const std::string encoded = encode_values(values, 2, {5, 5});
     CHECK(encoded == expected);
 }
 
@@ -72,8 +86,7 @@ TEST_CASE("known 3d vector case 2")
         2.3,
     };
     const std::string expected = "o}@wcA_jAwcAwcAwcA";
-    std::string encoded;
-    wkp::core::encode_f64_into(values.data(), values.size(), 3, {3}, encoded);
+    const std::string encoded = encode_values(values, 3, {3});
     CHECK(encoded == expected);
 }
 
@@ -84,11 +97,8 @@ TEST_CASE("known 3d mixed precision single point")
         -37.79209,
         1677818753.0,
     };
-    std::string encoded;
-    wkp::core::encode_f64_into(values.data(), values.size(), 3, {6, 6, 0}, encoded);
-
-    std::vector<double> decoded;
-    wkp::core::decode_f64_into(encoded, 3, {6, 6, 0}, decoded);
+    const std::string encoded = encode_values(values, 3, {6, 6, 0});
+    const std::vector<double> decoded = decode_values(encoded, 3, {6, 6, 0});
     REQUIRE(decoded.size() == values.size());
     CHECK(almost_equal(decoded[0], values[0], 1e-9));
     CHECK(almost_equal(decoded[1], values[1], 1e-9));
@@ -105,10 +115,8 @@ TEST_CASE("roundtrip 2d")
         100.55555,
         -200.44444,
     };
-    std::string encoded;
-    wkp::core::encode_f64_into(values.data(), values.size(), 2, {5}, encoded);
-    std::vector<double> decoded;
-    wkp::core::decode_f64_into(encoded, 2, {5}, decoded);
+    const std::string encoded = encode_values(values, 2, {5});
+    const std::vector<double> decoded = decode_values(encoded, 2, {5});
     REQUIRE(decoded.size() == values.size());
     for (std::size_t i = 0; i < values.size(); ++i)
     {
@@ -127,10 +135,8 @@ TEST_CASE("roundtrip 3d mixed precision")
         1677818754.0,
     };
     const std::vector<int> precisions = {6, 6, 0};
-    std::string encoded;
-    wkp::core::encode_f64_into(values.data(), values.size(), 3, precisions, encoded);
-    std::vector<double> decoded;
-    wkp::core::decode_f64_into(encoded, 3, precisions, decoded);
+    const std::string encoded = encode_values(values, 3, precisions);
+    const std::vector<double> decoded = decode_values(encoded, 3, precisions);
     REQUIRE(decoded.size() == values.size());
     for (std::size_t i = 0; i < values.size(); ++i)
     {
@@ -159,10 +165,8 @@ TEST_CASE("roundtrip 3d multi values mixed precision")
     };
 
     const std::vector<int> precisions = {2, 3, 4};
-    std::string encoded;
-    wkp::core::encode_f64_into(values.data(), values.size(), 3, precisions, encoded);
-    std::vector<double> decoded;
-    wkp::core::decode_f64_into(encoded, 3, precisions, decoded);
+    const std::string encoded = encode_values(values, 3, precisions);
+    const std::vector<double> decoded = decode_values(encoded, 3, precisions);
 
     REQUIRE(decoded.size() == values.size());
     for (std::size_t i = 0; i < values.size(); ++i)
@@ -173,10 +177,21 @@ TEST_CASE("roundtrip 3d multi values mixed precision")
 
 TEST_CASE("single precision expansion")
 {
-    const std::vector<int> p = wkp::core::normalize_precisions(4, {3});
-    REQUIRE(p.size() == 4);
-    CHECK(p[0] == 3);
-    CHECK(p[1] == 3);
-    CHECK(p[2] == 3);
-    CHECK(p[3] == 3);
+    const std::vector<double> values = {
+        1.111,
+        2.222,
+        3.333,
+        4.444,
+        5.555,
+        6.666,
+        7.777,
+        8.888,
+    };
+    const std::string encoded = encode_values(values, 4, {3});
+    const std::vector<double> decoded = decode_values(encoded, 4, {3});
+    REQUIRE(decoded.size() == values.size());
+    for (std::size_t i = 0; i < values.size(); ++i)
+    {
+        CHECK(almost_equal(decoded[i], values[i], 1e-9));
+    }
 }

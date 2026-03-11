@@ -1,65 +1,29 @@
 #pragma once
 
 #include <cstddef>
-#include <cstring>
 #include <cstdint>
 #include <stdexcept>
 #include <string>
 #include <string_view>
-#include <utility>
 #include <vector>
 
 #include "wkp/core.h"
 
 namespace wkp::core
 {
-
-    std::string_view version() noexcept;
-
-    enum class EncodedGeometryType
-    {
-        POINT = WKP_GEOMETRY_POINT,
-        LINESTRING = WKP_GEOMETRY_LINESTRING,
-        POLYGON = WKP_GEOMETRY_POLYGON,
-        MULTIPOINT = WKP_GEOMETRY_MULTIPOINT,
-        MULTILINESTRING = WKP_GEOMETRY_MULTILINESTRING,
-        MULTIPOLYGON = WKP_GEOMETRY_MULTIPOLYGON,
-    };
-
-    static_assert(static_cast<int>(EncodedGeometryType::POINT) == WKP_GEOMETRY_POINT, "Geometry enum drift");
-    static_assert(static_cast<int>(EncodedGeometryType::LINESTRING) == WKP_GEOMETRY_LINESTRING, "Geometry enum drift");
-    static_assert(static_cast<int>(EncodedGeometryType::POLYGON) == WKP_GEOMETRY_POLYGON, "Geometry enum drift");
-    static_assert(static_cast<int>(EncodedGeometryType::MULTIPOINT) == WKP_GEOMETRY_MULTIPOINT, "Geometry enum drift");
-    static_assert(static_cast<int>(EncodedGeometryType::MULTILINESTRING) == WKP_GEOMETRY_MULTILINESTRING, "Geometry enum drift");
-    static_assert(static_cast<int>(EncodedGeometryType::MULTIPOLYGON) == WKP_GEOMETRY_MULTIPOLYGON, "Geometry enum drift");
-
     struct GeometryHeader
     {
-        int version;
-        int precision;
-        int dimensions;
-        int geometry_type;
+        int version = 0;
+        int precision = 0;
+        int dimensions = 0;
+        int geometry_type = 0;
     };
 
-    struct GeometryFrame
-    {
-        GeometryHeader header;
-        std::vector<std::vector<std::vector<double>>> groups;
-    };
-
-    std::vector<int> normalize_precisions(std::size_t dimensions, const std::vector<int> &precisions);
-
-    GeometryHeader decode_geometry_header(std::string_view encoded);
-    GeometryFrame decode_geometry_frame(std::string_view encoded);
-
-    inline void throw_for_status(wkp_status status, const char *error)
+    inline void throw_for_status(wkp_status status)
     {
         if (status == WKP_STATUS_OK)
-        {
             return;
-        }
-
-        const std::string msg = (error != nullptr && error[0] != '\0') ? std::string(error) : std::string("WKP error");
+        const std::string msg = "WKP error";
         if (status == WKP_STATUS_INVALID_ARGUMENT || status == WKP_STATUS_MALFORMED_INPUT || status == WKP_STATUS_BUFFER_TOO_SMALL)
         {
             throw std::invalid_argument(msg);
@@ -71,489 +35,117 @@ namespace wkp::core
         throw std::runtime_error(msg);
     }
 
-    class Workspace
+    inline void ensure_basic_self_test()
     {
-    public:
-        Workspace(
-            std::size_t initial_u8_capacity = 4096,
-            std::size_t initial_f64_capacity = 256,
-            int64_t max_u8_size = -1,
-            int64_t max_f64_size = -1)
+        static const bool passed = []()
         {
-            char error[512] = {0};
-            const auto status = wkp_workspace_create(
-                initial_u8_capacity,
-                initial_f64_capacity,
-                max_u8_size,
-                max_f64_size,
-                &workspace_,
-                error,
-                sizeof(error));
-            throw_for_status(status, error);
-            if (workspace_ == nullptr)
+            int failed_check = 0;
+            const auto status = wkp_basic_self_test(&failed_check);
+            if (status != WKP_STATUS_OK)
             {
-                throw std::runtime_error("failed to create workspace");
+                throw std::runtime_error("WKP core self-test failed (check " + std::to_string(failed_check) + ")");
             }
-        }
+            return true;
+        }();
+        (void)passed;
+    }
 
-        ~Workspace()
+    inline wkp_context &thread_ctx()
+    {
+        ensure_basic_self_test();
+        thread_local wkp_context ctx{};
+        thread_local bool initialized = false;
+        if (!initialized)
         {
-            if (workspace_ != nullptr)
+            const auto status = wkp_context_init(&ctx);
+            if (status != WKP_STATUS_OK)
             {
-                wkp_workspace_destroy(workspace_);
-                workspace_ = nullptr;
+                throw std::runtime_error("Failed to initialize WKP context");
             }
+            initialized = true;
         }
+        return ctx;
+    }
 
-        Workspace(const Workspace &) = delete;
-        Workspace &operator=(const Workspace &) = delete;
-
-        Workspace(Workspace &&other) noexcept : workspace_(other.workspace_)
+    inline std::vector<int> normalize_precisions(std::size_t dimensions, const std::vector<int> &precisions)
+    {
+        if (dimensions == 0 || dimensions > 16)
         {
-            other.workspace_ = nullptr;
+            throw std::invalid_argument("dimensions must be between 1 and 16");
         }
-
-        Workspace &operator=(Workspace &&other) noexcept
+        if (precisions.empty())
         {
-            if (this == &other)
-            {
-                return *this;
-            }
-            if (workspace_ != nullptr)
-            {
-                wkp_workspace_destroy(workspace_);
-            }
-            workspace_ = other.workspace_;
-            other.workspace_ = nullptr;
-            return *this;
+            throw std::invalid_argument("precisions cannot be empty");
         }
-
-        std::string encode_f64(const double *values, std::size_t value_count, std::size_t dimensions, const std::vector<int> &precisions)
+        if (precisions.size() == 1)
         {
-            const auto p = normalize_precisions(dimensions, precisions);
-            const uint8_t *data = nullptr;
-            size_t size = 0;
-            char error[512] = {0};
-            const auto status = wkp_workspace_encode_f64(
-                workspace_,
-                values,
-                value_count,
-                dimensions,
-                p.data(),
-                p.size(),
-                &data,
-                &size,
-                error,
-                sizeof(error));
-            throw_for_status(status, error);
-            return std::string(reinterpret_cast<const char *>(data), size);
+            return std::vector<int>(dimensions, precisions[0]);
         }
-
-        std::vector<double> decode_f64(std::string_view encoded, std::size_t dimensions, const std::vector<int> &precisions)
+        if (precisions.size() != dimensions)
         {
-            const auto p = normalize_precisions(dimensions, precisions);
-            const double *data = nullptr;
-            size_t size = 0;
-            char error[512] = {0};
-            const auto status = wkp_workspace_decode_f64(
-                workspace_,
-                reinterpret_cast<const uint8_t *>(encoded.data()),
-                encoded.size(),
-                dimensions,
-                p.data(),
-                p.size(),
-                &data,
-                &size,
-                error,
-                sizeof(error));
-            throw_for_status(status, error);
-            return std::vector<double>(data, data + size);
+            throw std::invalid_argument("Expected precisions.size() == dimensions or 1");
         }
-
-        std::string encode_point(const double *coords, std::size_t point_count, std::size_t dimensions, int precision)
-        {
-            const std::size_t group_segment_counts[] = {1};
-            const std::size_t segment_point_counts[] = {1};
-            const uint8_t *data = nullptr;
-            size_t size = 0;
-            char error[512] = {0};
-            const auto status = wkp_workspace_encode_geometry_frame_f64(
-                workspace_,
-                WKP_GEOMETRY_POINT,
-                coords,
-                point_count * dimensions,
-                dimensions,
-                precision,
-                group_segment_counts,
-                1,
-                segment_point_counts,
-                1,
-                &data,
-                &size,
-                error,
-                sizeof(error));
-            throw_for_status(status, error);
-            return std::string(reinterpret_cast<const char *>(data), size);
-        }
-
-        std::string encode_linestring(const double *coords, std::size_t point_count, std::size_t dimensions, int precision)
-        {
-            const std::size_t group_segment_counts[] = {1};
-            const std::size_t segment_point_counts[] = {point_count};
-            const uint8_t *data = nullptr;
-            size_t size = 0;
-            char error[512] = {0};
-            const auto status = wkp_workspace_encode_geometry_frame_f64(
-                workspace_,
-                WKP_GEOMETRY_LINESTRING,
-                coords,
-                point_count * dimensions,
-                dimensions,
-                precision,
-                group_segment_counts,
-                1,
-                segment_point_counts,
-                1,
-                &data,
-                &size,
-                error,
-                sizeof(error));
-            throw_for_status(status, error);
-            return std::string(reinterpret_cast<const char *>(data), size);
-        }
-
-        std::string encode_polygon(
-            const std::vector<const double *> &ring_coords,
-            const std::vector<std::size_t> &ring_point_counts,
-            std::size_t dimensions,
-            int precision)
-        {
-            if (ring_coords.size() != ring_point_counts.size())
-            {
-                throw std::invalid_argument("ring coordinate/count size mismatch");
-            }
-            std::vector<double> flat;
-            flat.reserve(1024);
-            for (std::size_t i = 0; i < ring_coords.size(); ++i)
-            {
-                const std::size_t n = ring_point_counts[i] * dimensions;
-                const double *src = ring_coords[i];
-                if (src == nullptr)
-                {
-                    throw std::invalid_argument("ring coords pointer cannot be null");
-                }
-                const std::size_t old_size = flat.size();
-                flat.resize(old_size + n);
-                std::memcpy(flat.data() + old_size, src, n * sizeof(double));
-            }
-
-            const uint8_t *data = nullptr;
-            size_t size = 0;
-            char error[512] = {0};
-            const std::size_t group_segment_counts[] = {ring_point_counts.size()};
-            const auto status = wkp_workspace_encode_geometry_frame_f64(
-                workspace_,
-                WKP_GEOMETRY_POLYGON,
-                flat.data(),
-                flat.size(),
-                dimensions,
-                precision,
-                group_segment_counts,
-                1,
-                ring_point_counts.data(),
-                ring_point_counts.size(),
-                &data,
-                &size,
-                error,
-                sizeof(error));
-            throw_for_status(status, error);
-            return std::string(reinterpret_cast<const char *>(data), size);
-        }
-
-        std::string encode_multipoint(
-            const std::vector<const double *> &point_coords,
-            const std::vector<std::size_t> &point_counts,
-            std::size_t dimensions,
-            int precision)
-        {
-            if (point_coords.size() != point_counts.size())
-            {
-                throw std::invalid_argument("point coordinate/count size mismatch");
-            }
-
-            std::vector<double> flat;
-            flat.reserve(point_coords.size() * dimensions);
-            for (std::size_t i = 0; i < point_coords.size(); ++i)
-            {
-                if (point_counts[i] != 1)
-                {
-                    throw std::invalid_argument("Each MULTIPOINT part must contain exactly one coordinate");
-                }
-                const double *src = point_coords[i];
-                if (src == nullptr)
-                {
-                    throw std::invalid_argument("point coords pointer cannot be null");
-                }
-                const std::size_t old_size = flat.size();
-                flat.resize(old_size + dimensions);
-                std::memcpy(flat.data() + old_size, src, dimensions * sizeof(double));
-            }
-
-            const uint8_t *data = nullptr;
-            size_t size = 0;
-            char error[512] = {0};
-            std::vector<std::size_t> group_segment_counts(point_coords.size(), 1);
-            std::vector<std::size_t> segment_point_counts(point_coords.size(), 1);
-            const auto status = wkp_workspace_encode_geometry_frame_f64(
-                workspace_,
-                WKP_GEOMETRY_MULTIPOINT,
-                flat.data(),
-                flat.size(),
-                dimensions,
-                precision,
-                group_segment_counts.data(),
-                group_segment_counts.size(),
-                segment_point_counts.data(),
-                segment_point_counts.size(),
-                &data,
-                &size,
-                error,
-                sizeof(error));
-            throw_for_status(status, error);
-            return std::string(reinterpret_cast<const char *>(data), size);
-        }
-
-        std::string encode_multilinestring(
-            const std::vector<const double *> &linestring_coords,
-            const std::vector<std::size_t> &linestring_point_counts,
-            std::size_t dimensions,
-            int precision)
-        {
-            if (linestring_coords.size() != linestring_point_counts.size())
-            {
-                throw std::invalid_argument("linestring coordinate/count size mismatch");
-            }
-
-            std::vector<double> flat;
-            std::vector<std::size_t> counts;
-            counts.reserve(linestring_point_counts.size());
-            flat.reserve(1024);
-            for (std::size_t i = 0; i < linestring_coords.size(); ++i)
-            {
-                const double *src = linestring_coords[i];
-                if (src == nullptr)
-                {
-                    throw std::invalid_argument("linestring coords pointer cannot be null");
-                }
-                const std::size_t n = linestring_point_counts[i] * dimensions;
-                const std::size_t old_size = flat.size();
-                flat.resize(old_size + n);
-                std::memcpy(flat.data() + old_size, src, n * sizeof(double));
-                counts.push_back(linestring_point_counts[i]);
-            }
-
-            const uint8_t *data = nullptr;
-            size_t size = 0;
-            char error[512] = {0};
-            std::vector<std::size_t> group_segment_counts(counts.size(), 1);
-            const auto status = wkp_workspace_encode_geometry_frame_f64(
-                workspace_,
-                WKP_GEOMETRY_MULTILINESTRING,
-                flat.data(),
-                flat.size(),
-                dimensions,
-                precision,
-                group_segment_counts.data(),
-                group_segment_counts.size(),
-                counts.data(),
-                counts.size(),
-                &data,
-                &size,
-                error,
-                sizeof(error));
-            throw_for_status(status, error);
-            return std::string(reinterpret_cast<const char *>(data), size);
-        }
-
-        std::string encode_multipolygon(
-            const std::vector<std::vector<const double *>> &polygon_ring_coords,
-            const std::vector<std::vector<std::size_t>> &polygon_ring_point_counts,
-            std::size_t dimensions,
-            int precision)
-        {
-            if (polygon_ring_coords.size() != polygon_ring_point_counts.size())
-            {
-                throw std::invalid_argument("polygon coordinate/count size mismatch");
-            }
-
-            std::vector<double> flat;
-            std::vector<std::size_t> polygon_ring_counts;
-            std::vector<std::size_t> ring_point_counts;
-
-            polygon_ring_counts.reserve(polygon_ring_coords.size());
-            for (std::size_t poly_idx = 0; poly_idx < polygon_ring_coords.size(); ++poly_idx)
-            {
-                const auto &rings = polygon_ring_coords[poly_idx];
-                const auto &counts = polygon_ring_point_counts[poly_idx];
-                if (rings.size() != counts.size())
-                {
-                    throw std::invalid_argument("polygon ring coordinate/count size mismatch");
-                }
-
-                polygon_ring_counts.push_back(rings.size());
-                for (std::size_t i = 0; i < rings.size(); ++i)
-                {
-                    const std::size_t n = counts[i] * dimensions;
-                    const double *src = rings[i];
-                    if (src == nullptr)
-                    {
-                        throw std::invalid_argument("polygon ring coords pointer cannot be null");
-                    }
-                    const std::size_t old_size = flat.size();
-                    flat.resize(old_size + n);
-                    std::memcpy(flat.data() + old_size, src, n * sizeof(double));
-                    ring_point_counts.push_back(counts[i]);
-                }
-            }
-
-            const uint8_t *data = nullptr;
-            size_t size = 0;
-            char error[512] = {0};
-            const auto status = wkp_workspace_encode_geometry_frame_f64(
-                workspace_,
-                WKP_GEOMETRY_MULTIPOLYGON,
-                flat.data(),
-                flat.size(),
-                dimensions,
-                precision,
-                polygon_ring_counts.data(),
-                polygon_ring_counts.size(),
-                ring_point_counts.data(),
-                ring_point_counts.size(),
-                &data,
-                &size,
-                error,
-                sizeof(error));
-            throw_for_status(status, error);
-            return std::string(reinterpret_cast<const char *>(data), size);
-        }
-
-        wkp_workspace *raw() const noexcept { return workspace_; }
-
-    private:
-        wkp_workspace *workspace_ = nullptr;
-    };
-
-    void encode_f64_into(
-        const double *values,
-        std::size_t value_count,
-        std::size_t dimensions,
-        const std::vector<int> &precisions,
-        std::string &out_encoded);
-
-    void decode_f64_into(
-        std::string_view encoded,
-        std::size_t dimensions,
-        const std::vector<int> &precisions,
-        std::vector<double> &out_values);
+        return precisions;
+    }
 
     inline std::string encode_f64(
         const double *values,
         std::size_t value_count,
         std::size_t dimensions,
-        const std::vector<int> &precisions,
-        Workspace *workspace = nullptr)
+        const std::vector<int> &precisions)
     {
-        if (workspace != nullptr)
-        {
-            return workspace->encode_f64(values, value_count, dimensions, precisions);
-        }
-        std::string out;
-        encode_f64_into(values, value_count, dimensions, precisions, out);
-        return out;
+        const std::vector<int> p = normalize_precisions(dimensions, precisions);
+        auto &ctx = thread_ctx();
+        const uint8_t *data = nullptr;
+        size_t size = 0;
+        const auto status = wkp_encode_f64(
+            &ctx,
+            values,
+            value_count,
+            dimensions,
+            p.data(),
+            p.size(),
+            &data,
+            &size);
+        throw_for_status(status);
+        return std::string(reinterpret_cast<const char *>(data), size);
     }
 
     inline std::vector<double> decode_f64(
         std::string_view encoded,
         std::size_t dimensions,
-        const std::vector<int> &precisions,
-        Workspace *workspace = nullptr)
+        const std::vector<int> &precisions)
     {
-        if (workspace != nullptr)
-        {
-            return workspace->decode_f64(encoded, dimensions, precisions);
-        }
-        std::vector<double> out;
-        decode_f64_into(encoded, dimensions, precisions, out);
-        return out;
+        const std::vector<int> p = normalize_precisions(dimensions, precisions);
+        auto &ctx = thread_ctx();
+        const double *values = nullptr;
+        size_t size = 0;
+        const auto status = wkp_decode_f64(
+            &ctx,
+            reinterpret_cast<const uint8_t *>(encoded.data()),
+            encoded.size(),
+            dimensions,
+            p.data(),
+            p.size(),
+            &values,
+            &size);
+        throw_for_status(status);
+        return std::vector<double>(values, values + size);
     }
 
-    inline std::string encode_point(const double *coords, std::size_t point_count, std::size_t dimensions, int precision, Workspace *workspace = nullptr)
+    inline GeometryHeader decode_geometry_header(std::string_view encoded)
     {
-        Workspace local;
-        Workspace &ws = (workspace != nullptr) ? *workspace : local;
-        return ws.encode_point(coords, point_count, dimensions, precision);
-    }
-
-    inline std::string encode_linestring(const double *coords, std::size_t point_count, std::size_t dimensions, int precision, Workspace *workspace = nullptr)
-    {
-        Workspace local;
-        Workspace &ws = (workspace != nullptr) ? *workspace : local;
-        return ws.encode_linestring(coords, point_count, dimensions, precision);
-    }
-
-    inline std::string encode_polygon(
-        const std::vector<const double *> &ring_coords,
-        const std::vector<std::size_t> &ring_point_counts,
-        std::size_t dimensions,
-        int precision,
-        Workspace *workspace = nullptr)
-    {
-        Workspace local;
-        Workspace &ws = (workspace != nullptr) ? *workspace : local;
-        return ws.encode_polygon(ring_coords, ring_point_counts, dimensions, precision);
-    }
-
-    inline std::string encode_multipoint(
-        const std::vector<const double *> &point_coords,
-        const std::vector<std::size_t> &point_counts,
-        std::size_t dimensions,
-        int precision,
-        Workspace *workspace = nullptr)
-    {
-        Workspace local;
-        Workspace &ws = (workspace != nullptr) ? *workspace : local;
-        return ws.encode_multipoint(point_coords, point_counts, dimensions, precision);
-    }
-
-    inline std::string encode_multilinestring(
-        const std::vector<const double *> &linestring_coords,
-        const std::vector<std::size_t> &linestring_point_counts,
-        std::size_t dimensions,
-        int precision,
-        Workspace *workspace = nullptr)
-    {
-        Workspace local;
-        Workspace &ws = (workspace != nullptr) ? *workspace : local;
-        return ws.encode_multilinestring(linestring_coords, linestring_point_counts, dimensions, precision);
-    }
-
-    inline std::string encode_multipolygon(
-        const std::vector<std::vector<const double *>> &polygon_ring_coords,
-        const std::vector<std::vector<std::size_t>> &polygon_ring_point_counts,
-        std::size_t dimensions,
-        int precision,
-        Workspace *workspace = nullptr)
-    {
-        Workspace local;
-        Workspace &ws = (workspace != nullptr) ? *workspace : local;
-        return ws.encode_multipolygon(polygon_ring_coords, polygon_ring_point_counts, dimensions, precision);
-    }
-
-    inline GeometryFrame decode(std::string_view encoded, Workspace *workspace = nullptr)
-    {
-        (void)workspace;
-        return decode_geometry_frame(encoded);
+        ensure_basic_self_test();
+        GeometryHeader h{};
+        const auto status = wkp_decode_geometry_header(
+            reinterpret_cast<const uint8_t *>(encoded.data()),
+            encoded.size(),
+            &h.version,
+            &h.precision,
+            &h.dimensions,
+            &h.geometry_type);
+        throw_for_status(status);
+        return h;
     }
 
 } // namespace wkp::core

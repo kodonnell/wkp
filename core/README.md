@@ -1,4 +1,4 @@
-# WKP Core (C++)
+# WKP Core
 
 `core/` is the shared native engine for all bindings.
 
@@ -18,24 +18,142 @@
 
 - `include/wkp/core.h`: stable C ABI
 - `include/wkp/_version.h`: shared version source
-- `src/core.cpp`: implementation
-- `tests/test_c_api.cpp`: ABI-focused tests
+- `src/core.c`: implementation
+- `tests/test_c_api.cpp`: ABI-focused roundtrip and frame tests
+- `tests/test_c_api_errors.cpp`: ABI error and validation tests
+- `tests/test_c_api_geometry.cpp`: ABI geometry framing tests
 
-## C ABI workspace contract
+## C ABI contract
 
-The C ABI is workspace-first. Callers create one workspace and reuse it across operations.
+The C ABI has one usage style: caller-managed context.
 
-Workspace APIs provide auto-resize behavior and avoid explicit retry loops:
+- Call `wkp_context_init` before any encode/decode call.
+- Reuse the same `wkp_context` across repeated calls on one thread.
+- Call `wkp_context_free` when finished.
 
-- `wkp_workspace_create` / `wkp_workspace_destroy`
-- `wkp_workspace_encode_f64` / `wkp_workspace_decode_f64`
-- `wkp_workspace_encode_geometry_frame_f64`
-- `wkp_workspace_decode_geometry_frame_f64`
-- Workspace functions grow internal buffers automatically and avoid `WKP_STATUS_BUFFER_TOO_SMALL` retry loops.
-- Optional `max_size` limits are enforced; overflow returns `WKP_STATUS_LIMIT_EXCEEDED`.
-- Use `-1` for unlimited max size.
+Encode/decode calls return pointers to buffers owned by the provided context.
+Those pointers remain valid until the next call that reuses the same context buffers.
 
-Note: internal C++ helpers under `wkp::core` still use `std::string` / `std::vector` and may allocate.
+Threading rule: use one `wkp_context` per concurrent thread.
+
+### Minimal usage pattern
+
+```c
+#include <wkp/core.h>
+
+wkp_context ctx = {0};
+if (wkp_context_init(&ctx) != WKP_STATUS_OK) {
+	/* handle error */
+}
+
+/* ... call wkp_encode_* / wkp_decode_* using &ctx ... */
+
+wkp_context_free(&ctx);
+```
+
+## Geometry framing model
+
+All geometry encoding/decoding in the C ABI is based on a single frame shape:
+
+- header: 4 fields
+	- `version`
+	- `precision`
+	- `dimensions`
+	- `geometry_type`
+- flattened coordinates: `coords` (`coord_value_count` values)
+- segment metadata: `segment_point_counts` (`segment_count` entries)
+- group metadata: `group_segment_counts` (`group_count` entries)
+
+When encoded as text:
+
+- `,` separates segments within a group (ring separator)
+- `;` separates groups (multi separator)
+
+### Per-geometry framing
+
+`POINT`
+- `group_count = 1`
+- `segment_count = 1`
+- `group_segment_counts = [1]`
+- `segment_point_counts = [1]`
+
+`LINESTRING`
+- `group_count = 1`
+- `segment_count = 1`
+- `group_segment_counts = [1]`
+- `segment_point_counts = [N]`, where $N \ge 2$
+
+`POLYGON`
+- `group_count = 1`
+- `segment_count = ring_count`
+- `group_segment_counts = [ring_count]`
+- `segment_point_counts = [ring_0_points, ring_1_points, ...]`
+- encoded body uses `,` between rings
+
+`MULTIPOINT`
+- one group per point
+- one segment per group
+- `group_segment_counts = [1, 1, ...]`
+- `segment_point_counts = [1, 1, ...]`
+- encoded body uses `;` between points
+
+`MULTILINESTRING`
+- one group per linestring
+- one segment per group
+- `group_segment_counts = [1, 1, ...]`
+- `segment_point_counts = [line_0_points, line_1_points, ...]`
+- encoded body uses `;` between linestrings
+
+`MULTIPOLYGON`
+- one group per polygon
+- each group has one or more segments (rings)
+- `group_segment_counts` stores ring counts per polygon
+- `segment_point_counts` stores point counts for every ring in group order
+- encoded body uses:
+	- `,` between rings in a polygon
+	- `;` between polygons
+
+Validation rule:
+the sum of all segment point counts, multiplied by dimensions, must equal `coord_value_count`.
+
+### Binder recipe (frame-first)
+
+Most binders only need `wkp_encode_geometry_frame` and `wkp_decode_geometry_frame`.
+Build frame metadata from the source geometry and call one function.
+
+Examples:
+
+- `POINT` with one coordinate tuple
+	- `coords = [x, y]` (or `[x, y, z, ...]`)
+	- `group_segment_counts = [1]`
+	- `segment_point_counts = [1]`
+
+- `LINESTRING` with `N` points
+	- `coords = [x0, y0, x1, y1, ...]`
+	- `group_segment_counts = [1]`
+	- `segment_point_counts = [N]`
+
+- `POLYGON` with shell and holes
+	- `coords = concat(shell, hole0, hole1, ...)`
+	- `group_segment_counts = [ring_count]`
+	- `segment_point_counts = [shell_points, hole0_points, hole1_points, ...]`
+
+- `MULTILINESTRING` with line point counts `[a, b, c]`
+	- `coords = concat(line0, line1, line2)`
+	- `group_segment_counts = [1, 1, 1]`
+	- `segment_point_counts = [a, b, c]`
+
+- `MULTIPOLYGON` with polygon ring counts `[2, 1]`
+	- polygon 0 has 2 rings, polygon 1 has 1 ring
+	- `group_segment_counts = [2, 1]`
+	- `segment_point_counts = [poly0_ring0_points, poly0_ring1_points, poly1_ring0_points]`
+
+Practical binder flow:
+
+1. Flatten coordinates into one contiguous `coords` array.
+2. Build `group_segment_counts` and `segment_point_counts`.
+3. Call `wkp_encode_geometry_frame` with a caller-owned context.
+4. Use returned pointer and size immediately or copy into binder-managed storage.
 
 ## Version source of truth
 
