@@ -10,7 +10,7 @@ Monorepo workspace for JavaScript bindings over the shared WKP C ABI.
 ## Architecture
 
 - Both packages consume `core/include/wkp/core.h`
-- Core algorithm code lives once in `core/src/core.cpp`
+- Core algorithm code lives once in `core/src/core.c`
 - JS packages stay thin wrappers for language/runtime ergonomics
 
 ## Dependencies
@@ -22,8 +22,8 @@ Monorepo workspace for JavaScript bindings over the shared WKP C ABI.
 
 ## Versioning
 
-Node/Web package versions are managed independently (currently `0.3.0`).
-Both runtimes enforce WKP core compatibility at runtime (`0.3.x`).
+Node/Web package versions are managed independently (currently `0.4.0`).
+Both runtimes enforce WKP core compatibility at runtime (`0.4.0`).
 
 From `bindings/javascript`:
 

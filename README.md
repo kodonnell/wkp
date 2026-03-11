@@ -71,14 +71,17 @@ pip install wkp
 
 ```python
 from shapely import LineString
-from wkp import Workspace, encode_linestring
+from wkp import Context, decode, encode
 
 linestring = LineString([(1, 2), (3, 4), (5, 6)])
-workspace = Workspace()
-print(encode_linestring(linestring, precision=5, workspace=workspace))
+ctx = Context()
+encoded = encode(ctx, linestring, precision=5)
+decoded = decode(ctx, encoded)
+print(encoded)
+print(decoded.geometry.wkt)
 ```
 
-For convenience, `workspace` is optional and functions will create/use a default workspace when omitted, but reusing an explicit `Workspace` is faster in repeated encode/decode workloads.
+`Context` is required for encode/decode operations. Reuse one context per thread across repeated calls for best performance.
 
 ## Benchmarks
 
@@ -91,7 +94,7 @@ For convenience, `workspace` is optional and functions will create/use a default
 ## Developing
 
 ```
-python ./build_all.py
+python ./scripts/build_all.py
 ```
 
 ## Detailed docs

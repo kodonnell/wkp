@@ -42,8 +42,8 @@ Public functions:
 
 - `Context() -> Context`
 - `encode(ctx, geom, precision) -> bytes`
-- `decode(ctx, bites) -> DecodedGeometry`
-- `decode_header(bites) -> (version, precision, dimensions, geometry_type)`
+- `decode(ctx, encoded) -> DecodedGeometry`
+- `decode_header(encoded) -> (version, precision, dimensions, geometry_type)`
 
 Float helpers also require context:
 
