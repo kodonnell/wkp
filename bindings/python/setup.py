@@ -24,6 +24,23 @@ binding_version = read_binding_version_from_pyproject()
 
 
 class BuildExtWithNanobindStubs(build_ext):
+    def build_extensions(self):
+        # Distutils applies one flag list to all sources in an extension.
+        # Strip C++-only standard flags when compiling C translation units.
+        original_compile = self.compiler._compile
+
+        def _compile(obj, src, ext, cc_args, extra_postargs, pp_opts):
+            postargs = list(extra_postargs) if extra_postargs else []
+            if src.endswith(".c"):
+                postargs = [arg for arg in postargs if arg not in ("-std=c++17", "/std:c++17")]
+            return original_compile(obj, src, ext, cc_args, postargs, pp_opts)
+
+        self.compiler._compile = _compile
+        try:
+            super().build_extensions()
+        finally:
+            self.compiler._compile = original_compile
+
     def run(self):
         super().run()
         self._generate_nanobind_stubs()
