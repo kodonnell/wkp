@@ -25,7 +25,7 @@ const args = [
     coreCpp,
     '-s', 'MODULARIZE=1',
     '-s', 'EXPORT_ES6=1',
-    '-s', 'ENVIRONMENT=web,worker,node',
+    '-s', 'ENVIRONMENT=web,worker',
     '-s', 'ALLOW_MEMORY_GROWTH=1',
     '-s', 'FILESYSTEM=0',
     '-s', 'EXPORTED_RUNTIME_METHODS=["cwrap"]',
