@@ -19,6 +19,11 @@ npm install
 npm --workspace @wkpjs/web run build
 ```
 
+The build regenerates `src/version.generated.js` from `package.json`, so consumers do not need JSON import-assertion support in their bundler.
+
+`src/version.generated.js` is generated during `build`, `test`, and `prepack`, and is intended to stay out of git.
+If the generated file is missing in local dev, the package falls back to binding version `0.0.1` and derives a compatibility range from the loaded core at runtime.
+
 ## Test
 
 From `bindings/javascript`:
