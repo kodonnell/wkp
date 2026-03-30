@@ -94,8 +94,13 @@ jobs:
             exit 1
           fi
 
-          if ! tar -tzf "$WEB_TARBALL" | grep -qx 'package/src/version.generated.js'; then
+          TAR_CONTENTS=$(mktemp)
+          tar -tzf "$WEB_TARBALL" > "$TAR_CONTENTS"
+
+          if ! grep -qx 'package/src/version.generated.js' "$TAR_CONTENTS"; then
             echo "Packed @wkpjs/web tarball is missing package/src/version.generated.js"
+            echo "Tarball checked: $WEB_TARBALL"
+            cat "$TAR_CONTENTS"
             exit 1
           fi
 
