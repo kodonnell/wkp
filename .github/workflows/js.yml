@@ -114,6 +114,31 @@ jobs:
             bindings/javascript/packages/web/dist/wkp_core.wasm
             artifacts/npm/*.tgz
 
+  release:
+    name: Create GitHub release
+    needs: npm-publish
+    if: startsWith(github.ref, 'refs/tags/npm-v') || (github.event_name == 'workflow_dispatch' && !inputs.dry_run)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist/
+          pattern: js-artifacts-*
+          merge-multiple: true
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/**/*.tgz
+            dist/**/*.node
+            dist/**/wkp_core.js
+            dist/**/wkp_core.wasm
+          generate_release_notes: true
+
   npm-publish:
     name: Publish JavaScript packages
     needs: js-build

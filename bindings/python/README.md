@@ -104,6 +104,7 @@ Example results:
 - Release/publish runs from tag pushes or `workflow_dispatch` in `.github/workflows/python.yml`.
 - Tag publish (recommended): push a tag in the exact format `pypi-vX.Y.Z` (for example `pypi-v0.1.0`).
 - Publish order is always TestPyPI first, then PyPI.
+- Python releases are binding-specific. Product-level GitHub releases use the separate `wkp-vX.Y.Z` tag flow.
 
 ### Manual publish from GitHub
 

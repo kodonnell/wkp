@@ -72,9 +72,11 @@ npm run benchmark:web:serve
 GitHub Actions workflow: `.github/workflows/js.yml`.
 
 - Tag publish (recommended): push a tag in the exact format `npm-vX.Y.Z` (for example `npm-v0.1.0`).
+- Tag publish also creates a JavaScript-specific GitHub release with the packaged artifacts.
 - Manual publish: run the workflow from Actions using `workflow_dispatch`.
     - `dry_run=true` validates packaging without publishing.
     - `dry_run=false` performs real publish.
+- Product-level GitHub releases use the separate `wkp-vX.Y.Z` tag flow.
 
 If you only publish via git tags, manual dispatch is optional and can be removed.
 

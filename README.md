@@ -97,6 +97,15 @@ print(decoded.geometry.wkt)
 python ./scripts/build_all.py
 ```
 
+## Release model
+
+- `pypi-vX.Y.Z`: publish the Python package, create a Python GitHub release.
+- `npm-vX.Y.Z`: publish the JavaScript packages, create a JavaScript GitHub release.
+- `wkp-vX.Y.Z`: create a product-level GitHub release only; it does not publish Python or JavaScript packages.
+- C++ currently has CI artifacts, but no standalone package/release workflow.
+
+See `docs/release-policy.md` for the full release policy.
+
 ## Detailed docs
 
 - Core: `core/README.md`
