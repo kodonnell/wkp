@@ -84,6 +84,21 @@ jobs:
           npm --workspace @wkpjs/node pack --pack-destination ../../artifacts/npm
           npm --workspace @wkpjs/web pack --pack-destination ../../artifacts/npm
 
+      - name: Verify web tarball contains generated version module
+        shell: bash
+        run: |
+          set -euo pipefail
+          WEB_TARBALL=$(find artifacts/npm -maxdepth 1 -type f -name 'wkpjs-web-*.tgz' | head -n 1)
+          if [[ -z "$WEB_TARBALL" ]]; then
+            echo "Could not find packed @wkpjs/web tarball in artifacts/npm"
+            exit 1
+          fi
+
+          if ! tar -tzf "$WEB_TARBALL" | grep -qx 'package/src/version.generated.js'; then
+            echo "Packed @wkpjs/web tarball is missing package/src/version.generated.js"
+            exit 1
+          fi
+
       - name: Upload JavaScript artifacts
         uses: actions/upload-artifact@v4
         with:

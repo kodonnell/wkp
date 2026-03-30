@@ -1,8 +1,5 @@
 import initWkpCore from '../dist/wkp_core.js';
-import packageInfo from '../package.json' with { type: 'json' };
-
-const BINDING_VERSION = packageInfo.version;
-const CORE_COMPATIBILITY = packageInfo.wkpCoreCompatibility;
+import { loadVersionMetadata } from './version.js';
 
 const DEFAULT_ERROR_CAPACITY = 512;
 const TEXT_ENCODER = new TextEncoder();
@@ -22,21 +19,26 @@ function parseSemverMajorMinor(version) {
     return [major, minor];
 }
 
-function assertCoreCompatibility(runtimeCoreVersion) {
-    if (typeof CORE_COMPATIBILITY !== 'string') {
+function formatMajorMinorCompatibility(version) {
+    const [major, minor] = parseSemverMajorMinor(version);
+    return `${major}.${minor}.x`;
+}
+
+function assertCoreCompatibility(runtimeCoreVersion, bindingVersion, coreCompatibility) {
+    if (typeof coreCompatibility !== 'string') {
         throw new Error('Missing string field wkpCoreCompatibility in package.json');
     }
     const [coreMajor, coreMinor] = parseSemverMajorMinor(runtimeCoreVersion);
-    const compatibilityMatch = /^([0-9]+)\.([0-9]+)\.(?:x|[0-9]+)$/.exec(CORE_COMPATIBILITY);
+    const compatibilityMatch = /^([0-9]+)\.([0-9]+)\.(?:x|[0-9]+)$/.exec(coreCompatibility);
     if (!compatibilityMatch) {
-        throw new Error(`Invalid compatibility range in package.json: ${CORE_COMPATIBILITY}`);
+        throw new Error(`Invalid compatibility range in package.json: ${coreCompatibility}`);
     }
     const requiredMajor = Number.parseInt(compatibilityMatch[1], 10);
     const requiredMinor = Number.parseInt(compatibilityMatch[2], 10);
 
     if (coreMajor !== requiredMajor || coreMinor !== requiredMinor) {
         throw new Error(
-            `@wkpjs/web ${BINDING_VERSION} requires WKP core ${CORE_COMPATIBILITY}, but loaded core is ${runtimeCoreVersion}`
+            `@wkpjs/web ${bindingVersion} requires WKP core ${coreCompatibility}, but loaded core is ${runtimeCoreVersion}`
         );
     }
 }
@@ -384,6 +386,7 @@ function frameToGeometry(geometryType, dimensions, coords, segmentPointCounts, g
 }
 
 export async function createWkp(options) {
+    const versionMetadata = await loadVersionMetadata();
     const module = await initWkpCore(options);
 
     const resolveStatus = (symbol, fallback) => {
@@ -766,7 +769,10 @@ export async function createWkp(options) {
         });
     }
 
-    assertCoreCompatibility(coreVersion());
+    const runtimeCoreVersion = coreVersion();
+    const coreCompatibility = versionMetadata.coreCompatibility ?? formatMajorMinorCompatibility(runtimeCoreVersion);
+
+    assertCoreCompatibility(runtimeCoreVersion, versionMetadata.bindingVersion, coreCompatibility);
     runSelfTest();
 
     function decodeHeader(encoded) {
@@ -845,8 +851,8 @@ export async function createWkp(options) {
     }
 
     return {
-        bindingVersion: BINDING_VERSION,
-        coreCompatibility: CORE_COMPATIBILITY,
+        bindingVersion: versionMetadata.bindingVersion,
+        coreCompatibility,
         Context,
         decodeHeader,
         decode,

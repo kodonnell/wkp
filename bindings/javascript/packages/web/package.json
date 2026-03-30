@@ -19,10 +19,13 @@
     "scripts"
   ],
   "scripts": {
+    "prebuild": "node ./scripts/generate-version-module.mjs",
     "build": "node ./scripts/build-wasm.mjs",
-    "clean": "node -e \"const fs=require('fs'); for (const f of ['dist/wkp_core.js','dist/wkp_core.wasm']) { if (fs.existsSync(f)) fs.unlinkSync(f); }\"",
+    "clean": "node -e \"const fs=require('fs'); for (const f of ['dist/wkp_core.js','dist/wkp_core.wasm','src/version.generated.js']) { if (fs.existsSync(f)) fs.unlinkSync(f); }\"",
     "benchmark": "node ./scripts/benchmark-node.mjs",
     "benchmark:serve": "node ./scripts/serve-benchmark.mjs",
+    "pretest": "node ./scripts/generate-version-module.mjs",
+    "prepack": "node ./scripts/generate-version-module.mjs && node ./scripts/build-wasm.mjs",
     "test": "node --test ./tests/*.mjs"
   },
   "engines": {
