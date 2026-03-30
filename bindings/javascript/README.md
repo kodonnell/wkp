@@ -22,8 +22,8 @@ Monorepo workspace for JavaScript bindings over the shared WKP C ABI.
 
 ## Versioning
 
-Node/Web package versions are managed independently (currently `0.4.0`).
-Both runtimes enforce WKP core compatibility at runtime (`0.4.0`).
+Node/Web package versions are managed independently (currently `0.4.1`).
+Both runtimes enforce WKP core compatibility at runtime (`0.4.1`).
 The web package generates `packages/web/src/version.generated.js` from `packages/web/package.json` during build/test/pack flows, keeps it out of git, and falls back to a local dev version if that generated file is absent.
 
 From `bindings/javascript`:
