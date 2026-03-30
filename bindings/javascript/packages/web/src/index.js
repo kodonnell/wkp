@@ -4,6 +4,28 @@ import { loadVersionMetadata } from './version.js';
 const DEFAULT_ERROR_CAPACITY = 512;
 const TEXT_ENCODER = new TextEncoder();
 const TEXT_DECODER = new TextDecoder();
+const dynamicImport = new Function('specifier', 'return import(specifier);');
+
+function isNodeRuntime() {
+    return (
+        typeof process === 'object'
+        && typeof process.versions === 'object'
+        && typeof process.versions.node === 'string'
+    );
+}
+
+async function prepareInitOptions(options) {
+    const moduleOptions = options ? { ...options } : {};
+
+    if (!isNodeRuntime() || moduleOptions.wasmBinary || moduleOptions.instantiateWasm) {
+        return moduleOptions;
+    }
+
+    const { readFile } = await dynamicImport('node:fs/promises');
+    const wasmBinary = await readFile(new URL('../dist/wkp_core.wasm', import.meta.url));
+    moduleOptions.wasmBinary = wasmBinary instanceof Uint8Array ? wasmBinary : new Uint8Array(wasmBinary);
+    return moduleOptions;
+}
 
 function parseSemverMajorMinor(version) {
     const corePart = String(version).split('-', 1)[0];
@@ -387,7 +409,8 @@ function frameToGeometry(geometryType, dimensions, coords, segmentPointCounts, g
 
 export async function createWkp(options) {
     const versionMetadata = await loadVersionMetadata();
-    const module = await initWkpCore(options);
+    const moduleOptions = await prepareInitOptions(options);
+    const module = await initWkpCore(moduleOptions);
 
     const resolveStatus = (symbol, fallback) => {
         const getter = module.cwrap(symbol, 'number', []);
