@@ -19,6 +19,8 @@ namespace
 
     using InputArray = nb::ndarray<const double, nb::ndim<2>, nb::c_contig, nb::device::cpu>;
     using OutputArray = nb::ndarray<nb::numpy, double, nb::ndim<2>, nb::c_contig, nb::device::cpu>;
+    using OutputArray1D = nb::ndarray<nb::numpy, double, nb::ndim<1>, nb::c_contig, nb::device::cpu>;
+    using OutputCountArray = nb::ndarray<nb::numpy, uint64_t, nb::ndim<1>, nb::c_contig, nb::device::cpu>;
 
     struct Context
     {
@@ -45,6 +47,11 @@ namespace
     struct F64VectorOwner
     {
         std::vector<double> values;
+    };
+
+    struct U64VectorOwner
+    {
+        std::vector<uint64_t> values;
     };
 
     struct GeometryHeader
@@ -147,6 +154,53 @@ namespace
             groups);
     }
 
+    // Returns a flat tuple: (version, precision, dimensions, geometry_type, coords_2d, segment_point_counts, group_segment_counts)
+    // coords_2d is shape (total_points, dimensions) float64
+    // segment_point_counts and group_segment_counts are 1D uint64 arrays
+    nb::tuple flat_tuple_from_geometry_frame(const wkp_geometry_frame_f64 &frame)
+    {
+        const std::size_t dims = static_cast<std::size_t>(frame.dimensions);
+        const std::size_t total_points = (dims > 0) ? (frame.coord_value_count / dims) : 0;
+
+        // Flat coords as 2D numpy array (total_points x dims)
+        auto *coords_owner = new F64VectorOwner();
+        coords_owner->values.assign(frame.coords, frame.coords + frame.coord_value_count);
+        nb::capsule coords_cap(coords_owner, [](void *p) noexcept
+                               { delete static_cast<F64VectorOwner *>(p); });
+        OutputArray coords_arr(coords_owner->values.data(), {total_points, dims}, coords_cap);
+
+        // Segment point counts as 1D uint64 array
+        auto *seg_owner = new U64VectorOwner();
+        seg_owner->values.resize(frame.segment_count);
+        for (std::size_t i = 0; i < frame.segment_count; ++i)
+        {
+            seg_owner->values[i] = static_cast<uint64_t>(frame.segment_point_counts[i]);
+        }
+        nb::capsule seg_cap(seg_owner, [](void *p) noexcept
+                            { delete static_cast<U64VectorOwner *>(p); });
+        OutputCountArray seg_arr(seg_owner->values.data(), {frame.segment_count}, seg_cap);
+
+        // Group segment counts as 1D uint64 array
+        auto *grp_owner = new U64VectorOwner();
+        grp_owner->values.resize(frame.group_count);
+        for (std::size_t i = 0; i < frame.group_count; ++i)
+        {
+            grp_owner->values[i] = static_cast<uint64_t>(frame.group_segment_counts[i]);
+        }
+        nb::capsule grp_cap(grp_owner, [](void *p) noexcept
+                            { delete static_cast<U64VectorOwner *>(p); });
+        OutputCountArray grp_arr(grp_owner->values.data(), {frame.group_count}, grp_cap);
+
+        return nb::make_tuple(
+            frame.version,
+            frame.precision,
+            frame.dimensions,
+            frame.geometry_type,
+            coords_arr,
+            seg_arr,
+            grp_arr);
+    }
+
 } // namespace
 
 NB_MODULE(_core, m)
@@ -222,6 +276,35 @@ NB_MODULE(_core, m)
             throw_for_status(status);
 
             return tuple_from_geometry_frame(*frame);
+        },
+        nb::arg("ctx"),
+        nb::arg("encoded"));
+
+    // Returns flat numpy arrays for direct GeometryFrame construction.
+    // Tuple: (version, precision, dimensions, geometry_type,
+    //         coords_2d float64[total_points, dims],
+    //         segment_point_counts uint64[segment_count],
+    //         group_segment_counts uint64[group_count])
+    m.def(
+        "decode_geometry_frame_flat",
+        [](Context &ctx, nb::bytes encoded)
+        {
+            char *data = nullptr;
+            Py_ssize_t size = 0;
+            if (PyBytes_AsStringAndSize(encoded.ptr(), &data, &size) != 0)
+            {
+                throw nb::python_error();
+            }
+
+            const wkp_geometry_frame_f64 *frame = nullptr;
+            const auto status = wkp_decode_geometry_frame(
+                &ctx.value,
+                reinterpret_cast<const uint8_t *>(data),
+                static_cast<std::size_t>(size),
+                &frame);
+            throw_for_status(status);
+
+            return flat_tuple_from_geometry_frame(*frame);
         },
         nb::arg("ctx"),
         nb::arg("encoded"));

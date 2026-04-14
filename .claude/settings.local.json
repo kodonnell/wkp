@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(micromamba run:*)",
+      "Bash(node --test tests/*.js)",
+      "Bash(npm test:*)",
+      "Bash(node benchmark/benchmark.js --points=10000 --iterations=200)",
+      "Bash(node:*)"
+    ]
+  }
+}

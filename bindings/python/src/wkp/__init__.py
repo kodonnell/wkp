@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import re
+import struct
+import threading
 from dataclasses import dataclass
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as dist_version
@@ -18,9 +20,12 @@ __core_compatibility__ = "0.4.x"
 __all__ = [
     "Context",
     "DecodedGeometry",
+    "GeometryFrame",
     "decode",
+    "decode_frame",
     "decode_header",
     "encode",
+    "encode_frame",
     "encode_floats",
     "decode_floats",
 ]
@@ -83,6 +88,21 @@ def _assert_core_compatibility() -> None:
 
 _assert_core_compatibility()
 
+# Thread-local context store — one Context per thread, created lazily.
+_thread_locals = threading.local()
+
+
+def _get_thread_context() -> Context:
+    if not hasattr(_thread_locals, "ctx"):
+        _thread_locals.ctx = Context()
+    return _thread_locals.ctx
+
+
+def _resolve_context(ctx) -> Context:
+    if ctx is None:
+        return _get_thread_context()
+    return ctx
+
 
 def _as_encoded_bytes(bites) -> bytes:
     try:
@@ -100,10 +120,118 @@ def _normalize_precisions(precisions) -> list[int]:
     return values
 
 
+# ---------------------------------------------------------------------------
+# GeometryFrame
+# ---------------------------------------------------------------------------
+
+# Buffer header format (little-endian): version, precision, dimensions, geometry_type (4×int32)
+# followed by coord_value_count, segment_count, group_count (3×uint64) = 40 bytes total.
+_FRAME_HEADER_FMT = "<iiii QQQ"
+_FRAME_HEADER_SIZE = struct.calcsize(_FRAME_HEADER_FMT)  # 40 bytes
+
+
+@dataclass
+class GeometryFrame:
+    """
+    A flat representation of a decoded WKP geometry with explicit structure metadata.
+
+    ``coords`` is a (total_points, dimensions) float64 numpy array.
+    ``segment_point_counts[i]`` is the number of points in segment i.
+    ``group_segment_counts[g]`` is the number of segments in group g.
+
+    Geometry types map to groups/segments as follows:
+
+    * POINT / LINESTRING: 1 group, 1 segment
+    * POLYGON: 1 group, ring_count segments (shell first)
+    * MULTIPOINT / MULTILINESTRING / MULTIPOLYGON: N groups, each with 1+ segments
+    """
+
+    version: int
+    precision: int
+    dimensions: int
+    geometry_type: int
+    coords: np.ndarray               # shape (total_points, dimensions), float64, C-contiguous
+    segment_point_counts: np.ndarray # shape (segment_count,), uint64
+    group_segment_counts: np.ndarray # shape (group_count,), uint64
+
+    def to_geometry(self) -> shapely.geometry.base.BaseGeometry:
+        """Convert to a Shapely geometry object."""
+        return _geometry_from_frame_counts(
+            self.geometry_type,
+            self.dimensions,
+            self.coords.ravel(),
+            self.group_segment_counts.tolist(),
+            self.segment_point_counts.tolist(),
+        )
+
+    def to_buffer(self) -> bytes:
+        """
+        Serialize to a compact binary buffer (little-endian).
+
+        Layout (40-byte fixed header + variable data):
+          int32  version
+          int32  precision
+          int32  dimensions
+          int32  geometry_type
+          uint64 coord_value_count  (= total_points × dimensions)
+          uint64 segment_count
+          uint64 group_count
+          float64[coord_value_count]  flat coordinates
+          uint32[segment_count]       segment_point_counts
+          uint32[group_count]         group_segment_counts
+        """
+        coords_flat = np.ascontiguousarray(self.coords.ravel(), dtype=np.float64)
+        seg = np.asarray(self.segment_point_counts, dtype=np.uint32)
+        grp = np.asarray(self.group_segment_counts, dtype=np.uint32)
+        header = struct.pack(
+            _FRAME_HEADER_FMT,
+            self.version,
+            self.precision,
+            self.dimensions,
+            self.geometry_type,
+            coords_flat.size,
+            seg.size,
+            grp.size,
+        )
+        return header + coords_flat.tobytes() + seg.tobytes() + grp.tobytes()
+
+    @classmethod
+    def from_buffer(cls, buffer) -> "GeometryFrame":
+        """Deserialize from a binary buffer produced by :meth:`to_buffer`."""
+        mv = memoryview(buffer) if not isinstance(buffer, (bytes, memoryview)) else buffer
+        version, precision, dimensions, geometry_type, ncoords, nseg, ngrp = struct.unpack_from(
+            _FRAME_HEADER_FMT, mv
+        )
+        offset = _FRAME_HEADER_SIZE
+        coords_flat = np.frombuffer(mv, dtype=np.float64, count=ncoords, offset=offset).copy()
+        offset += ncoords * 8
+        seg = np.frombuffer(mv, dtype=np.uint32, count=nseg, offset=offset).astype(np.uint64)
+        offset += nseg * 4
+        grp = np.frombuffer(mv, dtype=np.uint32, count=ngrp, offset=offset).astype(np.uint64)
+        coords = coords_flat.reshape(-1, dimensions) if dimensions > 0 else coords_flat.reshape(0, 0)
+        return cls(
+            version=version,
+            precision=precision,
+            dimensions=dimensions,
+            geometry_type=geometry_type,
+            coords=np.ascontiguousarray(coords, dtype=np.float64),
+            segment_point_counts=seg,
+            group_segment_counts=grp,
+        )
+
+
+# ---------------------------------------------------------------------------
+# Header
+# ---------------------------------------------------------------------------
+
 def decode_header(bites):
     encoded = _as_encoded_bytes(bites)
     return _core.decode_geometry_header(encoded)
 
+
+# ---------------------------------------------------------------------------
+# Geometry ↔ frame conversion helpers
+# ---------------------------------------------------------------------------
 
 def _geometry_from_groups(geom_type: int, groups):
     if geom_type == EncodedGeometryType.POINT.value:
@@ -169,8 +297,8 @@ def _geometry_from_frame_counts(
     geom_type: int,
     dimensions: int,
     coords_flat: np.ndarray,
-    group_segment_counts: list[int],
-    segment_point_counts: list[int],
+    group_segment_counts,
+    segment_point_counts,
 ):
     groups = []
     coord_index = 0
@@ -178,7 +306,7 @@ def _geometry_from_frame_counts(
 
     for group_segments in group_segment_counts:
         group = []
-        for _ in range(group_segments):
+        for _ in range(int(group_segments)):
             point_count = int(segment_point_counts[segment_index])
             segment_index += 1
             value_count = point_count * dimensions
@@ -188,17 +316,6 @@ def _geometry_from_frame_counts(
         groups.append(group)
 
     return _geometry_from_groups(geom_type, groups)
-
-
-def decode(ctx, bites):
-    encoded = _as_encoded_bytes(bites)
-    version, precision, dimensions, geom_type, groups = _core.decode_geometry_frame(ctx, encoded)
-    return DecodedGeometry(
-        version=version,
-        precision=precision,
-        dimensions=dimensions,
-        geometry=_geometry_from_groups(geom_type, groups),
-    )
 
 
 def _geometry_dimensions(geom) -> int:
@@ -273,7 +390,58 @@ def _geometry_to_frame(geom):
     raise TypeError("geom must be a Shapely Point, LineString, Polygon, MultiPoint, MultiLineString, or MultiPolygon")
 
 
-def encode(ctx, geom, precision: int):
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
+
+def decode_frame(bites, *, ctx=None) -> GeometryFrame:
+    """
+    Decode a WKP-encoded geometry into a :class:`GeometryFrame` without converting
+    to a Shapely object. Useful for bulk coordinate processing or buffer transfer.
+    """
+    ctx = _resolve_context(ctx)
+    encoded = _as_encoded_bytes(bites)
+    version, precision, dimensions, geom_type, coords, seg_counts, grp_counts = (
+        _core.decode_geometry_frame_flat(ctx, encoded)
+    )
+    return GeometryFrame(
+        version=version,
+        precision=precision,
+        dimensions=dimensions,
+        geometry_type=geom_type,
+        coords=np.ascontiguousarray(coords, dtype=np.float64),
+        segment_point_counts=np.asarray(seg_counts, dtype=np.uint64),
+        group_segment_counts=np.asarray(grp_counts, dtype=np.uint64),
+    )
+
+
+def decode(bites, *, ctx=None) -> DecodedGeometry:
+    """Decode a WKP-encoded geometry to a Shapely geometry."""
+    ctx = _resolve_context(ctx)
+    encoded = _as_encoded_bytes(bites)
+    version, precision, dimensions, geom_type, groups = _core.decode_geometry_frame(ctx, encoded)
+    return DecodedGeometry(
+        version=version,
+        precision=precision,
+        dimensions=dimensions,
+        geometry=_geometry_from_groups(geom_type, groups),
+    )
+
+
+def encode_frame(frame: GeometryFrame, *, ctx=None) -> bytes:
+    """Encode a :class:`GeometryFrame` to WKP bytes."""
+    ctx = _resolve_context(ctx)
+    coords = np.ascontiguousarray(frame.coords, dtype=np.float64)
+    if coords.ndim != 2:
+        raise ValueError("frame.coords must be a 2D array")
+    grp = [int(x) for x in frame.group_segment_counts]
+    seg = [int(x) for x in frame.segment_point_counts]
+    return _core.encode_geometry_frame(ctx, frame.geometry_type, coords, frame.precision, grp, seg)
+
+
+def encode(geom, precision: int, *, ctx=None) -> bytes:
+    """Encode a Shapely geometry to WKP bytes."""
+    ctx = _resolve_context(ctx)
     if not isinstance(precision, int):
         raise TypeError("precision must be an int")
 
@@ -285,7 +453,8 @@ def encode(ctx, geom, precision: int):
     return _core.encode_geometry_frame(ctx, geom_type, coords, precision, group_segment_counts, segment_point_counts)
 
 
-def encode_floats(ctx, floats, precisions):
+def encode_floats(floats, precisions, *, ctx=None) -> bytes:
+    ctx = _resolve_context(ctx)
     p = _normalize_precisions(precisions)
     dimensions = len(p)
     values = np.asarray(floats, dtype=np.float64)
@@ -298,7 +467,8 @@ def encode_floats(ctx, floats, precisions):
     return _core.encode_f64(ctx, values, dimensions, p)
 
 
-def decode_floats(ctx, encoded, precisions):
+def decode_floats(encoded, precisions, *, ctx=None):
+    ctx = _resolve_context(ctx)
     p = _normalize_precisions(precisions)
     dimensions = len(p)
     bites = _as_encoded_bytes(encoded)

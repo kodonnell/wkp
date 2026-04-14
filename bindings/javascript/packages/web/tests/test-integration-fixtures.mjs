@@ -89,7 +89,6 @@ function parseWktToGeoJson(wkt) {
 
 test('integration floats encode fixtures (web)', async () => {
     const wkp = await createWkp();
-    const ctx = new wkp.Context();
     const cases = readCases(path.join(CASES_ROOT, 'floats', 'encode'));
 
     for (const item of cases) {
@@ -100,17 +99,14 @@ test('integration floats encode fixtures (web)', async () => {
 
         const precisions = JSON.parse(precisionText);
         const rows = JSON.parse(rowsText);
-        const actual = new TextDecoder().decode(wkp.encodeFloats(ctx, rows, precisions));
+        const actual = new TextDecoder().decode(wkp.encodeFloats(rows, precisions));
 
         assert.equal(actual, expected, `${item.file}:${item.lineNo}`);
     }
-
-    ctx.dispose();
 });
 
 test('integration floats decode fixtures (web)', async () => {
     const wkp = await createWkp();
-    const ctx = new wkp.Context();
     const cases = readCases(path.join(CASES_ROOT, 'floats', 'decode'));
 
     for (const item of cases) {
@@ -121,17 +117,14 @@ test('integration floats decode fixtures (web)', async () => {
 
         const precisions = JSON.parse(precisionText);
         const expected = JSON.parse(expectedText);
-        const actual = wkp.decodeFloats(ctx, encoded, precisions);
+        const actual = wkp.decodeFloats(encoded, precisions);
 
         assertNestedClose(actual, expected, 1e-12);
     }
-
-    ctx.dispose();
 });
 
 test('integration geometry encode fixtures (web)', async () => {
     const wkp = await createWkp();
-    const ctx = new wkp.Context();
     const cases = readCases(path.join(CASES_ROOT, 'geometry', 'encode'));
 
     for (const item of cases) {
@@ -142,17 +135,14 @@ test('integration geometry encode fixtures (web)', async () => {
 
         const precision = Number.parseInt(precisionText, 10);
         const geojson = parseWktToGeoJson(wkt);
-        const actual = wkp.encode(ctx, geojson, precision);
+        const actual = wkp.encode(geojson, precision);
 
         assert.equal(actual, expected, `${item.file}:${item.lineNo}`);
     }
-
-    ctx.dispose();
 });
 
 test('integration geometry decode fixtures (web)', async () => {
     const wkp = await createWkp();
-    const ctx = new wkp.Context();
     const cases = readCases(path.join(CASES_ROOT, 'geometry', 'decode'));
 
     for (const item of cases) {
@@ -162,12 +152,10 @@ test('integration geometry decode fixtures (web)', async () => {
         }
 
         const expected = parseWktToGeoJson(wkt);
-        const decoded = wkp.decode(ctx, encoded);
+        const decoded = wkp.decode(encoded);
 
         assert.equal(decoded.version, 1, `${item.file}:${item.lineNo}`);
         assert.equal(decoded.geometry.type, expected.type);
         assertNestedClose(decoded.geometry.coordinates, expected.coordinates, 1e-9);
     }
-
-    ctx.dispose();
 });

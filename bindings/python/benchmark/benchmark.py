@@ -9,7 +9,7 @@ import numpy as np
 import shapely
 import shapely.wkb
 import shapely.wkt
-from wkp import Context, decode, encode
+from wkp import Context, decode, encode, decode_frame
 
 
 @dataclass
@@ -105,7 +105,7 @@ def bench_wkp(
     geom_pool = make_geom_pool(geom, warmup + max_iterations)
     payload, encode_times = timeit_with_pool(
         geom_pool,
-        lambda g: encode(ctx, g, precision=precision),
+        lambda g: encode(g, precision=precision, ctx=ctx),
         warmup=warmup,
         max_iterations=max_iterations,
         max_duration=max_duration,
@@ -115,7 +115,7 @@ def bench_wkp(
         payload = payload.encode("ascii")
 
     decoded, decode_times = timeit(
-        lambda: decode(ctx, payload),
+        lambda: decode(payload, ctx=ctx),
         warmup=warmup,
         max_iterations=max_iterations,
         max_duration=max_duration,

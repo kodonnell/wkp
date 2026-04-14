@@ -58,19 +58,19 @@ function main() {
     const geometry = makeLineString(points);
     const ctx = new Context();
 
-    const warmEncoded = encode(ctx, geometry, precision);
-    decode(ctx, warmEncoded);
+    const warmEncoded = encode(geometry, precision, ctx);
+    decode(warmEncoded, ctx);
 
     const encodeTimes = [];
     const decodeTimes = [];
     let encodedBytes = warmEncoded.length;
 
     for (let i = 0; i < iterations; i += 1) {
-        const encodeRun = measureMs(() => encode(ctx, geometry, precision));
+        const encodeRun = measureMs(() => encode(geometry, precision, ctx));
         encodedBytes = encodeRun.result.length;
         encodeTimes.push(encodeRun.elapsedMs);
 
-        const decodeRun = measureMs(() => decode(ctx, encodeRun.result));
+        const decodeRun = measureMs(() => decode(encodeRun.result, ctx));
         decodeTimes.push(decodeRun.elapsedMs);
     }
 

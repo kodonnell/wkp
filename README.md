@@ -71,17 +71,16 @@ pip install wkp
 
 ```python
 from shapely import LineString
-from wkp import Context, decode, encode
+from wkp import decode, encode
 
 linestring = LineString([(1, 2), (3, 4), (5, 6)])
-ctx = Context()
-encoded = encode(ctx, linestring, precision=5)
-decoded = decode(ctx, encoded)
+encoded = encode(linestring, precision=5)
+decoded = decode(encoded)
 print(encoded)
 print(decoded.geometry.wkt)
 ```
 
-`Context` is required for encode/decode operations. Reuse one context per thread across repeated calls for best performance.
+A thread-local context is managed automatically. Pass `ctx=Context()` explicitly for fine-grained control.
 
 ## Benchmarks
 

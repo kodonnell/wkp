@@ -21,9 +21,8 @@ function assertGeometryClose(actual, expected, epsilon = 1e-6) {
     walk(actual.coordinates, expected.coordinates);
 }
 
-test('workspace roundtrip for all geometry types (web wasm)', async () => {
+test('roundtrip for all geometry types using default context (web wasm)', async () => {
     const wkp = await createWkp();
-    const ctx = new wkp.Context();
     const geometries = [
         { type: 'Point', coordinates: [174.776, -41.289] },
         { type: 'LineString', coordinates: [[174.776, -41.289], [174.777, -41.29], [174.778, -41.291]] },
@@ -40,8 +39,8 @@ test('workspace roundtrip for all geometry types (web wasm)', async () => {
     ];
 
     for (const item of geometries) {
-        const encoded = wkp.encode(ctx, item, 6);
-        const decoded = wkp.decode(ctx, encoded);
+        const encoded = wkp.encode(item, 6);
+        const decoded = wkp.decode(encoded);
 
         assert.equal(decoded.version, 1);
         assert.equal(decoded.precision, 6);
@@ -50,18 +49,19 @@ test('workspace roundtrip for all geometry types (web wasm)', async () => {
     }
 });
 
-test('decodeHeader and context encode/decode path (web wasm)', async () => {
+test('roundtrip with explicit context (web wasm)', async () => {
     const wkp = await createWkp();
     const ctx = new wkp.Context();
     const geometry = { type: 'LineString', coordinates: [[0.1, 0.2], [1.1, 1.2], [2.1, 2.2]] };
 
-    const encoded = wkp.encode(ctx, geometry, 6);
+    const encoded = wkp.encode(geometry, 6, ctx);
     const [version, precision, dimensions, geometryType] = wkp.decodeHeader(encoded);
     assert.equal(version, 1);
     assert.equal(precision, 6);
     assert.equal(dimensions, 2);
     assert.equal(geometryType, wkp.EncodedGeometryType.LINESTRING);
 
-    const decoded = wkp.decode(ctx, encoded);
+    const decoded = wkp.decode(encoded, ctx);
     assertGeometryClose(decoded.geometry, geometry);
+    ctx.dispose();
 });

@@ -22,8 +22,8 @@ Monorepo workspace for JavaScript bindings over the shared WKP C ABI.
 
 ## Versioning
 
-Node/Web package versions are managed independently (currently `0.4.3`).
-Both runtimes enforce WKP core compatibility at runtime (`0.4.3`).
+Node/Web package versions are managed independently (currently `0.5.0`).
+Both runtimes enforce WKP core compatibility at runtime (`0.5.0`).
 The web package generates `packages/web/src/version.generated.js` from `packages/web/package.json` during build/test/pack flows, keeps it out of git, and falls back to a local dev version if that generated file is absent.
 
 From `bindings/javascript`:
@@ -87,9 +87,8 @@ All JS packages in this workspace (`@wkpjs/node` and `@wkpjs/web`) use this same
 ### Node (`@wkpjs/node`)
 
 ```js
-const { Context, decode, encode } = require('@wkpjs/node');
+const { decode, decodeFrame, encode, GeometryFrame } = require('@wkpjs/node');
 
-const ctx = new Context();
 const geom = {
     type: 'LineString',
     coordinates: [
@@ -99,9 +98,14 @@ const geom = {
     ],
 };
 
-const encoded = encode(ctx, geom, 6);
-const decoded = decode(ctx, encoded);
+const encoded = encode(geom, 6);
+const decoded = decode(encoded);
 console.log(encoded, decoded.geometry.type);
+
+// Frame access — flat typed arrays, transferable buffers
+const frame = decodeFrame(encoded);
+const buf = frame.toBuffer();                      // ArrayBuffer
+const frame2 = GeometryFrame.fromBuffer(buf);      // round-trip
 ```
 
 ### Web (`@wkpjs/web`)
@@ -110,8 +114,12 @@ console.log(encoded, decoded.geometry.type);
 import { createWkp } from '@wkpjs/web';
 
 const wkp = await createWkp();
-const ctx = new wkp.Context();
-const encoded = wkp.encode(ctx, { type: 'LineString', coordinates: [[0, 0], [1, 1]] }, 6);
-const decoded = wkp.decode(ctx, encoded);
+const encoded = wkp.encode({ type: 'LineString', coordinates: [[0, 0], [1, 1]] }, 6);
+const decoded = wkp.decode(encoded);
 console.log(decoded.geometry.type);
+
+// Transfer a decoded frame to a worker with zero copy
+const frame = wkp.decodeFrame(encoded);
+const buf = frame.toBuffer();
+worker.postMessage({ frame: buf }, [buf]);
 ```

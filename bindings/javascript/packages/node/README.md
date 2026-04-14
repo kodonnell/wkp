@@ -36,34 +36,77 @@ npm --workspace @wkpjs/node run benchmark -- --points=10000 --precision=5 --iter
 
 ## API
 
-Exports:
+### Geometry encode / decode
 
-- `Context`
-- `decodeHeader(encoded)`
-- `decode(ctx, encoded)`
-- `encode(ctx, geometry, precision)`
-- `encodeFloats(ctx, floats, precisions)`
-- `decodeFloats(ctx, encoded, precisions)`
+```js
+encode(geometry, precision, ctx?)     // → string
+decode(encoded, ctx?)                 // → { geometry, version, precision, dimensions }
+decodeHeader(encoded)                 // → { version, precision, dimensions, geometryType }
+```
+
+### GeometryFrame — low-level flat representation
+
+```js
+decodeFrame(encoded, ctx?)            // → GeometryFrame
+encodeFrame(frame, ctx?)              // → string
+```
+
+`GeometryFrame` fields: `version`, `precision`, `dimensions`, `geometryType`, `coords` (Float64Array, flat `[x0,y0,x1,y1,…]`), `segmentPointCounts` (Uint32Array), `groupSegmentCounts` (Uint32Array).
+
+Methods: `toGeometry()` → GeoJSON, `toBuffer()` → ArrayBuffer (transferable), `GeometryFrame.fromBuffer(buf)` → GeometryFrame.
+
+### Float helpers
+
+```js
+encodeFloats(floats, precisions, ctx?)
+decodeFloats(encoded, precisions, ctx?)
+```
+
+### Context
+
+```js
+new Context()
+```
+
+`Context` is a marker object used for API consistency — the native addon manages its own buffer pool internally per thread and does not hold state in the JS object itself.
+
+**Default (omit ctx)** — uses a module-level context; fine for most use cases:
+
+```js
+const encoded = encode(geometry, precision);
+const decoded = decode(encoded);
+```
+
+**Explicit context** — pass your own `Context` instance; behaviour is identical at the native level, but makes the intent explicit and future-proofs your code if native context isolation is added later:
+
+```js
+const ctx = new Context();
+const encoded = encode(geometry, precision, ctx);
+```
+
+**Worker thread isolation** — each worker thread gets its own module instance and therefore its own native buffer pool. No sharing occurs between threads regardless of `ctx`.
 
 ## Example
 
 ```js
-const { Context, decode, encode } = require('@wkpjs/node');
+const { decode, decodeFrame, encode, GeometryFrame } = require('@wkpjs/node');
 
-const ctx = new Context();
 const geometry = {
-  type: 'LineString',
-  coordinates: [[174.776, -41.289], [174.777, -41.290], [174.778, -41.291]],
+    type: 'LineString',
+    coordinates: [[174.776, -41.289], [174.777, -41.290], [174.778, -41.291]],
 };
 
-const encoded = encode(ctx, geometry, 6);
-const decoded = decode(ctx, encoded);
-
+const encoded = encode(geometry, 6);
+const decoded = decode(encoded);
 console.log(encoded);
 console.log(decoded.geometry);
-```
 
-`ctx` is required for encode/decode operations.
+// Low-level frame access (efficient for bulk processing / worker transfer)
+const frame = decodeFrame(encoded);
+console.log(frame.coords);           // Float64Array [174.776, -41.289, ...]
+const buf = frame.toBuffer();        // ArrayBuffer — transferable to worker
+const frame2 = GeometryFrame.fromBuffer(buf);
+```
 
 ## Publishing
 
