@@ -105,10 +105,10 @@ extensions.append(
         sources=[
             "src/wkp/core_nb.cpp",
             os.path.join(nanobind_source_dir, "nb_combined.cpp"),
-            "../../core/src/core.c",
+            str(ROOT / "core" / "src" / "core.c"),
         ],
         include_dirs=[
-            "../../core/include",
+            str(ROOT / "core" / "include"),
             nanobind_include_dir,
             nanobind_ext_robin,
         ],
