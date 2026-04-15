@@ -28,6 +28,9 @@ jobs:
       - name: Run C++ tests
         run: ctest --test-dir build/core -C Release --output-on-failure
 
+      - name: Check fixture manifest
+        run: python scripts/check_fixture_manifest.py
+
       - name: Upload C++ artifacts
         uses: actions/upload-artifact@v4
         with:

@@ -6,7 +6,7 @@ authors = [
     {name = "kodonnell", email = "kodonnell@users.noreply.github.com"}
 ]
 license = "MIT"
-version = "0.4.0"
+version = "0.5.0"
 requires-python = ">=3.8"
 dependencies = [
     "numpy",
@@ -67,7 +67,7 @@ namespaces = false
 
 [tool.cibuildwheel]
 build = "cp39-* cp310-* cp311-* cp312-* cp313-*"
-skip = "*-musllinux_* *s390x* *ppc64le* *i686*"
+skip = "*s390x* *ppc64le* *i686* *musllinux*"
 dependency-versions = "latest"
 test-requires = ["pytest", "polyline"]
 test-command = "pytest -ra -v --import-mode=importlib {package}/tests"

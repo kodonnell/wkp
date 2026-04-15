@@ -63,14 +63,62 @@ Then open:
 
 ## API
 
-Use `createWkp()` to load the WASM module, then call:
+Use `createWkp()` to load the WASM module. All functions are returned on the `wkp` object.
 
-- `Context`
-- `decodeHeader(encoded)`
-- `decode(ctx, encoded)`
-- `encode(ctx, geometry, precision)`
-- `encodeFloats(ctx, floats, precisions)`
-- `decodeFloats(ctx, encoded, precisions)`
+### Geometry encode / decode
+
+```js
+wkp.encode(geometry, precision, ctx?)    // → string
+wkp.decode(encoded, ctx?)               // → { geometry, version, precision, dimensions }
+wkp.decodeHeader(encoded)               // → { version, precision, dimensions, geometryType }
+```
+
+### GeometryFrame — low-level flat representation
+
+```js
+wkp.decodeFrame(encoded, ctx?)          // → GeometryFrame
+wkp.encodeFrame(frame, ctx?)            // → string
+```
+
+`wkp.GeometryFrame` fields: `version`, `precision`, `dimensions`, `geometryType`, `coords` (Float64Array, flat `[x0,y0,x1,y1,…]`), `segmentPointCounts` (Uint32Array), `groupSegmentCounts` (Uint32Array).
+
+Methods: `toGeometry()` → GeoJSON, `toBuffer()` → ArrayBuffer (transferable), `wkp.GeometryFrame.fromBuffer(buf)` → GeometryFrame.
+
+### Float helpers
+
+```js
+wkp.encodeFloats(floats, precisions, ctx?)              // → string
+wkp.decodeFloatsArray(encoded, precisions, ctx?)         // → Float64Array (flat [x0,y0,x1,y1,...])
+wkp.decodeFloats(encoded, precisions, ctx?)              // → Array<Array<number>>
+```
+
+`decodeFloatsArray` returns the decoded values as a flat `Float64Array` with no intermediate array construction — a single copy from the WASM heap. `decodeFloats` is a convenience wrapper on top that slices it into an array of rows.
+
+### Context
+
+```js
+new wkp.Context()
+```
+
+`Context` is a marker object — the WASM module manages its own buffer pool internally and does not hold state in the JS object itself.
+
+**Default (omit ctx)** — uses a module-level context; fine for most use cases:
+
+```js
+const encoded = wkp.encode(geometry, precision);
+const decoded = wkp.decode(encoded);
+```
+
+**Worker thread isolation** — each worker should call `createWkp()` independently. Each call produces an isolated WASM realm with its own memory and buffer pool; no state is shared across realms:
+
+```js
+// worker.js
+import { createWkp } from '@wkpjs/web';
+const wkp = await createWkp();   // isolated instance — no shared state with main thread
+const decoded = wkp.decode(data.encoded);
+```
+
+**Memory control** — the WASM heap is fixed at module load time. If you need to release it entirely, drop the reference to the `wkp` object and allow it to be garbage-collected. There is no way to release a partial allocation short of discarding the whole module instance.
 
 ## Example
 
@@ -78,17 +126,24 @@ Use `createWkp()` to load the WASM module, then call:
 import { createWkp } from '@wkpjs/web';
 
 const wkp = await createWkp();
-const ctx = new wkp.Context();
-const encoded = wkp.encode(ctx, { type: 'LineString', coordinates: [[0, 0], [1, 1]] }, 6);
-const decoded = wkp.decode(ctx, encoded);
+
+const encoded = wkp.encode({ type: 'LineString', coordinates: [[0, 0], [1, 1]] }, 6);
+const decoded = wkp.decode(encoded);
 const header = wkp.decodeHeader(encoded);
 
 console.log(encoded);
 console.log(decoded.geometry);
 console.log(header);
-```
 
-`ctx` is required for encode/decode operations.
+// Low-level frame access — efficient for WebGL, workers, bulk processing
+const frame = wkp.decodeFrame(encoded);
+console.log(frame.coords);           // Float64Array [0, 0, 1, 1]
+const buf = frame.toBuffer();        // ArrayBuffer — transferable to worker
+worker.postMessage({ frame: buf }, [buf]);
+
+// In the worker:
+const frame2 = wkp.GeometryFrame.fromBuffer(data.frame);
+```
 
 ## Publishing
 

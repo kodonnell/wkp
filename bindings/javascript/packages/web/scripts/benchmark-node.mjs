@@ -57,19 +57,19 @@ const geometry = makeLineString(points);
 const wkp = await createWkp();
 const ctx = new wkp.Context();
 
-const warmEncoded = wkp.encode(ctx, geometry, precision);
-wkp.decode(ctx, warmEncoded);
+const warmEncoded = wkp.encode(geometry, precision, ctx);
+wkp.decode(warmEncoded, ctx);
 
 const encodeTimes = [];
 const decodeTimes = [];
 let encodedBytes = warmEncoded.length;
 
 for (let i = 0; i < iterations; i += 1) {
-    const encodeRun = measureMs(() => wkp.encode(ctx, geometry, precision));
+    const encodeRun = measureMs(() => wkp.encode(geometry, precision, ctx));
     encodedBytes = encodeRun.result.length;
     encodeTimes.push(encodeRun.elapsedMs);
 
-    const decodeRun = measureMs(() => wkp.decode(ctx, encodeRun.result));
+    const decodeRun = measureMs(() => wkp.decode(encodeRun.result, ctx));
     decodeTimes.push(decodeRun.elapsedMs);
 }
 

@@ -1,0 +1,31 @@
+{
+  "_comment": "Fixture manifest for integration tests. All language bindings must exercise every case listed here. Run scripts/check_fixture_manifest.py to verify counts are up-to-date.",
+  "fixtures": {
+    "floats/encode": {
+      "examples.txt": 3,
+      "known_3d_mixed_precision.txt": 1,
+      "python_polyline.txt": 10
+    },
+    "floats/decode": {
+      "known_3d_mixed_precision.txt": 1,
+      "python_polyline.txt": 8
+    },
+    "geometry/encode": {
+      "linestring_reference.txt": 1,
+      "made_up_multilinestring.txt": 1,
+      "multi_line_encoding.txt": 2,
+      "point_reference.txt": 1,
+      "self_test_linestring.txt": 1
+    },
+    "geometry/decode": {
+      "linestring_reference.txt": 1,
+      "point_reference.txt": 1
+    }
+  },
+  "totals": {
+    "floats/encode": 14,
+    "floats/decode": 9,
+    "geometry/encode": 6,
+    "geometry/decode": 2
+  }
+}

@@ -56,7 +56,6 @@ const WEB_PACKAGE_CANDIDATES = [
 ];
 
 let wkp = null;
-let ctx = null;
 let worker = null;
 let appReady = false;
 let settingsDirty = false;
@@ -391,7 +390,7 @@ function geometryTypeName(typeId) {
 }
 
 function encodeGeometry(geometry, precision) {
-    return wkp.encode(ctx, geometry, precision);
+    return wkp.encode(geometry, precision);
 }
 
 function updateHeader(encoded) {
@@ -571,7 +570,6 @@ async function init() {
             throw new Error('WKP web module loaded but did not export createWkp()');
         }
         wkp = await webModule.createWkp();
-        ctx = new wkp.Context();
     } catch (error) {
         const detail = error?.message || String(error);
         enterDegradedMode(
@@ -654,7 +652,7 @@ ui.decodeBtn.addEventListener('click', () => {
             throw new TypeError('Encoded WKP is required');
         }
 
-        const decoded = wkp.decode(ctx, encoded);
+        const decoded = wkp.decode(encoded);
         const wkt = geometryToWkt(decoded.geometry, decoded.precision);
         ui.wktOutputText.textContent = wkt;
 

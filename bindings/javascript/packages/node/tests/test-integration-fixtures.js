@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 
-const { Context, encodeFloats, decodeFloats, encode, decode } = require('..');
+const { encodeFloats, decodeFloats, encode, decode } = require('..');
 
 const CASES_ROOT = path.resolve(__dirname, '..', '..', '..', '..', '..', 'data', 'integration_tests');
 
@@ -86,7 +86,6 @@ function parseWktToGeoJson(wkt) {
 }
 
 test('integration floats encode fixtures (node)', () => {
-    const ctx = new Context();
     const cases = readCases(path.join(CASES_ROOT, 'floats', 'encode'));
 
     for (const item of cases) {
@@ -97,14 +96,13 @@ test('integration floats encode fixtures (node)', () => {
 
         const precisions = JSON.parse(precisionText);
         const rows = JSON.parse(rowsText);
-        const actual = encodeFloats(ctx, rows, precisions).toString('ascii');
+        const actual = encodeFloats(rows, precisions).toString('ascii');
 
         assert.equal(actual, expected, `${item.file}:${item.lineNo}`);
     }
 });
 
 test('integration floats decode fixtures (node)', () => {
-    const ctx = new Context();
     const cases = readCases(path.join(CASES_ROOT, 'floats', 'decode'));
 
     for (const item of cases) {
@@ -115,14 +113,13 @@ test('integration floats decode fixtures (node)', () => {
 
         const precisions = JSON.parse(precisionText);
         const expected = JSON.parse(expectedText);
-        const actual = decodeFloats(ctx, encoded, precisions);
+        const actual = decodeFloats(encoded, precisions);
 
         assertNestedClose(actual, expected, 1e-12);
     }
 });
 
 test('integration geometry encode fixtures (node)', () => {
-    const ctx = new Context();
     const cases = readCases(path.join(CASES_ROOT, 'geometry', 'encode'));
 
     for (const item of cases) {
@@ -133,14 +130,13 @@ test('integration geometry encode fixtures (node)', () => {
 
         const precision = Number.parseInt(precisionText, 10);
         const geojson = parseWktToGeoJson(wkt);
-        const actual = encode(ctx, geojson, precision).toString('ascii');
+        const actual = encode(geojson, precision).toString('ascii');
 
         assert.equal(actual, expected, `${item.file}:${item.lineNo}`);
     }
 });
 
 test('integration geometry decode fixtures (node)', () => {
-    const ctx = new Context();
     const cases = readCases(path.join(CASES_ROOT, 'geometry', 'decode'));
 
     for (const item of cases) {
@@ -150,7 +146,7 @@ test('integration geometry decode fixtures (node)', () => {
         }
 
         const expected = parseWktToGeoJson(wkt);
-        const decoded = decode(ctx, encoded);
+        const decoded = decode(encoded);
 
         assert.equal(decoded.version, 1, `${item.file}:${item.lineNo}`);
         assertNestedClose(decoded.geometry.coordinates, expected.coordinates, 1e-9);

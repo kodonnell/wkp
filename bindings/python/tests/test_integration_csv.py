@@ -19,7 +19,7 @@ def _get_cases(path: Path) -> Generator[tuple[Path, int, str], None, None]:
             yield fpath, idx, line.strip()
 
 
-def _parse_floats_encode_case(line: str) -> tuple[list[int], str]:
+def _parse_floats_encode_case(line: str) -> tuple[list[int], str, str]:
     splat = line.split("\t")
     assert len(splat) == 3, f"invalid case format in {line}: expected 3 tab-separated fields, got {len(splat)}"
     precisions = json.loads(splat[0])
@@ -32,8 +32,7 @@ def _parse_floats_encode_case(line: str) -> tuple[list[int], str]:
 def test_floats_encode_cases(case):
     fpath, idx, line = case
     precisions, to_encode, expected = _parse_floats_encode_case(line)
-    ctx = wkp.Context()
-    actual = wkp.encode_floats(ctx, to_encode, precisions).decode("ascii")
+    actual = wkp.encode_floats(to_encode, precisions).decode("ascii")
     assert actual == expected
 
 
@@ -53,8 +52,7 @@ def test_floats_decode_cases(case):
     if encoded == "TODO":
         pytest.skip("fixture input is TODO")
     print(encoded, precisions)
-    ctx = wkp.Context()
-    actual = wkp.decode_floats(ctx, encoded.encode("ascii"), precisions)
+    actual = wkp.decode_floats(encoded.encode("ascii"), precisions)
     print(actual)
     print(expected)
     np.testing.assert_allclose(np.asarray(actual), np.asarray(expected), rtol=0, atol=1e-12)
@@ -75,8 +73,7 @@ def test_geometry_encode_cases(case):
     precision, wkt, case_output = _parse_geometry_encode_input(line)
     geom = shapely.from_wkt(wkt)
 
-    ctx = wkp.Context()
-    actual = wkp.encode(ctx, geom, precision=precision).decode("ascii")
+    actual = wkp.encode(geom, precision=precision).decode("ascii")
 
     assert actual == case_output
 
@@ -93,7 +90,6 @@ def _parse_geometry_decode_input(line: str) -> tuple[str, str]:
 def test_geometry_decode_cases(case):
     fpath, idx, line = case
     case_input, case_output = _parse_geometry_decode_input(line)
-    ctx = wkp.Context()
-    decoded = wkp.decode(ctx, case_input.encode("ascii"))
+    decoded = wkp.decode(case_input.encode("ascii"))
     expected_geom = shapely.from_wkt(case_output)
     assert decoded.geometry.equals_exact(expected_geom, tolerance=1e-9)

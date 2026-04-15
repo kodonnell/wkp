@@ -5,6 +5,7 @@ const {
     Context,
     decode,
     decodeFloats,
+    decodeFloatsArray,
     decodeHeader,
     encode,
     encodeFloats,
@@ -29,8 +30,7 @@ function assertGeometryClose(actual, expected, epsilon = 1e-6) {
     walk(actual.coordinates, expected.coordinates);
 }
 
-test('roundtrip for all supported geometry types', () => {
-    const ctx = new Context();
+test('roundtrip for all supported geometry types (default context)', () => {
     const geometries = [
         { type: 'Point', coordinates: [174.776, -41.289] },
         { type: 'LineString', coordinates: [[174.776, -41.289], [174.777, -41.29], [174.778, -41.291]] },
@@ -47,8 +47,8 @@ test('roundtrip for all supported geometry types', () => {
     ];
 
     for (const item of geometries) {
-        const encoded = encode(ctx, item, 6);
-        const decoded = decode(ctx, encoded);
+        const encoded = encode(item, 6);
+        const decoded = decode(encoded);
 
         assert.equal(decoded.version, 1);
         assert.equal(decoded.precision, 6);
@@ -57,48 +57,100 @@ test('roundtrip for all supported geometry types', () => {
     }
 });
 
-test('decodeHeader and generic encode/decode path', () => {
+test('roundtrip with explicit context', () => {
     const ctx = new Context();
+    const geometry = { type: 'LineString', coordinates: [[0.1, 0.2], [1.1, 1.2]] };
+    const encoded = encode(geometry, 6, ctx);
+    const decoded = decode(encoded, ctx);
+    assertGeometryClose(decoded.geometry, geometry);
+});
+
+test('decodeHeader and generic encode/decode path', () => {
     const geometry = { type: 'LineString', coordinates: [[0.1, 0.2], [1.1, 1.2], [2.1, 2.2]] };
 
-    const encoded = encode(ctx, geometry, 6);
+    const encoded = encode(geometry, 6);
     const [version, precision, dimensions, geometryType] = decodeHeader(encoded);
     assert.equal(version, 1);
     assert.equal(precision, 6);
     assert.equal(dimensions, 2);
     assert.equal(geometryType, EncodedGeometryType.LINESTRING);
 
-    const decoded = decode(ctx, encoded);
+    const decoded = decode(encoded);
     assertGeometryClose(decoded.geometry, geometry);
 });
 
 test('invalid precision and malformed input surface clear errors', () => {
-    const ctx = new Context();
-    assert.throws(() => encode(ctx, { type: 'Point', coordinates: [0, 0] }, 9999));
-    assert.throws(() => decode(ctx, '@@'));
+    assert.throws(() => encode({ type: 'Point', coordinates: [0, 0] }, 9999));
+    assert.throws(() => decode('@@'));
 });
 
 test('unsupported geometry collection raises', () => {
-    const ctx = new Context();
     const geometryCollection = {
         type: 'GeometryCollection',
         geometries: [{ type: 'Point', coordinates: [0, 0] }]
     };
-    assert.throws(() => encode(ctx, geometryCollection, 6));
+    assert.throws(() => encode(geometryCollection, 6));
 });
 
-test('encodeFloats/decodeFloats roundtrip', () => {
-    const ctx = new Context();
+test('encodeFloats/decodeFloats roundtrip (default context)', () => {
     const rows = [[1.25, 2.5, 3.75], [4.5, 5.25, 6.0]];
     const precisions = [2, 2, 2];
 
-    const encoded = encodeFloats(ctx, rows, precisions);
-    const decoded = decodeFloats(ctx, encoded, precisions);
+    const encoded = encodeFloats(rows, precisions);
+    const decoded = decodeFloats(encoded, precisions);
 
     assert.equal(decoded.length, rows.length);
     for (let i = 0; i < rows.length; i += 1) {
         for (let j = 0; j < rows[i].length; j += 1) {
             assert.ok(Math.abs(decoded[i][j] - rows[i][j]) <= 1e-6);
+        }
+    }
+});
+
+test('encodeFloats/decodeFloats roundtrip with explicit context', () => {
+    const ctx = new Context();
+    const rows = [[1.0, 2.0], [3.0, 4.0]];
+    const precisions = [2, 2];
+
+    const encoded = encodeFloats(rows, precisions, ctx);
+    const decoded = decodeFloats(encoded, precisions, ctx);
+
+    assert.equal(decoded.length, rows.length);
+    for (let i = 0; i < rows.length; i += 1) {
+        for (let j = 0; j < rows[i].length; j += 1) {
+            assert.ok(Math.abs(decoded[i][j] - rows[i][j]) <= 1e-6);
+        }
+    }
+});
+
+test('decodeFloatsArray returns Float64Array matching decodeFloats (2D)', () => {
+    const rows = [[1.25, 2.5], [3.75, 4.0], [5.125, 6.25]];
+    const precisions = [3, 3];
+    const encoded = encodeFloats(rows, precisions);
+
+    const arr = decodeFloatsArray(encoded, precisions);
+    assert.ok(arr instanceof Float64Array, 'decodeFloatsArray must return Float64Array');
+    assert.equal(arr.length, rows.length * precisions.length);
+
+    const tuples = decodeFloats(encoded, precisions);
+    for (let i = 0; i < rows.length; i += 1) {
+        for (let j = 0; j < precisions.length; j += 1) {
+            assert.ok(Math.abs(arr[i * precisions.length + j] - tuples[i][j]) <= 1e-9);
+        }
+    }
+});
+
+test('decodeFloatsArray roundtrip (3D)', () => {
+    const rows = [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]];
+    const precisions = [2, 2, 2];
+    const encoded = encodeFloats(rows, precisions);
+    const arr = decodeFloatsArray(encoded, precisions);
+
+    assert.ok(arr instanceof Float64Array);
+    assert.equal(arr.length, 6);
+    for (let i = 0; i < rows.length; i += 1) {
+        for (let j = 0; j < 3; j += 1) {
+            assert.ok(Math.abs(arr[i * 3 + j] - rows[i][j]) <= 1e-6);
         }
     }
 });

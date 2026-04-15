@@ -673,7 +673,7 @@ export async function createWkp(options) {
             );
         }
 
-        decodeGeometry(encoded) {
+        _decodeGeometryFrameRaw(encoded) {
             this._checkNotDisposed();
             const e = normalizeEncoded(encoded);
 
@@ -719,20 +719,58 @@ export async function createWkp(options) {
                 const segmentPointCounts = Uint32Array.from(module.HEAPU32.subarray(segmentCountsPtr >>> 2, (segmentCountsPtr >>> 2) + segmentCount));
                 const groupSegmentCounts = Uint32Array.from(module.HEAPU32.subarray(groupCountsPtr >>> 2, (groupCountsPtr >>> 2) + groupCount));
 
-                return {
-                    version,
-                    precision,
-                    dimensions,
-                    geometry: frameToGeometry(
-                        geometryType,
-                        dimensions,
-                        coords,
-                        segmentPointCounts,
-                        groupSegmentCounts,
-                        EncodedGeometryType
-                    )
-                };
+                return { version, precision, dimensions, geometryType, coords, segmentPointCounts, groupSegmentCounts };
             });
+        }
+
+        decodeGeometry(encoded) {
+            const raw = this._decodeGeometryFrameRaw(encoded);
+            return {
+                version: raw.version,
+                precision: raw.precision,
+                dimensions: raw.dimensions,
+                geometry: frameToGeometry(raw.geometryType, raw.dimensions, raw.coords, raw.segmentPointCounts, raw.groupSegmentCounts, EncodedGeometryType)
+            };
+        }
+
+        encodeGeometryFromFrame(frame) {
+            this._checkNotDisposed();
+            return withTempAllocation(frame.coords.byteLength, 'geometry coords', (coordsPtr) =>
+                withTempAllocation(frame.groupSegmentCounts.byteLength, 'geometry group counts', (groupCountsPtr) =>
+                    withTempAllocation(frame.segmentPointCounts.byteLength, 'geometry segment counts', (segmentCountsPtr) => {
+                        module.HEAPF64.set(frame.coords, coordsPtr >>> 3);
+                        module.HEAPU32.set(frame.groupSegmentCounts, groupCountsPtr >>> 2);
+                        module.HEAPU32.set(frame.segmentPointCounts, segmentCountsPtr >>> 2);
+                        this._clearErrorBuffer();
+
+                        const status = workspaceEncodeGeometryFrameNative(
+                            this._workspacePtr,
+                            frame.geometryType,
+                            coordsPtr,
+                            frame.coords.length,
+                            frame.dimensions,
+                            frame.precision,
+                            groupCountsPtr,
+                            frame.groupSegmentCounts.length,
+                            segmentCountsPtr,
+                            frame.segmentPointCounts.length,
+                            this._outDataPtrPtr,
+                            this._outSizePtr,
+                            this._errPtr,
+                            DEFAULT_ERROR_CAPACITY
+                        );
+
+                        if (status !== STATUS.OK) {
+                            throw new Error(this._statusError(status));
+                        }
+
+                        const outDataPtr = readU32(module, this._outDataPtrPtr);
+                        const outSize = readSize(module, this._outSizePtr);
+                        const encodedBytes = module.HEAPU8.slice(outDataPtr, outDataPtr + outSize);
+                        return TEXT_DECODER.decode(encodedBytes);
+                    })
+                )
+            );
         }
 
         _freeResources() {
@@ -840,6 +878,10 @@ export async function createWkp(options) {
         );
     }
 
+    // Module-level default context — shared within this WASM instance (one per realm/worker).
+    // JS is single-threaded per realm, so this is safe.
+    const _defaultCtx = new Context();
+
     function asContext(ctx) {
         if (!(ctx instanceof Context)) {
             throw new TypeError('ctx must be a Context instance');
@@ -847,22 +889,133 @@ export async function createWkp(options) {
         return ctx;
     }
 
-    function decode(ctx, encoded) {
+    // ---------------------------------------------------------------------------
+    // GeometryFrame
+    // ---------------------------------------------------------------------------
+
+    // Buffer header format (little-endian):
+    //   int32 version, int32 precision, int32 dimensions, int32 geometry_type  (16 bytes)
+    //   uint64 coord_value_count, uint64 segment_count, uint64 group_count     (24 bytes)
+    // Total header: 40 bytes
+    // Followed by: float64[coord_value_count], uint32[segment_count], uint32[group_count]
+    const FRAME_HEADER_SIZE = 40;
+
+    class GeometryFrame {
+        /**
+         * @param {object} opts
+         * @param {number} opts.version
+         * @param {number} opts.precision
+         * @param {number} opts.dimensions
+         * @param {number} opts.geometryType  - EncodedGeometryType value
+         * @param {Float64Array} opts.coords  - flat coordinates [x0,y0,x1,y1,...]
+         * @param {Uint32Array}  opts.segmentPointCounts
+         * @param {Uint32Array}  opts.groupSegmentCounts
+         */
+        constructor({ version, precision, dimensions, geometryType, coords, segmentPointCounts, groupSegmentCounts }) {
+            this.version = version;
+            this.precision = precision;
+            this.dimensions = dimensions;
+            this.geometryType = geometryType;
+            this.coords = coords instanceof Float64Array ? coords : Float64Array.from(coords);
+            this.segmentPointCounts = segmentPointCounts instanceof Uint32Array ? segmentPointCounts : Uint32Array.from(segmentPointCounts);
+            this.groupSegmentCounts = groupSegmentCounts instanceof Uint32Array ? groupSegmentCounts : Uint32Array.from(groupSegmentCounts);
+        }
+
+        /** Convert to a GeoJSON geometry object. */
+        toGeometry() {
+            return frameToGeometry(this.geometryType, this.dimensions, this.coords, this.segmentPointCounts, this.groupSegmentCounts, EncodedGeometryType);
+        }
+
+        /**
+         * Serialize to a compact binary ArrayBuffer (little-endian).
+         * The buffer is transferable between workers via postMessage.
+         */
+        toBuffer() {
+            const coordByteLen = this.coords.byteLength;
+            const segByteLen = this.segmentPointCounts.byteLength;
+            const grpByteLen = this.groupSegmentCounts.byteLength;
+            const buf = new ArrayBuffer(FRAME_HEADER_SIZE + coordByteLen + segByteLen + grpByteLen);
+            const view = new DataView(buf);
+            let o = 0;
+            view.setInt32(o, this.version, true);      o += 4;
+            view.setInt32(o, this.precision, true);    o += 4;
+            view.setInt32(o, this.dimensions, true);   o += 4;
+            view.setInt32(o, this.geometryType, true); o += 4;
+            view.setBigUint64(o, BigInt(this.coords.length), true);               o += 8;
+            view.setBigUint64(o, BigInt(this.segmentPointCounts.length), true);   o += 8;
+            view.setBigUint64(o, BigInt(this.groupSegmentCounts.length), true);   o += 8;
+            new Float64Array(buf, o, this.coords.length).set(this.coords);       o += coordByteLen;
+            new Uint32Array(buf, o, this.segmentPointCounts.length).set(this.segmentPointCounts); o += segByteLen;
+            new Uint32Array(buf, o, this.groupSegmentCounts.length).set(this.groupSegmentCounts);
+            return buf;
+        }
+
+        /** Deserialize from an ArrayBuffer produced by {@link toBuffer}. */
+        static fromBuffer(buffer) {
+            const ab = buffer instanceof ArrayBuffer ? buffer : buffer.buffer;
+            const view = new DataView(ab);
+            let o = 0;
+            const version = view.getInt32(o, true);       o += 4;
+            const precision = view.getInt32(o, true);     o += 4;
+            const dimensions = view.getInt32(o, true);    o += 4;
+            const geometryType = view.getInt32(o, true);  o += 4;
+            const ncoords = Number(view.getBigUint64(o, true)); o += 8;
+            const nseg = Number(view.getBigUint64(o, true));    o += 8;
+            const ngrp = Number(view.getBigUint64(o, true));    o += 8;
+            const coords = new Float64Array(ab, o, ncoords); o += ncoords * 8;
+            const segmentPointCounts = new Uint32Array(ab, o, nseg); o += nseg * 4;
+            const groupSegmentCounts = new Uint32Array(ab, o, ngrp);
+            return new GeometryFrame({ version, precision, dimensions, geometryType, coords, segmentPointCounts, groupSegmentCounts });
+        }
+    }
+
+    // ---------------------------------------------------------------------------
+    // Public functions
+    // ---------------------------------------------------------------------------
+
+    function decode(encoded, ctx = _defaultCtx) {
         return asContext(ctx).decodeGeometry(encoded);
     }
 
-    function encode(ctx, geometry, precision) {
+    function decodeFrame(encoded, ctx = _defaultCtx) {
+        // Use the private raw-frame method that preserves flat typed arrays.
+        const raw = asContext(ctx)._decodeGeometryFrameRaw(encoded);
+        return new GeometryFrame({
+            version: raw.version,
+            precision: raw.precision,
+            dimensions: raw.dimensions,
+            geometryType: raw.geometryType,
+            coords: raw.coords,
+            segmentPointCounts: raw.segmentPointCounts,
+            groupSegmentCounts: raw.groupSegmentCounts,
+        });
+    }
+
+    function encode(geometry, precision, ctx = _defaultCtx) {
         return asContext(ctx).encodeGeometry(geometry, precision);
     }
 
-    function encodeFloats(ctx, floats, precisions) {
+    function encodeFrame(frame, ctx = _defaultCtx) {
+        if (!(frame instanceof GeometryFrame)) {
+            throw new TypeError('frame must be a GeometryFrame instance');
+        }
+        return asContext(ctx).encodeGeometryFromFrame(frame);
+    }
+
+    function encodeFloats(floats, precisions, ctx = _defaultCtx) {
         const precisionList = normalizePrecisionList(precisions);
         const dimensions = precisionList.length;
         const values = flattenFloatRows(floats, dimensions);
         return asContext(ctx).encodeF64(values, dimensions, precisionList);
     }
 
-    function decodeFloats(ctx, encoded, precisions) {
+    function decodeFloatsArray(encoded, precisions, ctx = _defaultCtx) {
+        const precisionList = normalizePrecisionList(precisions);
+        const dimensions = precisionList.length;
+        return asContext(ctx).decodeF64(encoded, dimensions, precisionList);
+    }
+
+    function decodeFloats(encoded, precisions, ctx = _defaultCtx) {
         const precisionList = normalizePrecisionList(precisions);
         const dimensions = precisionList.length;
         const decoded = asContext(ctx).decodeF64(encoded, dimensions, precisionList);
@@ -877,11 +1030,15 @@ export async function createWkp(options) {
         bindingVersion: versionMetadata.bindingVersion,
         coreCompatibility,
         Context,
+        GeometryFrame,
         decodeHeader,
         decode,
+        decodeFrame,
         encode,
+        encodeFrame,
         encodeFloats,
         decodeFloats,
+        decodeFloatsArray,
         runSelfTest,
         coreVersion,
         EncodedGeometryType

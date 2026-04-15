@@ -51,6 +51,23 @@ if (wkp_context_init(&ctx) != WKP_STATUS_OK) {
 wkp_context_free(&ctx);
 ```
 
+## Float encode / decode API
+
+`wkp_encode_f64` and `wkp_decode_f64` encode and decode a sequence of float64 values with per-dimension precision.
+
+Input and output are always **flat interleaved buffers**:
+
+```
+[x0, y0, x1, y1, ...]           2D
+[x0, y0, z0, x1, y1, z1, ...]  3D
+```
+
+`precisions` is an array of `int` with one entry per dimension. The `dimension` argument sets how many values constitute one point (must equal `precision_count`).
+
+These functions carry no geometry type or structural metadata — they encode a sequence of N-dimensional floats without any notion of points, lines, or polygons. Use the geometry-frame API (`wkp_encode_geometry_frame` / `wkp_decode_geometry_frame`) when structure metadata is required.
+
+Output from `wkp_decode_f64` is written into the context's internal `f64` buffer. The returned pointer is owned by the context and valid until the next call on the same context. Copy before reuse.
+
 ## Geometry framing model
 
 All geometry encoding/decoding in the C ABI is based on a single frame shape:

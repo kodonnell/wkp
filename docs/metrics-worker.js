@@ -1,7 +1,6 @@
 import { parseWkt } from './wkt.js';
 
 let wkpPromise = null;
-let ctx = null;
 let resolvedWebVersion = null;
 const WEB_LOCAL_MODULE_CANDIDATE = '../bindings/javascript/packages/web/src/index.js';
 const WEB_PAGES_UNVERSIONED_MODULE_CANDIDATE = './web/src/index.js';
@@ -144,9 +143,6 @@ self.onmessage = async (event) => {
 
     try {
         const wkp = await ensureWkp();
-        if (!ctx) {
-            ctx = new wkp.Context();
-        }
 
         if (msg.type === 'encode') {
             const geometry = parseWkt(msg.wkt);
@@ -154,7 +150,7 @@ self.onmessage = async (event) => {
 
             const stats = runTimedLoop(
                 () => {
-                    wkp.encode(ctx, geometry, precision);
+                    wkp.encode(geometry, precision);
                 },
                 (firstMs, progressStats) => {
                     self.postMessage({ phase: 'first', kind: 'encode', firstMs, ...progressStats });
@@ -171,7 +167,7 @@ self.onmessage = async (event) => {
         const encoded = msg.encoded;
         const stats = runTimedLoop(
             () => {
-                wkp.decode(ctx, encoded);
+                wkp.decode(encoded);
             },
             (firstMs, progressStats) => {
                 self.postMessage({ phase: 'first', kind: 'decode', firstMs, ...progressStats });
