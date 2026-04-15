@@ -24,6 +24,26 @@ binding_version = read_binding_version_from_pyproject()
 
 
 class BuildExtWithNanobindStubs(build_ext):
+    def build_extension(self, ext):
+        # setuptools mirrors the source path structure inside build_temp.
+        # For sources with '../' components the mirrored path can resolve
+        # outside /tmp (e.g. '/core/src'), causing a permission error.
+        # Convert such relative paths to absolute for compilation only,
+        # then restore so that the later egg_info step sees relative paths
+        # (egg_info rejects absolute paths in setup() arguments).
+        setup_dir = Path(__file__).resolve().parent
+        original_sources = ext.sources[:]
+        ext.sources = [
+            str((setup_dir / src).resolve())
+            if (not os.path.isabs(src) and src.startswith(".."))
+            else src
+            for src in ext.sources
+        ]
+        try:
+            super().build_extension(ext)
+        finally:
+            ext.sources = original_sources
+
     def build_extensions(self):
         # Distutils applies one flag list to all sources in an extension.
         # Strip C++-only standard flags when compiling C translation units.
@@ -105,7 +125,7 @@ extensions.append(
         sources=[
             "src/wkp/core_nb.cpp",
             os.path.join(nanobind_source_dir, "nb_combined.cpp"),
-            str(ROOT / "core" / "src" / "core.c"),
+            "../../core/src/core.c",
         ],
         include_dirs=[
             str(ROOT / "core" / "include"),
