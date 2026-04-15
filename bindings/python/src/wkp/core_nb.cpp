@@ -367,12 +367,11 @@ NB_MODULE(_core, m)
 
             auto *owner = new F64VectorOwner();
             owner->values.assign(decoded_data, decoded_data + static_cast<std::ptrdiff_t>(decoded_size));
-            const std::size_t rows = owner->values.size() / dimensions;
 
             nb::capsule capsule(owner, [](void *p) noexcept
                                 { delete static_cast<F64VectorOwner *>(p); });
 
-            return OutputArray(owner->values.data(), {rows, dimensions}, capsule);
+            return OutputArray1D(owner->values.data(), {decoded_size}, capsule);
         },
         nb::arg("ctx"),
         nb::arg("encoded"),

@@ -26,12 +26,17 @@ npm --workspace @wkpjs/node run test
 
 ## Benchmark
 
-### Run benchmark in Node
-
-From `bindings/javascript`:
+Full geometry encode/decode benchmark:
 
 ```sh
 npm --workspace @wkpjs/node run benchmark -- --points=10000 --precision=5 --iterations=200
+```
+
+Flat-array API micro-benchmark (encode/decode/decodeFrame/decodeFloatsArray):
+
+```sh
+node bindings/javascript/packages/node/benchmark/bench_flat_api.mjs
+node bindings/javascript/packages/node/benchmark/bench_flat_api.mjs --points=50000 --iterations=200
 ```
 
 ## API
@@ -58,9 +63,12 @@ Methods: `toGeometry()` → GeoJSON, `toBuffer()` → ArrayBuffer (transferable)
 ### Float helpers
 
 ```js
-encodeFloats(floats, precisions, ctx?)
-decodeFloats(encoded, precisions, ctx?)
+encodeFloats(floats, precisions, ctx?)                 // → string
+decodeFloatsArray(encoded, precisions, ctx?)            // → Float64Array (flat [x0,y0,x1,y1,...])
+decodeFloats(encoded, precisions, ctx?)                 // → Array<Array<number>>
 ```
+
+`decodeFloatsArray` returns the decoded values as a flat `Float64Array` with no intermediate array construction — the cost is a single memcpy from the native buffer. `decodeFloats` is a convenience wrapper on top that slices it into an array of rows. Use `decodeFloatsArray` when feeding into typed-array pipelines (WebGL, DataView, workers).
 
 ### Context
 

@@ -172,6 +172,27 @@ def decode_floats(
     precisions: Union[int, Sequence[int]],
     *,
     ctx: Context | None = None,
-) -> list[tuple[float, ...]]:
-    """Decode floats encoded by :func:`encode_floats`."""
+) -> NDArray[np.float64]:
+    """
+    Decode floats encoded by :func:`encode_floats` to a 2-D numpy array of shape ``(N, dims)``.
+
+    Use ``.tolist()`` to convert to a list of plain Python lists if needed.
+    """
+    ...
+
+
+def decode_floats_array(
+    encoded: Union[bytes, bytearray, memoryview],
+    precisions: Union[int, Sequence[int]],
+    *,
+    ctx: Context | None = None,
+) -> NDArray[np.float64]:
+    """
+    Decode floats encoded by :func:`encode_floats` to a flat 1-D numpy array.
+
+    Returns interleaved values ``[x0, y0, x1, y1, ...]`` as a C-contiguous 1-D
+    float64 array.  Use ``arr.reshape(-1, dims)`` to get a 2-D view, or
+    ``arr.tobytes()`` to treat it as a raw byte buffer — useful for zero-copy
+    transfer over sockets or shared memory.
+    """
     ...

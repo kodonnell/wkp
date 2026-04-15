@@ -15,7 +15,7 @@ from shapely.geometry import GeometryCollection, LineString, MultiLineString, Mu
 from . import _core
 
 __core_version__ = _core.core_version()
-__core_compatibility__ = "0.4.x"
+__core_compatibility__ = "0.5.x"
 
 __all__ = [
     "Context",
@@ -28,6 +28,7 @@ __all__ = [
     "encode_frame",
     "encode_floats",
     "decode_floats",
+    "decode_floats_array",
 ]
 
 
@@ -467,11 +468,28 @@ def encode_floats(floats, precisions, *, ctx=None) -> bytes:
     return _core.encode_f64(ctx, values, dimensions, p)
 
 
-def decode_floats(encoded, precisions, *, ctx=None):
+def decode_floats_array(encoded, precisions, *, ctx=None) -> np.ndarray:
+    """
+    Decode WKP-encoded floats to a flat 1D float64 numpy array.
+
+    Returns interleaved values ``[x0, y0, x1, y1, ...]`` (or ``[x0, y0, z0, ...]``
+    for higher dimensions) as a C-contiguous 1D array backed by a single allocation.
+    Use ``arr.reshape(-1, dims)`` to get a 2D view, or ``arr.tobytes()`` to treat
+    it as a raw byte buffer.
+    """
     ctx = _resolve_context(ctx)
     p = _normalize_precisions(precisions)
     dimensions = len(p)
     bites = _as_encoded_bytes(encoded)
+    return np.asarray(_core.decode_f64(ctx, bites, dimensions, p), dtype=np.float64)
 
-    arr = np.asarray(_core.decode_f64(ctx, bites, dimensions, p), dtype=np.float64)
-    return [tuple(row) for row in arr.tolist()]
+
+def decode_floats(encoded, precisions, *, ctx=None) -> np.ndarray:
+    """
+    Decode WKP-encoded floats to a 2D float64 numpy array of shape (N, dims).
+
+    Use ``.tolist()`` to convert to a list of plain Python lists if needed.
+    """
+    p = _normalize_precisions(precisions)
+    flat = decode_floats_array(encoded, precisions, ctx=ctx)
+    return flat.reshape(-1, len(p))

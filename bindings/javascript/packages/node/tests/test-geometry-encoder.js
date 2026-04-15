@@ -5,6 +5,7 @@ const {
     Context,
     decode,
     decodeFloats,
+    decodeFloatsArray,
     decodeHeader,
     encode,
     encodeFloats,
@@ -118,6 +119,38 @@ test('encodeFloats/decodeFloats roundtrip with explicit context', () => {
     for (let i = 0; i < rows.length; i += 1) {
         for (let j = 0; j < rows[i].length; j += 1) {
             assert.ok(Math.abs(decoded[i][j] - rows[i][j]) <= 1e-6);
+        }
+    }
+});
+
+test('decodeFloatsArray returns Float64Array matching decodeFloats (2D)', () => {
+    const rows = [[1.25, 2.5], [3.75, 4.0], [5.125, 6.25]];
+    const precisions = [3, 3];
+    const encoded = encodeFloats(rows, precisions);
+
+    const arr = decodeFloatsArray(encoded, precisions);
+    assert.ok(arr instanceof Float64Array, 'decodeFloatsArray must return Float64Array');
+    assert.equal(arr.length, rows.length * precisions.length);
+
+    const tuples = decodeFloats(encoded, precisions);
+    for (let i = 0; i < rows.length; i += 1) {
+        for (let j = 0; j < precisions.length; j += 1) {
+            assert.ok(Math.abs(arr[i * precisions.length + j] - tuples[i][j]) <= 1e-9);
+        }
+    }
+});
+
+test('decodeFloatsArray roundtrip (3D)', () => {
+    const rows = [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]];
+    const precisions = [2, 2, 2];
+    const encoded = encodeFloats(rows, precisions);
+    const arr = decodeFloatsArray(encoded, precisions);
+
+    assert.ok(arr instanceof Float64Array);
+    assert.equal(arr.length, 6);
+    for (let i = 0; i < rows.length; i += 1) {
+        for (let j = 0; j < 3; j += 1) {
+            assert.ok(Math.abs(arr[i * 3 + j] - rows[i][j]) <= 1e-6);
         }
     }
 });

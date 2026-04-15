@@ -84,11 +84,18 @@ A thread-local context is managed automatically. Pass `ctx=Context()` explicitly
 
 ## Benchmarks
 
+Geometry encode/decode comparison (WKP vs WKB/WKT):
+
 - Python: `python bindings/python/benchmark/benchmark.py --linestring-points=10000 --precisions=5 --max-iterations=1000 --max-duration=1`
 - C++: `build/core/Release/wkp_cpp_benchmark 10000 2 5 1000`
 - Node addon: `npm --prefix bindings/javascript --workspace @wkpjs/node run benchmark -- --points=10000 --precision=5 --iterations=1000`
 - Web (WASM in Node): `npm --prefix bindings/javascript --workspace @wkpjs/web run benchmark -- --points=10000 --precision=5 --iterations=1000`
 - Web (browser): run `npm --prefix bindings/javascript --workspace @wkpjs/web run benchmark:serve`, then open `http://localhost:8080/benchmark/index.html`
+
+Flat-array API micro-benchmark (all paths, useful for regression checking):
+
+- Python: `python bindings/python/benchmark/bench_flat_api.py`
+- Node: `node bindings/javascript/packages/node/benchmark/bench_flat_api.mjs`
 
 ## Developing
 

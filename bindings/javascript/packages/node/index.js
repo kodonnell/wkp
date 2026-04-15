@@ -457,20 +457,23 @@ function decode(encodedValue, ctx = _defaultCtx) {
 
 function decodeFrame(encodedValue, ctx = _defaultCtx) {
     asContext(ctx);
-    // Decode via native, then rebuild flat frame from the GeoJSON geometry.
-    // (A future native binding update could return flat data directly.)
-    const decoded = core.decodeGeometryFrame(normalizeEncodedBytes(encodedValue));
-    const dimensions = decoded.dimensions;
-    const flat = buildGeometryFrame(decoded.geometry, dimensions);
+    const raw = core.decodeGeometryFrameFlat(normalizeEncodedBytes(encodedValue));
     return new GeometryFrame({
-        version: decoded.version,
-        precision: decoded.precision,
-        dimensions,
-        geometryType: flat.geometryType,
-        coords: flat.coords,
-        segmentPointCounts: flat.segmentPointCounts,
-        groupSegmentCounts: flat.groupSegmentCounts,
+        version: raw.version,
+        precision: raw.precision,
+        dimensions: raw.dimensions,
+        geometryType: raw.geometryType,
+        coords: raw.coords,
+        segmentPointCounts: raw.segmentPointCounts,
+        groupSegmentCounts: raw.groupSegmentCounts,
     });
+}
+
+function decodeFloatsArray(encodedValue, precisions, ctx = _defaultCtx) {
+    asContext(ctx);
+    const precisionList = normalizePrecisions(precisions);
+    const dimensions = precisionList.length;
+    return core.decodeF64(normalizeEncodedBytes(encodedValue), dimensions, precisionList);
 }
 
 function encode(geometry, precision, ctx = _defaultCtx) {
@@ -537,6 +540,7 @@ module.exports = {
     encodeFrame,
     encodeFloats,
     decodeFloats,
+    decodeFloatsArray,
     runSelfTest: core.runSelfTest,
     coreVersion: core.coreVersion,
     EncodedGeometryType

@@ -657,6 +657,77 @@ namespace
         return out;
     }
 
+    Napi::Value DecodeGeometryFrameFlat(const Napi::CallbackInfo &info)
+    {
+        Napi::Env env = info.Env();
+        if (info.Length() < 1)
+        {
+            throw Napi::TypeError::New(env, "decodeGeometryFrameFlat(encoded) expects 1 argument");
+        }
+
+        std::vector<uint8_t> encoded = to_encoded_bytes(env, info[0]);
+        wkp_context ctx{};
+        wkp_status status = wkp_context_init(&ctx);
+        throw_for_status(env, status, nullptr);
+
+        struct ContextHolder
+        {
+            wkp_context *ptr;
+            ~ContextHolder()
+            {
+                wkp_context_free(ptr);
+            }
+        } context_holder{&ctx};
+
+        const wkp_geometry_frame_f64 *frame = nullptr;
+        status = wkp_decode_geometry_frame(
+            &ctx,
+            encoded.data(),
+            encoded.size(),
+            &frame);
+        if (status != WKP_STATUS_OK)
+        {
+            throw_for_status(env, status, nullptr);
+        }
+
+        // Copy coords into a Float64Array
+        const size_t coord_count = frame->coord_value_count;
+        Napi::ArrayBuffer coords_buf = Napi::ArrayBuffer::New(env, coord_count * sizeof(double));
+        std::memcpy(coords_buf.Data(), frame->coords, coord_count * sizeof(double));
+        Napi::Float64Array coords_arr = Napi::Float64Array::New(env, coord_count, coords_buf, 0);
+
+        // Copy segment_point_counts into a Uint32Array (size_t → uint32_t)
+        const size_t seg_count = frame->segment_count;
+        Napi::ArrayBuffer seg_buf = Napi::ArrayBuffer::New(env, seg_count * sizeof(uint32_t));
+        uint32_t *seg_data = static_cast<uint32_t *>(seg_buf.Data());
+        for (size_t i = 0; i < seg_count; ++i)
+        {
+            seg_data[i] = static_cast<uint32_t>(frame->segment_point_counts[i]);
+        }
+        Napi::Uint32Array seg_arr = Napi::Uint32Array::New(env, seg_count, seg_buf, 0);
+
+        // Copy group_segment_counts into a Uint32Array (size_t → uint32_t)
+        const size_t grp_count = frame->group_count;
+        Napi::ArrayBuffer grp_buf = Napi::ArrayBuffer::New(env, grp_count * sizeof(uint32_t));
+        uint32_t *grp_data = static_cast<uint32_t *>(grp_buf.Data());
+        for (size_t i = 0; i < grp_count; ++i)
+        {
+            grp_data[i] = static_cast<uint32_t>(frame->group_segment_counts[i]);
+        }
+        Napi::Uint32Array grp_arr = Napi::Uint32Array::New(env, grp_count, grp_buf, 0);
+
+        Napi::Object out = Napi::Object::New(env);
+        out.Set("version",             Napi::Number::New(env, frame->version));
+        out.Set("precision",           Napi::Number::New(env, frame->precision));
+        out.Set("dimensions",          Napi::Number::New(env, frame->dimensions));
+        out.Set("geometryType",        Napi::Number::New(env, frame->geometry_type));
+        out.Set("coords",              coords_arr);
+        out.Set("segmentPointCounts",  seg_arr);
+        out.Set("groupSegmentCounts",  grp_arr);
+
+        return out;
+    }
+
     Napi::Value RunSelfTest(const Napi::CallbackInfo &info)
     {
         Napi::Env env = info.Env();
@@ -677,6 +748,7 @@ Napi::Object Init(Napi::Env env, Napi::Object exports)
     exports.Set("decodeF64", Napi::Function::New(env, DecodeF64));
     exports.Set("decodeGeometryHeader", Napi::Function::New(env, DecodeGeometryHeader));
     exports.Set("decodeGeometryFrame", Napi::Function::New(env, DecodeGeometryFrame));
+    exports.Set("decodeGeometryFrameFlat", Napi::Function::New(env, DecodeGeometryFrameFlat));
     exports.Set("encodeGeometryFrameF64", Napi::Function::New(env, EncodeGeometryFrameF64));
     exports.Set("encodePointF64", Napi::Function::New(env, EncodePointF64));
     exports.Set("encodeLineStringF64", Napi::Function::New(env, EncodeLineStringF64));

@@ -42,6 +42,14 @@ ctest --test-dir build/core -C Release --output-on-failure
 build/core/Release/wkp_cpp_benchmark 10000 2 5 1000
 ```
 
+## Float encode / decode
+
+`wkp_encode_f64` and `wkp_decode_f64` work on flat interleaved coordinate values: `[x0, y0, x1, y1, ...]` for 2D, `[x0, y0, z0, x1, y1, z1, ...]` for 3D, and so on.
+
+The per-column `precisions` array has one entry per dimension. Example: `[5, 5]` for 2D with 5 decimal places on both axes; `[6, 6, 0]` for 3D where the Z axis is encoded as an integer.
+
+`wkp_decode_f64` writes decoded values into the context's internal `f64` buffer and returns a pointer and count. The returned pointer is valid until the next call that reuses the context. Copy into your own storage if the lifetime must extend beyond the next call.
+
 ## Context-first example
 
 ```cpp

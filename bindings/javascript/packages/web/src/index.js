@@ -1009,6 +1009,12 @@ export async function createWkp(options) {
         return asContext(ctx).encodeF64(values, dimensions, precisionList);
     }
 
+    function decodeFloatsArray(encoded, precisions, ctx = _defaultCtx) {
+        const precisionList = normalizePrecisionList(precisions);
+        const dimensions = precisionList.length;
+        return asContext(ctx).decodeF64(encoded, dimensions, precisionList);
+    }
+
     function decodeFloats(encoded, precisions, ctx = _defaultCtx) {
         const precisionList = normalizePrecisionList(precisions);
         const dimensions = precisionList.length;
@@ -1032,6 +1038,7 @@ export async function createWkp(options) {
         encodeFrame,
         encodeFloats,
         decodeFloats,
+        decodeFloatsArray,
         runSelfTest,
         coreVersion,
         EncodedGeometryType

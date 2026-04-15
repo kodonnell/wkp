@@ -61,8 +61,13 @@ Methods: `to_geometry() -> Shapely geometry`, `to_buffer() -> bytes`, `GeometryF
 
 ```python
 encode_floats(floats, precisions, *, ctx=None) -> bytes
-decode_floats(encoded, precisions, *, ctx=None) -> list[tuple[float, ...]]
+decode_floats_array(encoded, precisions, *, ctx=None) -> np.ndarray  # flat (N*dims,) float64
+decode_floats(encoded, precisions, *, ctx=None) -> np.ndarray        # shaped (N, dims) float64
 ```
+
+`decode_floats_array` returns a flat 1D float64 array of interleaved values `[x0, y0, x1, y1, ...]` — a single allocation with no reshape. Use `arr.tobytes()` to treat it as a raw byte buffer for shipping over sockets or shared memory.
+
+`decode_floats` wraps `decode_floats_array` and returns a `(N, dims)` 2D view (zero-copy reshape). Use `.tolist()` on the result if you need plain Python lists.
 
 ### Context
 
@@ -124,10 +129,17 @@ frame2 = frame.from_buffer(buf)  # round-trip
 
 ## Benchmark
 
-From repo root:
+Full geometry encode/decode comparison against Shapely WKB/WKT:
 
 ```sh
 python bindings/python/benchmark/benchmark.py --linestring-points=10000 --precisions=5 --max-iterations=1000 --max-duration=1
+```
+
+Flat-array API micro-benchmark (encode/decode/decode_frame/decode_floats_array):
+
+```sh
+python bindings/python/benchmark/bench_flat_api.py
+python bindings/python/benchmark/bench_flat_api.py --points=50000 --iterations=200
 ```
 
 Example results:
