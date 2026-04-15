@@ -117,18 +117,43 @@ test('GeometryFrame buffer is 40-byte header + data (web)', async () => {
     assert.equal(buf.byteLength, expectedSize);
 });
 
-test('cross-language buffer compatibility: Node GeometryFrame buffers (web)', async () => {
-    // Verifies the buffer format is self-consistent within the web binding.
-    // Buffer produced by toBuffer() must be readable by fromBuffer().
+test('cross-language buffer format matches Python and Node bindings (web)', async () => {
+    // Geometry: LineString [(0,0),(1,1)] at precision=6.
+    // Coordinates 0.0 and 1.0 are exact IEEE-754 float64 values and survive
+    // WKP encode/decode unchanged, making the expected bytes deterministic.
     const wkp = await createWkp();
-    const geometry = { type: 'LineString', coordinates: [[1.1, 2.2], [3.3, 4.4]] };
-    const frame1 = wkp.decodeFrame(wkp.encode(geometry, 5));
-    const buf = frame1.toBuffer();
-    const frame2 = wkp.GeometryFrame.fromBuffer(buf);
+    const geometry = { type: 'LineString', coordinates: [[0, 0], [1, 1]] };
+    const encoded = wkp.encode(geometry, 6);
+    const frame = wkp.decodeFrame(encoded);
+    const buf = frame.toBuffer();
 
-    assert.equal(frame2.precision, 5);
-    assert.equal(frame2.coords.length, frame1.coords.length);
-    for (let i = 0; i < frame1.coords.length; i += 1) {
-        assertClose(frame1.coords[i], frame2.coords[i]);
+    // prettier-ignore
+    const expected = new Uint8Array([
+        0x01, 0x00, 0x00, 0x00,                          // version=1        (int32 LE)
+        0x06, 0x00, 0x00, 0x00,                          // precision=6      (int32 LE)
+        0x02, 0x00, 0x00, 0x00,                          // dimensions=2     (int32 LE)
+        0x02, 0x00, 0x00, 0x00,                          // geometry_type=2  (int32 LE, LINESTRING)
+        0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // coord_value_count=4 (uint64 LE)
+        0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // segment_count=1  (uint64 LE)
+        0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // group_count=1    (uint64 LE)
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // coords[0][0]=0.0 (float64 LE)
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // coords[0][1]=0.0 (float64 LE)
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xF0, 0x3F, // coords[1][0]=1.0 (float64 LE)
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xF0, 0x3F, // coords[1][1]=1.0 (float64 LE)
+        0x02, 0x00, 0x00, 0x00,                          // segment_point_counts=[2] (uint32 LE)
+        0x01, 0x00, 0x00, 0x00,                          // group_segment_counts=[1] (uint32 LE)
+    ]);
+
+    assert.equal(buf.byteLength, 80);
+    const actual = new Uint8Array(buf);
+    for (let i = 0; i < expected.length; i += 1) {
+        assert.equal(actual[i], expected[i], `byte ${i} mismatch — cross-language buffer format has changed`);
     }
+
+    // Verify fromBuffer recovers the geometry from these canonical bytes
+    const recovered = wkp.GeometryFrame.fromBuffer(expected.buffer);
+    assert.equal(recovered.version, 1);
+    assert.equal(recovered.precision, 6);
+    assert.equal(recovered.dimensions, 2);
+    assertGeometryClose(recovered.toGeometry(), geometry, 1e-9);
 });

@@ -1,5 +1,5 @@
 {
-  "_comment": "Fixture manifest for integration tests. All language bindings must exercise every case listed here. Run scripts/check-fixture-manifest.js to verify counts are up-to-date.",
+  "_comment": "Fixture manifest for integration tests. All language bindings must exercise every case listed here. Run scripts/check_fixture_manifest.py to verify counts are up-to-date.",
   "fixtures": {
     "floats/encode": {
       "examples.txt": 3,

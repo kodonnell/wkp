@@ -27,6 +27,24 @@ jobs:
             exit 1
           fi
 
+  test-fast:
+    name: Quick Python tests (no wheel build)
+    needs: validate-tag
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install package and dev dependencies
+        run: pip install -e "bindings/python[dev]"
+
+      - name: Run tests
+        run: pytest bindings/python/tests -ra -v
+
   build_sdist:
     needs: validate-tag
     name: Build source distribution
@@ -53,7 +71,7 @@ jobs:
           path: dist/*.tar.gz
 
   build_wheels:
-    needs: build_sdist
+    needs: [build_sdist, test-fast]
     name: Build wheels on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     strategy:

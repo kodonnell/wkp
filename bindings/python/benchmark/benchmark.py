@@ -141,6 +141,48 @@ def bench_wkp(
     )
 
 
+def bench_wkp_frame(
+    geom,
+    dimensions,
+    precision,
+    warmup=3,
+    max_iterations=10,
+    max_duration=None,
+):
+    """Benchmark decode_frame — skips Shapely conversion for a fair raw-speed comparison."""
+    if dimensions != 2:
+        raise ValueError("benchmark currently supports only 2D linestring geometry")
+    ctx = Context()
+    geom_pool = make_geom_pool(geom, warmup + max_iterations)
+    payload, encode_times = timeit_with_pool(
+        geom_pool,
+        lambda g: encode(g, precision=precision, ctx=ctx),
+        warmup=warmup,
+        max_iterations=max_iterations,
+        max_duration=max_duration,
+    )
+    _, decode_times = timeit(
+        lambda: decode_frame(payload, ctx=ctx),
+        warmup=warmup,
+        max_iterations=max_iterations,
+        max_duration=max_duration,
+    )
+    encode_ms, encode_std, encode_iters, decode_ms, decode_std, decode_iters, total_ms, total_std = stats(
+        encode_times, decode_times
+    )
+    yield TestResult(
+        f"wkp-frame-{precision}p",
+        encode_ms=encode_ms,
+        encode_size=len(payload),
+        encode_std=encode_std,
+        decode_ms=decode_ms,
+        decode_std=decode_std,
+        total_ms=total_ms,
+        total_std=total_std,
+        iterations=encode_iters + decode_iters,
+    )
+
+
 def bench_shapely_wkb(geom, warmup=3, max_iterations=10, max_duration=None):
     geom_pool = make_geom_pool(geom, warmup + max_iterations)
     bites, encode_times = timeit_with_pool(
@@ -239,6 +281,15 @@ def bench_methods(linestring, precisions, warmup, max_iterations, max_duration, 
                     max_duration=max_duration,
                     as_bytes=as_bytes,
                 )
+            print(f"{time.monotonic()} testing wkp-frame with precision={precision}", end="\r")
+            yield from bench_wkp_frame(
+                geom=linestring,
+                dimensions=2,
+                precision=precision,
+                warmup=warmup,
+                max_iterations=max_iterations,
+                max_duration=max_duration,
+            )
 
         # Now round it:
         if "wkt" in methods:

@@ -141,3 +141,42 @@ def test_buffer_from_bytes_and_memoryview():
     # Works from memoryview
     r2 = wkp.GeometryFrame.from_buffer(memoryview(buf))
     np.testing.assert_array_equal(r1.coords, r2.coords)
+
+
+def test_cross_language_buffer_format():
+    """Buffer bytes are deterministic and match the format expected by @wkpjs/node and @wkpjs/web."""
+    # Geometry: LineString [(0,0),(1,1)] at precision=6.
+    # Coordinates 0.0 and 1.0 are exact IEEE-754 float64 values and survive
+    # WKP encode/decode unchanged, making the expected bytes deterministic.
+    geom = LineString([(0, 0), (1, 1)])
+    encoded = wkp.encode(geom, precision=6)
+    frame = wkp.decode_frame(encoded)
+    buf = frame.to_buffer()
+
+    # fmt: off
+    expected = bytes([
+        0x01, 0x00, 0x00, 0x00,                          # version=1        (int32 LE)
+        0x06, 0x00, 0x00, 0x00,                          # precision=6      (int32 LE)
+        0x02, 0x00, 0x00, 0x00,                          # dimensions=2     (int32 LE)
+        0x02, 0x00, 0x00, 0x00,                          # geometry_type=2  (int32 LE, LINESTRING)
+        0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, # coord_value_count=4 (uint64 LE)
+        0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, # segment_count=1  (uint64 LE)
+        0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, # group_count=1    (uint64 LE)
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, # coords[0][0]=0.0 (float64 LE)
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, # coords[0][1]=0.0 (float64 LE)
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xF0, 0x3F, # coords[1][0]=1.0 (float64 LE)
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xF0, 0x3F, # coords[1][1]=1.0 (float64 LE)
+        0x02, 0x00, 0x00, 0x00,                          # segment_point_counts=[2] (uint32 LE)
+        0x01, 0x00, 0x00, 0x00,                          # group_segment_counts=[1] (uint32 LE)
+    ])
+    # fmt: on
+
+    assert buf == expected, f"buffer mismatch — cross-language format has changed\ngot:      {buf.hex()}\nexpected: {expected.hex()}"
+
+    # Also verify that from_buffer recovers the geometry from these canonical bytes
+    recovered = wkp.GeometryFrame.from_buffer(expected)
+    assert recovered.version == 1
+    assert recovered.precision == 6
+    assert recovered.dimensions == 2
+    geom_recovered = recovered.to_geometry()
+    assert geom_recovered.equals_exact(geom, tolerance=1e-9)
