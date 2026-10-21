@@ -170,13 +170,13 @@ class GeometryFrame:
 
     def to_geometry(self) -> shapely.geometry.base.BaseGeometry:
         """Convert to a Shapely geometry object."""
-        return _geometry_from_frame_counts(
-            self.geometry_type,
-            self.dimensions,
-            self.coords.ravel(),
-            self.group_segment_counts.tolist(),
-            self.segment_point_counts.tolist(),
-        )
+        coords = _as_f64_c(self.coords).reshape(-1, self.dimensions)
+        seg = np.asarray(self.segment_point_counts, dtype=np.int64)
+        grp = np.asarray(self.group_segment_counts, dtype=np.int64)
+        # A frame built by hand may be inconsistent; one from the decoder never is.
+        if len(seg) == 0 or seg.sum() != len(coords) or grp.sum() != len(seg):
+            raise ValueError("Frame segment/group counts do not match its coordinates")
+        return _geometry_from_frame(self.geometry_type, coords, seg, grp)
 
     def to_buffer(self) -> bytes:
         """
@@ -247,161 +247,127 @@ def decode_header(bites):
 # Geometry ↔ frame conversion helpers
 # ---------------------------------------------------------------------------
 
-def _geometry_from_groups(geom_type: int, groups):
-    if geom_type == EncodedGeometryType.POINT.value:
-        if len(groups) != 1 or len(groups[0]) != 1:
+_POINT = EncodedGeometryType.POINT.value
+_LINESTRING = EncodedGeometryType.LINESTRING.value
+_POLYGON = EncodedGeometryType.POLYGON.value
+_MULTIPOINT = EncodedGeometryType.MULTIPOINT.value
+_MULTILINESTRING = EncodedGeometryType.MULTILINESTRING.value
+_MULTIPOLYGON = EncodedGeometryType.MULTIPOLYGON.value
+
+
+def _geometry_from_frame(geom_type: int, coords: np.ndarray, segment_point_counts, group_segment_counts):
+    """The Shapely geometry for a frame (counts as from the decoder, so consistent with
+    ``coords``), built with a constant number of vectorised Shapely calls: rings, lines and parts
+    are created in one call each, grouped by ``indices``, however many there are."""
+    seg = segment_point_counts
+    grp = group_segment_counts
+
+    # Points and lines first, without numpy work: they are the common case and small calls.
+    if geom_type == _POINT:
+        if len(grp) != 1 or grp[0] != 1:
             raise ValueError("Expected 1 segment for POINT geometry")
-        arr = groups[0][0]
-        if arr.shape[0] != 1:
-            raise ValueError(f"Expected 1 point for POINT geometry, got {arr.shape[0]}")
-        return Point(arr[0])
+        if seg[0] != 1:
+            raise ValueError(f"Expected 1 point for POINT geometry, got {seg[0]}")
+        return shapely.points(coords[0])
 
-    if geom_type == EncodedGeometryType.LINESTRING.value:
-        if len(groups) != 1 or len(groups[0]) != 1:
+    if geom_type == _LINESTRING:
+        if len(grp) != 1 or grp[0] != 1:
             raise ValueError("Expected 1 segment for LINESTRING geometry")
-        arr = groups[0][0]
-        if arr.shape[0] < 2:
-            raise ValueError(f"Expected at least 2 points for LINESTRING geometry, got {arr.shape[0]}")
-        return shapely.linestrings(arr)
+        if seg[0] < 2:
+            raise ValueError(f"Expected at least 2 points for LINESTRING geometry, got {seg[0]}")
+        return shapely.linestrings(coords)
 
-    if geom_type == EncodedGeometryType.POLYGON.value:
-        if len(groups) != 1:
+    if geom_type == _POLYGON and len(grp) == 1 and grp[0] == 1:
+        # The common polygon without holes: straight from the shell coordinates.
+        return shapely.polygons(coords)
+
+    seg = np.asarray(seg, dtype=np.int64)
+    grp = np.asarray(grp, dtype=np.int64)
+    # Which segment each coordinate belongs to, and which group each segment belongs to.
+    segment_of_coord = np.repeat(np.arange(len(seg)), seg)
+    group_of_segment = np.repeat(np.arange(len(grp)), grp)
+
+    if geom_type == _POLYGON:
+        if len(grp) != 1:
             raise ValueError("Expected 1 polygon group")
-        rings = [shapely.linearrings(arr) for arr in groups[0]]
-        if len(rings) == 0:
+        if grp[0] == 0:
             raise ValueError("Expected at least 1 ring for POLYGON")
-        shell = rings[0]
-        holes = rings[1:]
-        return shapely.polygons(shell, holes=holes if holes else None)
+        rings = shapely.linearrings(coords, indices=segment_of_coord)
+        return shapely.polygons(rings[0], holes=rings[1:] if len(rings) > 1 else None)
 
-    if geom_type == EncodedGeometryType.MULTIPOINT.value:
-        points = []
-        for group in groups:
-            if len(group) != 1:
-                raise ValueError("Expected exactly one segment per MULTIPOINT part")
-            arr = group[0]
-            if arr.shape[0] != 1:
-                raise ValueError(f"Expected 1 point segment in MULTIPOINT, got {arr.shape[0]}")
-            points.append(arr[0])
-        return shapely.multipoints(np.asarray(points, dtype=np.float64))
+    if geom_type == _MULTIPOINT:
+        if (grp != 1).any():
+            raise ValueError("Expected exactly one segment per MULTIPOINT part")
+        if (seg != 1).any():
+            raise ValueError(f"Expected 1 point segment in MULTIPOINT, got {seg[seg != 1][0]}")
+        return shapely.multipoints(coords)
 
-    if geom_type == EncodedGeometryType.MULTILINESTRING.value:
-        lines = []
-        for group in groups:
-            if len(group) != 1:
-                raise ValueError("Expected exactly one segment per MULTILINESTRING part")
-            lines.append(group[0])
-        return shapely.multilinestrings(lines)
+    if geom_type == _MULTILINESTRING:
+        if (grp != 1).any():
+            raise ValueError("Expected exactly one segment per MULTILINESTRING part")
+        return shapely.multilinestrings(shapely.linestrings(coords, indices=segment_of_coord))
 
-    if geom_type == EncodedGeometryType.MULTIPOLYGON.value:
-        polygons = []
-        for group in groups:
-            rings = [shapely.linearrings(arr) for arr in group]
-            if len(rings) == 0:
-                raise ValueError("Expected at least 1 ring in MULTIPOLYGON polygon")
-            shell = rings[0]
-            holes = rings[1:]
-            polygons.append(shapely.polygons(shell, holes=holes if holes else None))
-        return shapely.multipolygons(polygons)
+    if geom_type == _MULTIPOLYGON:
+        if (grp == 0).any():
+            raise ValueError("Expected at least 1 ring in MULTIPOLYGON polygon")
+        rings = shapely.linearrings(coords, indices=segment_of_coord)
+        return shapely.multipolygons(shapely.polygons(rings, indices=group_of_segment))
 
     raise ValueError(f"Unsupported geometry type in header: {geom_type}")
 
 
-def _geometry_from_frame_counts(
-    geom_type: int,
-    dimensions: int,
-    coords_flat: np.ndarray,
-    group_segment_counts,
-    segment_point_counts,
-):
-    groups = []
-    coord_index = 0
-    segment_index = 0
-
-    for group_segments in group_segment_counts:
-        group = []
-        for _ in range(int(group_segments)):
-            point_count = int(segment_point_counts[segment_index])
-            segment_index += 1
-            value_count = point_count * dimensions
-            segment_flat = coords_flat[coord_index : coord_index + value_count]
-            coord_index += value_count
-            group.append(segment_flat.reshape((point_count, dimensions)))
-        groups.append(group)
-
-    return _geometry_from_groups(geom_type, groups)
-
-
-def _geometry_dimensions(geom) -> int:
-    dims = shapely.get_coordinate_dimension(geom)
-    if dims <= 0 or dims > 16:
-        raise ValueError(f"Unsupported geometry dimensions: {dims}")
-    return dims
-
-
-def _coords_array(geom, dimensions: int) -> np.ndarray:
-    include_z = dimensions == 3
-    return _as_f64_c(shapely.get_coordinates(geom, include_z=include_z))
+_GEOMETRY_TYPE_ERROR = (
+    "geom must be a Shapely Point, LineString, Polygon, MultiPoint, MultiLineString, or MultiPolygon"
+)
 
 
 def _geometry_to_frame(geom):
+    """``(geometry_type, coords, group_segment_counts, segment_point_counts)`` for a Shapely
+    geometry. All coordinates come from one ``get_coordinates`` call (already in WKP order: rings
+    in order within polygons, parts in order), and the counts from vectorised calls, so the cost
+    does not grow with the number of parts and rings."""
+    # isinstance checks: much cheaper than comparing shapely.get_type_id with GeometryType.
     if isinstance(geom, GeometryCollection):
         raise ValueError("GeometryCollection is not supported by the current WKP core geometry frame ABI")
+    if not isinstance(geom, (Point, LineString, Polygon, MultiPoint, MultiLineString, MultiPolygon)):
+        raise TypeError(_GEOMETRY_TYPE_ERROR)
+    dims = shapely.get_coordinate_dimension(geom)
+    if dims <= 0 or dims > 16:
+        raise ValueError(f"Unsupported geometry dimensions: {dims}")
+    # A new C-contiguous float64 array.
+    coords = shapely.get_coordinates(geom, include_z=dims == 3)
 
-    dims = _geometry_dimensions(geom)
-    include_z = dims == 3
-
+    # Counts as lists for the small cases, numpy arrays (read directly by the native module) for
+    # the ones that can be long.
     if isinstance(geom, Point):
-        coords = _coords_array(geom, dims)
-        return EncodedGeometryType.POINT.value, coords, [1], [1]
-
-    if isinstance(geom, LineString):
-        coords = _coords_array(geom, dims)
-        return EncodedGeometryType.LINESTRING.value, coords, [1], [coords.shape[0]]
-
+        return _POINT, coords, [1], [1]
+    if isinstance(geom, LineString):  # includes LinearRing
+        return _LINESTRING, coords, [1], [len(coords)]
     if isinstance(geom, Polygon):
-        rings = [geom.exterior, *list(geom.interiors)]
-        segments = [
-            _as_f64_c(shapely.get_coordinates(r, include_z=include_z)) for r in rings
-        ]
-        coords = _as_f64_c(np.vstack(segments))
-        return EncodedGeometryType.POLYGON.value, coords, [len(segments)], [arr.shape[0] for arr in segments]
-
+        # Most polygons have no holes; then no rings need to be extracted (get_rings copies them).
+        if shapely.get_num_interior_rings(geom) == 0:
+            return _POLYGON, coords, [1], [len(coords)]
+        rings = shapely.get_rings(geom)
+        return _POLYGON, coords, [len(rings)], shapely.get_num_coordinates(rings).astype(np.uint64)
     if isinstance(geom, MultiPoint):
-        segments = [
-            _as_f64_c(shapely.get_coordinates(point, include_z=include_z))
-            for point in geom.geoms
-        ]
-        coords = _as_f64_c(np.vstack(segments))
-        return EncodedGeometryType.MULTIPOINT.value, coords, [1] * len(segments), [1] * len(segments)
-
+        ones = np.ones(len(coords), dtype=np.uint64)
+        return _MULTIPOINT, coords, ones, ones
     if isinstance(geom, MultiLineString):
-        segments = [
-            _as_f64_c(shapely.get_coordinates(line, include_z=include_z))
-            for line in geom.geoms
-        ]
-        coords = _as_f64_c(np.vstack(segments))
+        parts = shapely.get_parts(geom)
         return (
-            EncodedGeometryType.MULTILINESTRING.value,
+            _MULTILINESTRING,
             coords,
-            [1] * len(segments),
-            [arr.shape[0] for arr in segments],
+            np.ones(len(parts), dtype=np.uint64),
+            shapely.get_num_coordinates(parts).astype(np.uint64),
         )
-
-    if isinstance(geom, MultiPolygon):
-        all_segments: list[np.ndarray] = []
-        group_counts: list[int] = []
-        for poly in geom.geoms:
-            rings = [poly.exterior, *list(poly.interiors)]
-            poly_segments = [
-                _as_f64_c(shapely.get_coordinates(r, include_z=include_z)) for r in rings
-            ]
-            all_segments.extend(poly_segments)
-            group_counts.append(len(poly_segments))
-        coords = _as_f64_c(np.vstack(all_segments))
-        return EncodedGeometryType.MULTIPOLYGON.value, coords, group_counts, [arr.shape[0] for arr in all_segments]
-
-    raise TypeError("geom must be a Shapely Point, LineString, Polygon, MultiPoint, MultiLineString, or MultiPolygon")
+    parts = shapely.get_parts(geom)
+    rings, polygon_of_ring = shapely.get_rings(parts, return_index=True)
+    return (
+        _MULTIPOLYGON,
+        coords,
+        np.bincount(polygon_of_ring, minlength=len(parts)).astype(np.uint64),
+        shapely.get_num_coordinates(rings).astype(np.uint64),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -433,12 +399,14 @@ def decode(bites, *, ctx=None) -> DecodedGeometry:
     """Decode a WKP-encoded geometry to a Shapely geometry."""
     ctx = _resolve_context(ctx)
     encoded = _as_encoded_bytes(bites)
-    version, precision, dimensions, geom_type, groups = _core.decode_geometry_frame(ctx, encoded)
+    version, precision, dimensions, geom_type, coords, seg_counts, grp_counts = (
+        _core.decode_geometry_frame_flat(ctx, encoded)
+    )
     return DecodedGeometry(
         version=version,
         precision=precision,
         dimensions=dimensions,
-        geometry=_geometry_from_groups(geom_type, groups),
+        geometry=_geometry_from_frame(geom_type, coords, seg_counts, grp_counts),
     )
 
 
@@ -448,8 +416,8 @@ def encode_frame(frame: GeometryFrame, *, ctx=None) -> bytes:
     coords = _as_f64_c(frame.coords)
     if coords.ndim != 2:
         raise ValueError("frame.coords must be a 2D array")
-    grp = [int(x) for x in frame.group_segment_counts]
-    seg = [int(x) for x in frame.segment_point_counts]
+    grp = np.asarray(frame.group_segment_counts, dtype=np.uint64)
+    seg = np.asarray(frame.segment_point_counts, dtype=np.uint64)
     return _core.encode_geometry_frame(ctx, frame.geometry_type, coords, frame.precision, grp, seg)
 
 

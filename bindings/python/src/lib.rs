@@ -3,7 +3,7 @@
 use numpy::{PyArray1, PyArray2, PyArrayMethods, PyReadonlyArray2, PyUntypedArrayMethods};
 use pyo3::exceptions::{PyRuntimeError, PyTypeError, PyValueError};
 use pyo3::prelude::*;
-use pyo3::types::{PyBytes, PyDict, PyList, PyString, PyTuple};
+use pyo3::types::{PyBytes, PyDict, PyString, PyTuple};
 use wkp::Frame;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -55,6 +55,20 @@ fn encoded_bytes<'a>(obj: &'a Bound<'_, PyAny>) -> PyResult<&'a [u8]> {
         return Ok(s.to_str()?.as_bytes());
     }
     Err(PyTypeError::new_err("encoded must be str or bytes"))
+}
+
+/// Counts from a uint64 numpy array (read directly, as the wrapper passes them) or any sequence
+/// of ints (extracted one by one, which is slow for thousands of entries).
+fn counts(obj: &Bound<'_, PyAny>) -> PyResult<Vec<usize>> {
+    if let Ok(array) = obj.cast::<PyArray1<u64>>() {
+        if let Ok(values) = array.readonly().as_slice() {
+            return values
+                .iter()
+                .map(|&v| usize::try_from(v).map_err(|_| core_err(wkp::Error::InvalidArgument)))
+                .collect();
+        }
+    }
+    obj.extract()
 }
 
 fn contiguous<'a>(a: &'a PyReadonlyArray2<'_, f64>) -> PyResult<&'a [f64]> {
@@ -151,9 +165,11 @@ fn encode_geometry_frame<'py>(
     geometry_type: i32,
     coords: PyReadonlyArray2<'py, f64>,
     precision: i32,
-    group_segment_counts: Vec<usize>,
-    segment_point_counts: Vec<usize>,
+    group_segment_counts: &Bound<'py, PyAny>,
+    segment_point_counts: &Bound<'py, PyAny>,
 ) -> PyResult<Bound<'py, PyBytes>> {
+    let group_segment_counts = counts(group_segment_counts)?;
+    let segment_point_counts = counts(segment_point_counts)?;
     let dims = coords.shape()[1];
     let coords = contiguous(&coords)?;
     let geometry_type = u8::try_from(geometry_type).map_err(|_| core_err(wkp::Error::InvalidArgument))?;
@@ -177,33 +193,6 @@ fn decode_into(py: Python<'_>, ctx: &mut Context, encoded: &Bound<'_, PyAny>) ->
     let encoded = encoded_bytes(encoded)?;
     let frame = &mut ctx.frame;
     run(py, encoded.len(), || wkp::decode_geometry(encoded, frame)).map_err(core_err)
-}
-
-/// Returns `(version, precision, dimensions, geometry_type, groups)` where `groups` is a list of
-/// lists of `(points, dimensions)` arrays.
-#[pyfunction]
-fn decode_geometry_frame<'py>(
-    py: Python<'py>,
-    mut ctx: PyRefMut<'_, Context>,
-    encoded: &Bound<'py, PyAny>,
-) -> PyResult<Bound<'py, PyTuple>> {
-    decode_into(py, &mut ctx, encoded)?;
-    let f = &ctx.frame;
-    let dims = f.header.dimensions as usize;
-    let groups = PyList::empty(py);
-    let mut segs = f.segment_point_counts.iter();
-    let mut offset = 0;
-    for &n_segs in &f.group_segment_counts {
-        let group = PyList::empty(py);
-        for _ in 0..n_segs {
-            let n = segs.next().unwrap() * dims;
-            group.append(array2(py, &f.coords[offset..offset + n], dims))?;
-            offset += n;
-        }
-        groups.append(group)?;
-    }
-    let (v, p, d, t) = header_tuple(f.header);
-    (v, p, d, t, groups).into_pyobject(py)
 }
 
 /// Returns `(version, precision, dimensions, geometry_type, coords, segment_point_counts,
@@ -255,7 +244,6 @@ fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(encode_f64, m)?)?;
     m.add_function(wrap_pyfunction!(decode_f64, m)?)?;
     m.add_function(wrap_pyfunction!(encode_geometry_frame, m)?)?;
-    m.add_function(wrap_pyfunction!(decode_geometry_frame, m)?)?;
     m.add_function(wrap_pyfunction!(decode_geometry_frame_flat, m)?)?;
     Ok(())
 }
