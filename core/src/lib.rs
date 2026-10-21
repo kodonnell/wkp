@@ -501,6 +501,10 @@ unsafe fn decode_deltas(src: &[u8], pos_out: &mut usize, out: *mut i64, n_out: &
 
 #[inline(always)]
 unsafe fn decode_deltas_local(src: &[u8], pos: &mut usize, out: *mut i64, n: &mut usize) -> Result<()> {
+    #[cfg(target_arch = "x86_64")]
+    if simd::available() {
+        simd::decode_run(src, pos, out, n)?;
+    }
     let len = src.len();
     let base = src.as_ptr();
     // Bits (and count) of a value that started in an earlier block, plus where it started.
@@ -570,6 +574,203 @@ unsafe fn decode_deltas_local(src: &[u8], pos: &mut usize, out: *mut i64, n: &mu
             _ => return Ok(()),
         }
     }
+}
+
+/// Shuffle-table varint decoding (SSSE3 + SSE4.1), in the spirit of Masked VByte.
+///
+/// Each 64-byte block gets a terminator bitmask (one bit per byte without the continuation
+/// bit) computed up front. The decoder then walks the block in windows of 8 bytes: the 8
+/// mask bits index a table holding a byte shuffle that moves up to four whole values of at
+/// most 4 chars into the four 32-bit lanes of a vector, where two multiply-adds pack the 5-bit
+/// groups. The only loop-carried dependency is window offset -> table -> offset, and the
+/// number of values per window never needs a branch.
+///
+/// x86-64 only, with the CPU features detected at runtime; other targets (aarch64, wasm) use
+/// the SWAR loop alone. Decoding is 1.3-1.9x faster on path-like data (see
+/// `examples/simd_ab.rs`), and unchanged on unrelated points.
+#[cfg(target_arch = "x86_64")]
+mod simd {
+    use super::{gather5, get_varint_slow, is_value_char, unzigzag, Result, BIAS, GROUP};
+    use core::arch::x86_64::*;
+    use core::sync::atomic::{AtomicU8, Ordering};
+
+    /// 0 = not yet probed, 1 = unavailable, 2 = available, 3 = disabled by the caller.
+    static STATE: AtomicU8 = AtomicU8::new(0);
+
+    /// Whether the CPU has SSSE3 and SSE4.1 (and the SIMD path is not disabled).
+    #[inline(always)]
+    pub fn available() -> bool {
+        match STATE.load(Ordering::Relaxed) {
+            2 => true,
+            0 => probe(),
+            _ => false,
+        }
+    }
+
+    #[cold]
+    fn probe() -> bool {
+        // CPUID leaf 1, ECX: bit 9 = SSSE3, bit 19 = SSE4.1. `__cpuid` is safe on newer
+        // compilers, unsafe on the MSRV.
+        #[allow(unused_unsafe)]
+        let ecx = unsafe { __cpuid(1) }.ecx;
+        let ok = ecx & (1 << 9) != 0 && ecx & (1 << 19) != 0;
+        STATE.store(if ok { 2 } else { 1 }, Ordering::Relaxed);
+        ok
+    }
+
+    /// Turns the SIMD path off (or back on, if the CPU supports it) for this process.
+    pub fn set_enabled(enabled: bool) {
+        STATE.store(if enabled { 0 } else { 3 }, Ordering::Relaxed);
+    }
+
+    #[repr(C, align(16))]
+    struct Shuffles([[u8; 16]; 256]);
+
+    /// For each 8-bit terminator mask: the shuffle that puts value j's chars (at most 4, least
+    /// significant first) in bytes 4j..4j+4, zero elsewhere.
+    static SHUFFLES: Shuffles = Shuffles(build().0);
+    /// For each mask: `count << 4 | consumed`, where `count` (0..=4) is the number of leading
+    /// values the shuffle decodes and `consumed` is the chars they span.
+    static META: [u8; 256] = build().1;
+
+    const fn build() -> ([[u8; 16]; 256], [u8; 256]) {
+        let mut shuffles = [[0x80u8; 16]; 256];
+        let mut meta = [0u8; 256];
+        let mut mask = 0;
+        while mask < 256 {
+            let (mut start, mut count) = (0usize, 0usize);
+            while count < 4 {
+                // Next terminator at or after `start`, within the 8-byte window.
+                let mut end = start;
+                while end < 8 && mask & (1 << end) == 0 {
+                    end += 1;
+                }
+                if end == 8 || end - start >= 4 {
+                    break;
+                }
+                let mut b = 0;
+                while start + b <= end {
+                    shuffles[mask][4 * count + b] = (start + b) as u8;
+                    b += 1;
+                }
+                start = end + 1;
+                count += 1;
+            }
+            meta[mask] = (count << 4 | start) as u8;
+            mask += 1;
+        }
+        (shuffles, meta)
+    }
+
+    /// Decodes whole values from `src[*pos..]` into `out[*n..]` until fewer than 80 bytes are
+    /// left, the next char is not a value char, or a block of mostly long values comes up (the
+    /// caller's fixed-stride SWAR loop is faster for those). Values of 5..=12 chars are read
+    /// inline with SWAR; longer (or malformed) ones go through the scalar reader, which
+    /// reports errors.
+    ///
+    /// # Safety
+    /// The CPU must support SSSE3 and SSE4.1, and `out` must have room for
+    /// `src.len() - *pos` more values.
+    #[target_feature(enable = "ssse3,sse4.1")]
+    pub unsafe fn decode_run(src: &[u8], pos: &mut usize, out: *mut i64, n: &mut usize) -> Result<()> {
+        let len = src.len();
+        let base = src.as_ptr();
+        let (mut p, mut k) = (*pos, *n);
+        let bias = _mm_set1_epi8(63);
+        let low5 = _mm_set1_epi8(0x1F);
+        // u8 pairs -> u16: lo + 32 * hi; then u16 pairs -> u32: lo + 1024 * hi.
+        let pack10 = _mm_set1_epi16(0x2001);
+        let pack20 = _mm_set1_epi32(0x0400_0001);
+        let one = _mm_set1_epi32(1);
+        let zero = _mm_setzero_si128();
+        let mut result = Ok(());
+        // Loads reach at most 72 bytes past the block start (window offset <= 56, 16 bytes).
+        while p + 80 <= len {
+            let mut term = 0u64;
+            let mut bad = 0u64;
+            for i in 0..4 {
+                let x = _mm_sub_epi8(_mm_loadu_si128(base.add(p + 16 * i) as *const __m128i), bias);
+                // Valid chars are 63..=126, i.e. x <= 63: bits 6 and 7 clear. The 16-bit
+                // shifts move bit 6 (bad) / bit 5 (continuation) of every byte to bit 7.
+                let b = _mm_movemask_epi8(_mm_or_si128(x, _mm_slli_epi16(x, 1))) as u16 as u64;
+                let c = _mm_movemask_epi8(_mm_slli_epi16(x, 2)) as u16 as u64;
+                bad |= b << (16 * i);
+                term |= (!c & 0xFFFF) << (16 * i);
+            }
+            if bad != 0 {
+                // Only terminators before the first bad char delimit complete values.
+                term &= (1u64 << bad.trailing_zeros()) - 1;
+            }
+            // Mostly long values (under 13 terminators in 64 chars, i.e. over ~5 chars each,
+            // like unrelated points rather than a path): the table rarely applies, and the
+            // caller's fixed-stride SWAR loop is faster, so leave the rest of the run to it.
+            if term.count_ones() < 13 && bad == 0 {
+                break;
+            }
+            let mut off = 0;
+            while off <= 56 {
+                let window = term >> off;
+                let meta = META[(window & 0xFF) as usize];
+                if meta == 0 {
+                    // One value of up to 12 chars, from one or two SWAR gathers. The second
+                    // load stays within the 80 bytes checked above.
+                    let t = window.trailing_zeros();
+                    if t >= 12 {
+                        break;
+                    }
+                    let lo = u64::from_le(core::ptr::read_unaligned(base.add(p + off) as *const u64));
+                    let hi = u64::from_le(core::ptr::read_unaligned(base.add(p + off + 8) as *const u64));
+                    let g = gather5(lo.wrapping_sub(BIAS) & GROUP) | gather5(hi.wrapping_sub(BIAS) & GROUP) << 40;
+                    *out.add(k) = unzigzag(g & ((1u64 << (5 * (t + 1))) - 1));
+                    k += 1;
+                    off += t as usize + 1;
+                    continue;
+                }
+                let v = _mm_loadu_si128(base.add(p + off) as *const __m128i);
+                let groups = _mm_and_si128(_mm_sub_epi8(v, bias), low5);
+                let lanes = _mm_shuffle_epi8(
+                    groups,
+                    _mm_load_si128(SHUFFLES.0[(window & 0xFF) as usize].as_ptr() as *const __m128i),
+                );
+                let u = _mm_madd_epi16(_mm_maddubs_epi16(lanes, pack10), pack20);
+                let z = _mm_xor_si128(_mm_srli_epi32(u, 1), _mm_sub_epi32(zero, _mm_and_si128(u, one)));
+                // Always store four values; only `count` of them are kept.
+                _mm_storeu_si128(out.add(k) as *mut __m128i, _mm_cvtepi32_epi64(z));
+                _mm_storeu_si128(out.add(k + 2) as *mut __m128i, _mm_cvtepi32_epi64(_mm_srli_si128(z, 8)));
+                k += (meta >> 4) as usize;
+                off += (meta & 0xF) as usize;
+            }
+            p += off;
+            if off == 0 {
+                // No complete value of at most 12 chars ahead: a separator or invalid char, or a
+                // longer (possibly malformed) value.
+                if !is_value_char(src[p]) {
+                    break;
+                }
+                match get_varint_slow(src, &mut p) {
+                    Ok(u) => {
+                        *out.add(k) = unzigzag(u);
+                        k += 1;
+                    }
+                    Err(e) => {
+                        result = Err(e);
+                        break;
+                    }
+                }
+            }
+        }
+        (*pos, *n) = (p, k);
+        result
+    }
+}
+
+/// Enables or disables the SIMD decoder (on by default where the CPU supports it). Both paths
+/// produce identical results; this exists for testing and benchmarking.
+#[doc(hidden)]
+pub fn set_simd_enabled(enabled: bool) {
+    #[cfg(target_arch = "x86_64")]
+    simd::set_enabled(enabled);
+    let _ = enabled;
 }
 
 /// Converts deltas in `buf[..n]` (stored as i64 bits) to absolute scaled f64s in place.

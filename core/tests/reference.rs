@@ -167,6 +167,66 @@ fn decoders_match_reference_on_random_input() {
     assert!(ok_counts.iter().all(|&n| n > 500), "{ok_counts:?}");
 }
 
+/// A long, mostly well-formed body (so the SIMD decoder's 64-byte blocks get used), with
+/// value lengths drawn from a per-case mix and occasional separators, long values and garbage.
+fn long_body(rng: &mut Rng) -> Vec<u8> {
+    let target = 80 + rng.below(1500) as usize;
+    let max_short = 1 + rng.below(6);
+    let noise = rng.below(4);
+    let mut v = Vec::new();
+    while v.len() < target {
+        let len = match rng.below(100) {
+            0..=1 if noise > 0 => 9 + rng.below(6), // longer than one SWAR word
+            2..=5 => 5 + rng.below(4),              // 5..=8 chars
+            _ => 1 + rng.below(max_short),
+        };
+        for _ in 1..len {
+            v.push(95 + rng.below(32) as u8);
+        }
+        v.push(63 + rng.below(32) as u8);
+        match rng.below(1000) {
+            0..=2 if noise > 1 => v.push(b",;"[rng.below(2) as usize]),
+            3 if noise > 2 => v.push(rng.below(256) as u8),
+            4 if noise > 2 => v.truncate(v.len() - 1), // dangling continuation char
+            _ => {}
+        }
+    }
+    v
+}
+
+#[test]
+fn long_inputs_match_reference_with_and_without_simd() {
+    let mut rng = Rng(0x5133D);
+    let (mut values, mut frame) = (Vec::new(), Frame::default());
+    let mut ok = 0;
+    for case in 0..6_000 {
+        let body = long_body(&mut rng);
+        let dims = 1 + rng.below(3) as usize;
+        let precision = rng.below(8) as i32;
+        let want = ref_decode_f64(&body, dims, precision).map(|v| v.iter().map(|x| x.to_bits()).collect::<Vec<_>>());
+        let mut encoded = vec![64, 63 + precision as u8, 63 + dims as u8, 63 + 5];
+        encoded.extend(&body);
+        let want_geom = ref_decode_geometry(&encoded);
+        ok += want.is_ok() as usize;
+        for simd in [true, false] {
+            wkp_core::set_simd_enabled(simd);
+            let got = decode_f64(&body, dims, &[precision], &mut values)
+                .map(|()| values.iter().map(|x| x.to_bits()).collect::<Vec<_>>());
+            assert_eq!(got, want, "decode_f64 case {case} simd {simd} body {body:?}");
+            let got = decode_geometry(&encoded, &mut frame).map(|()| {
+                (
+                    frame.coords.iter().map(|x| x.to_bits()).collect(),
+                    frame.segment_point_counts.clone(),
+                    frame.group_segment_counts.clone(),
+                )
+            });
+            assert_eq!(got, want_geom, "decode_geometry case {case} simd {simd}");
+        }
+    }
+    wkp_core::set_simd_enabled(true);
+    assert!(ok > 1000, "{ok}");
+}
+
 #[test]
 fn encoders_round_trip_through_reference() {
     let mut rng = Rng(0xE4C0DE);
