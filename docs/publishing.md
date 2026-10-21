@@ -13,7 +13,7 @@ packages share the version in the root `Cargo.toml`; bump it there, run
 | PyPI      | `wkp`                         | `pypi-vX.Y.Z`     | `python.yml`   | `pypi`             |
 | npm       | `@wkpjs/node`, `@wkpjs/web`   | `npm-vX.Y.Z`      | `js.yml`       | `npm`              |
 | NuGet     | `Wkp`                         | `nuget-vX.Y.Z`    | `csharp.yml`   | `nuget`            |
-| crates.io | `wkp`                    | `crates-vX.Y.Z`   | `crates.yml`   | `crates`           |
+| crates.io | `wkp`                         | `crates-vX.Y.Z`   | `crates.yml`   | `crates`           |
 
 PyPI and npm are already set up. NuGet and crates.io need the one-time setup below.
 

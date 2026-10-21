@@ -85,10 +85,10 @@ jobs:
           set -euo pipefail
           listing=$(unzip -l artifacts/nuget/Wkp.*.nupkg)
           for entry in lib/net8.0/Wkp.dll \
-              runtimes/linux-x64/native/libwkp.so runtimes/linux-arm64/native/libwkp.so \
-              runtimes/linux-musl-x64/native/libwkp.so runtimes/linux-musl-arm64/native/libwkp.so \
-              runtimes/osx-x64/native/libwkp.dylib runtimes/osx-arm64/native/libwkp.dylib \
-              runtimes/win-x64/native/wkp.dll runtimes/win-arm64/native/wkp.dll; do
+              runtimes/linux-x64/native/libwkp_native.so runtimes/linux-arm64/native/libwkp_native.so \
+              runtimes/linux-musl-x64/native/libwkp_native.so runtimes/linux-musl-arm64/native/libwkp_native.so \
+              runtimes/osx-x64/native/libwkp_native.dylib runtimes/osx-arm64/native/libwkp_native.dylib \
+              runtimes/win-x64/native/wkp_native.dll runtimes/win-arm64/native/wkp_native.dll; do
             grep -q " $entry$" <<<"$listing" || { echo "Package is missing $entry"; echo "$listing"; exit 1; }
           done
 

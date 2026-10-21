@@ -9,7 +9,9 @@ namespace Wkp;
 /// <summary>P/Invoke declarations for the C ABI in bindings/c/include/wkp/core.h.</summary>
 internal static unsafe class Native
 {
-    internal const string Library = "wkp";
+    // The C ABI library (libwkp) renamed: on case-insensitive file systems "wkp.dll" would be this
+    // managed assembly, Wkp.dll, which sits in the same directory.
+    internal const string Library = "wkp_native";
 
     internal const int StatusOk = 0;
     internal const int StatusInvalidArgument = 1;
@@ -114,7 +116,7 @@ internal static unsafe class Native
         {
             return handle;
         }
-        var file = OperatingSystem.IsWindows() ? "wkp.dll" : OperatingSystem.IsMacOS() ? "libwkp.dylib" : "libwkp.so";
+        var file = OperatingSystem.IsWindows() ? "wkp_native.dll" : OperatingSystem.IsMacOS() ? "libwkp_native.dylib" : "libwkp_native.so";
         foreach (var rid in new[] { RuntimeInformation.RuntimeIdentifier, PortableRid() })
         {
             var path = Path.Combine(AppContext.BaseDirectory, "runtimes", rid, "native", file);

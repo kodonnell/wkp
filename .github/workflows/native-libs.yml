@@ -79,7 +79,9 @@ jobs:
           fi
           out=bindings/csharp/src/Wkp/runtimes/${{ matrix.rid }}/native
           mkdir -p "$out"
-          cp target/${{ matrix.target }}/release/${{ matrix.lib }} "$out/"
+          # Renamed for the NuGet package: wkp.dll would collide with the managed Wkp.dll on Windows.
+          lib="${{ matrix.lib }}"
+          cp "target/${{ matrix.target }}/release/$lib" "$out/${lib/wkp/wkp_native}"
 
       - name: Upload
         uses: actions/upload-artifact@v4

@@ -24,8 +24,9 @@
   <ItemGroup>
     <None Include="../../README.md" Pack="true" PackagePath="/" Link="README.md" />
     <!--
-      Native libraries (libwkp.so / libwkp.dylib / wkp.dll) built from bindings/c, one per RID, in
-      runtimes/<rid>/native/. CI downloads them for every RID and packs with
+      Native libraries built from bindings/c, one per RID, in runtimes/<rid>/native/. They are
+      renamed from libwkp to libwkp_native (wkp_native.dll), because on Windows wkp.dll would
+      collide with this assembly, Wkp.dll. CI downloads them for every RID and packs with
       -p:WkpSkipNativeBuild=true; local builds compile the current machine's one (below).
     -->
     <None Include="runtimes/**/*" Pack="true" PackagePath="runtimes/" CopyToOutputDirectory="PreserveNewest" LinkBase="runtimes/" />
@@ -36,6 +37,7 @@
     <WkpNativeFile Condition="$([MSBuild]::IsOSPlatform('Windows'))">wkp.dll</WkpNativeFile>
     <WkpNativeFile Condition="$([MSBuild]::IsOSPlatform('OSX'))">libwkp.dylib</WkpNativeFile>
     <WkpNativeFile Condition="'$(WkpNativeFile)' == ''">libwkp.so</WkpNativeFile>
+    <WkpPackedFile>$(WkpNativeFile.Replace('wkp', 'wkp_native'))</WkpPackedFile>
     <WkpCargoTargetDir Condition="'$(CARGO_TARGET_DIR)' != ''">$([MSBuild]::EnsureTrailingSlash('$(CARGO_TARGET_DIR)'))</WkpCargoTargetDir>
     <WkpCargoTargetDir Condition="'$(WkpCargoTargetDir)' == ''">$(WkpRepoRoot)target/</WkpCargoTargetDir>
   </PropertyGroup>
@@ -44,7 +46,7 @@
   <Target Name="WkpBuildNative" BeforeTargets="PrepareForBuild" Condition="'$(WkpSkipNativeBuild)' != 'true'">
     <Exec Command="cargo build --release -p wkp-capi" WorkingDirectory="$(WkpRepoRoot)" />
     <Copy SourceFiles="$(WkpCargoTargetDir)release/$(WkpNativeFile)"
-          DestinationFolder="$(MSBuildThisFileDirectory)runtimes/$(NETCoreSdkRuntimeIdentifier)/native/"
+          DestinationFiles="$(MSBuildThisFileDirectory)runtimes/$(NETCoreSdkRuntimeIdentifier)/native/$(WkpPackedFile)"
           SkipUnchangedFiles="true" />
     <ItemGroup>
       <!-- Re-glob: the item above was evaluated before this target created the file. -->

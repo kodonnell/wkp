@@ -89,7 +89,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        # Not macos-latest: on its 2026-10 image, linking C++ against the macOS 27 SDK fails with
+        # "tapi error: malformed file ... unknown architecture arm64e.x1" (an image fault).
+        os: [ubuntu-latest, windows-latest, macos-15]
     steps:
       - uses: actions/checkout@v4
 
