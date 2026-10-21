@@ -1,7 +1,8 @@
 [![PyPI version fury.io](https://badge.fury.io/py/wkp.svg)](https://pypi.python.org/pypi/wkp/)
-[![npm version @wkpjs/node](https://badge.fury.io/js/%40wkpjs%2Fnode.svg)](https://badge.fury.io/js/%40wkpjs%2Fnode)
-[![npm version @wkpjs/web](https://badge.fury.io/js/%40wkpjs%2Fweb.svg)](https://badge.fury.io/js/%40wkpjs%2Fweb)
+[![npm @wkpjs/node](https://img.shields.io/npm/v/%40wkpjs%2Fnode.svg?label=%40wkpjs%2Fnode)](https://www.npmjs.com/package/@wkpjs/node)
+[![npm @wkpjs/web](https://img.shields.io/npm/v/%40wkpjs%2Fweb.svg?label=%40wkpjs%2Fweb)](https://www.npmjs.com/package/@wkpjs/web)
 [![NuGet](https://img.shields.io/nuget/v/Wkp.svg)](https://www.nuget.org/packages/Wkp)
+[![crates.io](https://img.shields.io/crates/v/wkp.svg)](https://crates.io/crates/wkp)
 [![GitHub Pages](https://img.shields.io/website?url=https%3A%2F%2Fkodonnell.github.io%2Fwkp%2F&up_message=live&down_message=down&label=github%20pages)](https://kodonnell.github.io/wkp/)
 
 # WKP - Well Known Polylines
