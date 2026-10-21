@@ -34,13 +34,17 @@ public sealed class GeometryFrame
     /// <summary>Size of the fixed header written by <see cref="ToBuffer"/>.</summary>
     public const int BufferHeaderSize = 40;
 
+    /// <summary>
+    /// Creates a frame. <paramref name="precision"/> is the number of decimal places kept when it
+    /// is encoded; <paramref name="version"/> is the format version, and only 1 can be encoded.
+    /// </summary>
     public GeometryFrame(
         GeometryType geometryType,
         int dimensions,
         double[] coords,
         int[] segmentPointCounts,
         int[] groupSegmentCounts,
-        int precision = 0,
+        int precision,
         int version = 1)
     {
         GeometryType = geometryType;
@@ -52,6 +56,7 @@ public sealed class GeometryFrame
         Version = version;
     }
 
+    /// <summary>Format version. Decoding sets it; encoding requires 1.</summary>
     public int Version { get; }
     /// <summary>Decimal places kept. Used by <see cref="WkpContext.EncodeFrame"/>; set by decoding.</summary>
     public int Precision { get; }
@@ -182,6 +187,10 @@ public sealed unsafe class WkpContext : IDisposable
         if (frame.Dimensions <= 0)
         {
             throw new ArgumentException("dimensions must be positive", nameof(frame));
+        }
+        if (frame.Version != 1)
+        {
+            throw new ArgumentException($"only format version 1 can be encoded, not {frame.Version}", nameof(frame));
         }
         var groups = ToNative(frame.GroupSegmentCounts, nameof(frame.GroupSegmentCounts));
         var segments = ToNative(frame.SegmentPointCounts, nameof(frame.SegmentPointCounts));

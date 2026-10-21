@@ -89,6 +89,8 @@ public class WkpTests
         Assert.Throws<FormatException>(() => WkpCodec.DecodeHeader("@@"));
         // A part with no points would encode to something no decoder accepts.
         Assert.Throws<ArgumentException>(() => WkpCodec.Encode(GeometryType.MultiPoint, Array.Empty<double>(), 2, 5, new[] { 1 }, new[] { 0 }));
+        // Only version 1 exists; a frame claiming another must not silently encode as version 1.
+        Assert.Throws<ArgumentException>(() => WkpCodec.EncodeFrame(new GeometryFrame(GeometryType.Point, 2, new[] { 1.0, 2.0 }, new[] { 1 }, new[] { 1 }, 5, version: 2)));
         var ctx = new WkpContext();
         ctx.Dispose();
         Assert.Throws<ObjectDisposedException>(() => ctx.Decode("@DA@??"));

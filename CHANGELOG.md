@@ -33,6 +33,9 @@ Release tags:
   `ValueError` for those.
 - Python: `EncodedGeometryType` is in `__all__`, and the decoders' first parameter is named
   `encoded` (it was `bites`), as documented. Code passing it by keyword as `bites=` must change.
+- .NET: `new GeometryFrame(...)` without a precision silently encoded at 0 decimal places;
+  `precision` is now a required argument. Encoding a frame whose `Version` is not 1 throws
+  `ArgumentException` instead of silently writing version 1.
 
 ---
 
