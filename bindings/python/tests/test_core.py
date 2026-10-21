@@ -21,6 +21,19 @@ def test_array_encode_matches_list_encode_3d():
     assert encoded_arr == encoded_list
 
 
+def test_encode_accepts_misaligned_and_strided_arrays():
+    arr = np.asarray([(1.5, 2.5), (3.25, -4.75), (5.0, 6.125)], dtype=np.float64)
+    want = encode_floats(arr, [5, 5])
+    # Float64 data at an odd byte offset, as np.frombuffer gives for packed binary formats.
+    raw = b"\x00" + arr.tobytes()
+    misaligned = np.frombuffer(raw, dtype=np.float64, offset=1).reshape(-1, 2)
+    assert not misaligned.flags.aligned
+    assert encode_floats(misaligned, [5, 5]) == want
+    # A strided (non-contiguous) column view.
+    wide = np.column_stack([arr[:, 0], np.zeros(3), arr[:, 1]])
+    assert encode_floats(wide[:, ::2], [5, 5]) == want
+
+
 def test_decode_roundtrip():
     out = [(round((random() - 0.5) * 1000, 3), round(random() * 1000, 4), round(random() * 1000, 2)) for _ in range(50)]
     encoded = encode_floats(out, [3, 4, 2])

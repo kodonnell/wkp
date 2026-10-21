@@ -101,6 +101,15 @@ def _resolve_context(ctx) -> Context:
     return ctx
 
 
+def _as_f64_c(values) -> np.ndarray:
+    """A C-contiguous, aligned float64 array, copying only if needed.
+
+    `np.ascontiguousarray` keeps misaligned arrays (e.g. `np.frombuffer` at an odd offset)
+    as they are, which the native module rejects.
+    """
+    return np.require(values, dtype=np.float64, requirements=("C", "A"))
+
+
 def _as_encoded_bytes(bites) -> bytes:
     try:
         return bytes(bites)
@@ -177,7 +186,7 @@ class GeometryFrame:
           uint32[segment_count]       segment_point_counts
           uint32[group_count]         group_segment_counts
         """
-        coords_flat = np.ascontiguousarray(self.coords.ravel(), dtype=np.float64)
+        coords_flat = _as_f64_c(self.coords.ravel())
         seg = np.asarray(self.segment_point_counts, dtype=np.uint32)
         grp = np.asarray(self.group_segment_counts, dtype=np.uint32)
         header = struct.pack(
@@ -211,7 +220,7 @@ class GeometryFrame:
             precision=precision,
             dimensions=dimensions,
             geometry_type=geometry_type,
-            coords=np.ascontiguousarray(coords, dtype=np.float64),
+            coords=_as_f64_c(coords),
             segment_point_counts=seg,
             group_segment_counts=grp,
         )
@@ -324,7 +333,7 @@ def _geometry_dimensions(geom) -> int:
 
 def _coords_array(geom, dimensions: int) -> np.ndarray:
     include_z = dimensions == 3
-    return np.ascontiguousarray(shapely.get_coordinates(geom, include_z=include_z), dtype=np.float64)
+    return _as_f64_c(shapely.get_coordinates(geom, include_z=include_z))
 
 
 def _geometry_to_frame(geom):
@@ -345,25 +354,25 @@ def _geometry_to_frame(geom):
     if isinstance(geom, Polygon):
         rings = [geom.exterior, *list(geom.interiors)]
         segments = [
-            np.ascontiguousarray(shapely.get_coordinates(r, include_z=include_z), dtype=np.float64) for r in rings
+            _as_f64_c(shapely.get_coordinates(r, include_z=include_z)) for r in rings
         ]
-        coords = np.ascontiguousarray(np.vstack(segments), dtype=np.float64)
+        coords = _as_f64_c(np.vstack(segments))
         return EncodedGeometryType.POLYGON.value, coords, [len(segments)], [arr.shape[0] for arr in segments]
 
     if isinstance(geom, MultiPoint):
         segments = [
-            np.ascontiguousarray(shapely.get_coordinates(point, include_z=include_z), dtype=np.float64)
+            _as_f64_c(shapely.get_coordinates(point, include_z=include_z))
             for point in geom.geoms
         ]
-        coords = np.ascontiguousarray(np.vstack(segments), dtype=np.float64)
+        coords = _as_f64_c(np.vstack(segments))
         return EncodedGeometryType.MULTIPOINT.value, coords, [1] * len(segments), [1] * len(segments)
 
     if isinstance(geom, MultiLineString):
         segments = [
-            np.ascontiguousarray(shapely.get_coordinates(line, include_z=include_z), dtype=np.float64)
+            _as_f64_c(shapely.get_coordinates(line, include_z=include_z))
             for line in geom.geoms
         ]
-        coords = np.ascontiguousarray(np.vstack(segments), dtype=np.float64)
+        coords = _as_f64_c(np.vstack(segments))
         return (
             EncodedGeometryType.MULTILINESTRING.value,
             coords,
@@ -377,11 +386,11 @@ def _geometry_to_frame(geom):
         for poly in geom.geoms:
             rings = [poly.exterior, *list(poly.interiors)]
             poly_segments = [
-                np.ascontiguousarray(shapely.get_coordinates(r, include_z=include_z), dtype=np.float64) for r in rings
+                _as_f64_c(shapely.get_coordinates(r, include_z=include_z)) for r in rings
             ]
             all_segments.extend(poly_segments)
             group_counts.append(len(poly_segments))
-        coords = np.ascontiguousarray(np.vstack(all_segments), dtype=np.float64)
+        coords = _as_f64_c(np.vstack(all_segments))
         return EncodedGeometryType.MULTIPOLYGON.value, coords, group_counts, [arr.shape[0] for arr in all_segments]
 
     raise TypeError("geom must be a Shapely Point, LineString, Polygon, MultiPoint, MultiLineString, or MultiPolygon")
@@ -406,7 +415,7 @@ def decode_frame(bites, *, ctx=None) -> GeometryFrame:
         precision=precision,
         dimensions=dimensions,
         geometry_type=geom_type,
-        coords=np.ascontiguousarray(coords, dtype=np.float64),
+        coords=_as_f64_c(coords),
         segment_point_counts=np.asarray(seg_counts, dtype=np.uint64),
         group_segment_counts=np.asarray(grp_counts, dtype=np.uint64),
     )
@@ -428,7 +437,7 @@ def decode(bites, *, ctx=None) -> DecodedGeometry:
 def encode_frame(frame: GeometryFrame, *, ctx=None) -> bytes:
     """Encode a :class:`GeometryFrame` to WKP bytes."""
     ctx = _resolve_context(ctx)
-    coords = np.ascontiguousarray(frame.coords, dtype=np.float64)
+    coords = _as_f64_c(frame.coords)
     if coords.ndim != 2:
         raise ValueError("frame.coords must be a 2D array")
     grp = [int(x) for x in frame.group_segment_counts]
@@ -459,7 +468,7 @@ def encode_floats(floats, precisions, *, ctx=None) -> bytes:
         raise ValueError("floats must be a 2D array-like")
     if values.shape[1] != dimensions:
         raise ValueError(f"floats must have {dimensions} columns")
-    values = np.ascontiguousarray(values, dtype=np.float64)
+    values = _as_f64_c(values)
 
     return _core.encode_f64(ctx, values, dimensions, p)
 
