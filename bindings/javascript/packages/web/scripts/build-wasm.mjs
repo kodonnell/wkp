@@ -9,7 +9,9 @@ const repoRoot = resolve(pkgRoot, '../../../..');
 const target = 'wasm32-unknown-unknown';
 const profile = 'release-wasm';
 
-const result = spawnSync('cargo', ['build', '-p', 'wkp-wasm', '--target', target, '--profile', profile], {
+// In CI, build exactly what Cargo.lock pins (and fail if it is out of date).
+const locked = process.env.CI ? ['--locked'] : [];
+const result = spawnSync('cargo', ['build', '-p', 'wkp-wasm', '--target', target, '--profile', profile, ...locked], {
     cwd: repoRoot,
     stdio: 'inherit',
     shell: process.platform === 'win32'

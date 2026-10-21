@@ -42,6 +42,57 @@ All packages share one version, set in `Cargo.toml` (`[workspace.package]`); see
   - Creates a product-level GitHub release only
   - Does not publish any packages
 
+## How to release
+
+Every registry is published from GitHub Actions with trusted publishing: the registry trusts one
+workflow file in `kodonnell/wkp` (and its GitHub environment), so no API keys are stored in the
+repository.
+
+| Registry  | Package(s)                  | Tag             | Workflow     | GitHub environment |
+| --------- | --------------------------- | --------------- | ------------ | ------------------ |
+| PyPI      | `wkp`                       | `pypi-vX.Y.Z`   | `python.yml` | `pypi`             |
+| npm       | `@wkpjs/node`, `@wkpjs/web` | `npm-vX.Y.Z`    | `js.yml`     | `npm`              |
+| NuGet     | `Wkp`                       | `nuget-vX.Y.Z`  | `csharp.yml` | `nuget`            |
+| crates.io | `wkp`                       | `crates-vX.Y.Z` | `crates.yml` | `crates`           |
+
+1. Bump `version` under `[workspace.package]` in the root `Cargo.toml`.
+2. Run `node bindings/javascript/scripts/sync-version.mjs --write`, then
+   `python scripts/check_versions.py`, and update anything else it reports.
+3. Update `CHANGELOG.md`, commit, and push `main`. Wait for CI to pass.
+4. Tag and push each package being released, **one tag per push** (GitHub starts no workflows
+   when more than three tags are pushed at once):
+
+   ```sh
+   git tag pypi-vX.Y.Z && git push origin pypi-vX.Y.Z
+   git tag npm-vX.Y.Z && git push origin npm-vX.Y.Z
+   git tag nuget-vX.Y.Z && git push origin nuget-vX.Y.Z
+   git tag crates-vX.Y.Z && git push origin crates-vX.Y.Z
+   ```
+
+Rehearsals: running a workflow manually (Actions, then **Run workflow**) behaves differently per
+registry:
+
+- `csharp.yml` and `crates.yml` build, test and package, but never publish.
+- `js.yml` publishes unless the `dry_run` input is ticked.
+- `python.yml` **publishes** (TestPyPI, then PyPI).
+
+Published versions are permanent: NuGet versions can only be unlisted, crates.io versions only
+yanked (existing users can still download them), and npm and PyPI never allow a version number
+to be reused. Publishing the npm packages also redeploys GitHub Pages with the new
+`@wkpjs/web`.
+
+Only the `wkp` crate is published; the binding crates (`wkp-capi`, `wkp-py`, `wkp-node`,
+`wkp-wasm`) are `publish = false`. The crate contains only `core/`: the golden and reference
+tests travel with it, but `tests/fixtures.rs` and the benchmark example read `../data`, so they
+only run in the repo.
+
+## GitHub Pages
+
+The demo (`docs/`) is deployed by `pages.yml` on every push to `main`, after each npm release,
+and on demand (Actions, **Deploy GitHub Pages**, **Run workflow**, optionally with a
+`@wkpjs/web` version). It loads `@wkpjs/web` from npm (the latest version unless one is given),
+not from the repo.
+
 ## Rationale
 
 Packages share one version number but are released independently, so package-tagged releases should describe only the deliverable that actually changed. This avoids re-announcing unchanged Python assets every time JavaScript ships, or unchanged JavaScript assets every time Python ships.

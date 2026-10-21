@@ -36,6 +36,10 @@ function nodeTarget(triple) {
 }
 
 const cargoArgs = [zig ? 'zigbuild' : 'build', '-p', 'wkp-node', ...(profile === 'release' ? ['--release'] : [])];
+// In CI, build exactly what Cargo.lock pins (and fail if it is out of date).
+if (process.env.CI) {
+    cargoArgs.push('--locked');
+}
 if (target) {
     // zigbuild takes the minimum glibc as a suffix; artifacts still land under the plain triple.
     cargoArgs.push('--target', zig && target.endsWith('-linux-gnu') ? `${target}.2.17` : target);

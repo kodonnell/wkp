@@ -24,7 +24,7 @@ jobs:
 
       # All crates, including the Python/Node/WebAssembly bindings (they compile for the host).
       - name: Clippy
-        run: cargo clippy --workspace --all-targets -- -D warnings
+        run: cargo clippy --locked --workspace --all-targets -- -D warnings
 
       - name: Check versions
         run: python3 scripts/check_versions.py
@@ -59,7 +59,7 @@ jobs:
         uses: dtolnay/rust-toolchain@1.85
 
       - name: Test
-        run: cargo test -p wkp -p wkp-capi
+        run: cargo test --locked -p wkp -p wkp-capi
 
   rust:
     name: Rust tests (${{ matrix.os }})
@@ -75,13 +75,13 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Test (debug)
-        run: cargo test
+        run: cargo test --locked
 
       - name: Test (release)
-        run: cargo test --release
+        run: cargo test --locked --release
 
       - name: Benchmark
-        run: cargo run --release -p wkp --example bench -- 5
+        run: cargo run --locked --release -p wkp --example bench -- 5
 
   cpp:
     name: C/C++ build and tests (${{ matrix.os }})

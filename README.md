@@ -138,7 +138,7 @@ The decoders and encoders are also fuzzed against a naive SPEC.md decoder: see `
 - `wkp-vX.Y.Z`: create a product-level GitHub release only; it does not publish any packages.
 - C/C++ have CI artifacts, but no standalone package/release workflow.
 
-See `docs/release-policy.md` for the full release policy.
+See `docs/release-policy.md` for the full release policy and the release steps.
 
 ## Detailed docs
 

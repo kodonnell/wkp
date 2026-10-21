@@ -71,11 +71,11 @@ jobs:
           set -euo pipefail
           if [[ "${{ matrix.target }}" == *-musl ]]; then
             # Dynamic C runtime: musl targets default to static, which rules out a shared library.
-            RUSTFLAGS="-C target-feature=-crt-static" cargo zigbuild --release -p wkp-capi --target ${{ matrix.target }}
+            RUSTFLAGS="-C target-feature=-crt-static" cargo zigbuild --locked --release -p wkp-capi --target ${{ matrix.target }}
           elif [[ "${{ matrix.zig }}" == "true" ]]; then
-            cargo zigbuild --release -p wkp-capi --target ${{ matrix.target }}.2.17
+            cargo zigbuild --locked --release -p wkp-capi --target ${{ matrix.target }}.2.17
           else
-            cargo build --release -p wkp-capi --target ${{ matrix.target }}
+            cargo build --locked --release -p wkp-capi --target ${{ matrix.target }}
           fi
           out=bindings/csharp/src/Wkp/runtimes/${{ matrix.rid }}/native
           mkdir -p "$out"

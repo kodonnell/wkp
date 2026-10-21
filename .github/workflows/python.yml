@@ -121,7 +121,7 @@ jobs:
         with:
           target: ${{ matrix.target }}
           manylinux: ${{ matrix.manylinux }}
-          args: --release --out dist
+          args: --release --locked --out dist
           working-directory: bindings/python
 
       - name: Upload wheel
