@@ -36,6 +36,9 @@ Release tags:
 - .NET: `new GeometryFrame(...)` without a precision silently encoded at 0 decimal places;
   `precision` is now a required argument. Encoding a frame whose `Version` is not 1 throws
   `ArgumentException` instead of silently writing version 1.
+- JavaScript: a fractional precision was silently truncated by `@wkpjs/web`'s `encode` and
+  `encodeFrame` and by `@wkpjs/node`'s `encodeFrame` (`encode(g, 5.7)` encoded at 5). Both
+  packages now throw `TypeError`, as `@wkpjs/node`'s `encode` already did.
 - C++ (`wkp/core.hpp`): each thread's context was never freed, leaking its buffers (sized to the
   largest input) when the thread exited.
 

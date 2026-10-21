@@ -560,6 +560,10 @@ export async function createWkp(options) {
 
         _encodeFrame(geometryType, coords, dimensions, precision, groupSegmentCounts, segmentPointCounts) {
             this._checkNotDisposed();
+            // wasm would truncate a fraction silently.
+            if (!Number.isInteger(precision)) {
+                throw new TypeError('precision must be an integer');
+            }
             const { ptrs: [coordsPtr, groupsPtr, segmentsPtr] } = stage(this._ptr, [coords, groupSegmentCounts, segmentPointCounts]);
             checkStatus(native.wkp_encode_geometry(
                 this._ptr,

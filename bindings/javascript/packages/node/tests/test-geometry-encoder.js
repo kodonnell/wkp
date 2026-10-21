@@ -6,9 +6,11 @@ const {
     decode,
     decodeFloats,
     decodeFloatsArray,
+    decodeFrame,
     decodeHeader,
     encode,
     encodeFloats,
+    encodeFrame,
     EncodedGeometryType
 } = require('..');
 
@@ -82,6 +84,14 @@ test('decodeHeader and generic encode/decode path', () => {
 test('invalid precision and malformed input surface clear errors', () => {
     assert.throws(() => encode({ type: 'Point', coordinates: [0, 0] }, 9999));
     assert.throws(() => decode('@@'));
+});
+
+test('a fractional precision is rejected, not truncated', () => {
+    const point = { type: 'Point', coordinates: [1, 2] };
+    assert.throws(() => encode(point, 5.7), /^TypeError: precision must be an integer$/);
+    const frame = decodeFrame(encode(point, 5));
+    frame.precision = 2.5;
+    assert.throws(() => encodeFrame(frame), /^TypeError: precision must be an integer$/);
 });
 
 test('unsupported geometry collection raises', () => {

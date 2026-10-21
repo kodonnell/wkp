@@ -600,6 +600,9 @@ function encodeFrame(frame, ctx = _defaultCtx) {
     if (!(frame instanceof GeometryFrame)) {
         throw new TypeError('frame must be a GeometryFrame instance');
     }
+    if (!Number.isInteger(frame.precision)) {
+        throw new TypeError('precision must be an integer');
+    }
     return core.encodeGeometryFrameF64(
         frame.geometryType,
         frame.coords,

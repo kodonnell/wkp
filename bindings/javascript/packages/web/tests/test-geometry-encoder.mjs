@@ -94,6 +94,15 @@ test('encode rejects malformed coordinates with TypeError (web)', async () => {
     assert.throws(() => wkp.encodeFloats([[0, 0], [0]], [5, 5]), /^TypeError: floats rows must each have exactly 2 values$/);
 });
 
+test('a fractional precision is rejected, not truncated (web)', async () => {
+    const wkp = await createWkp();
+    const point = { type: 'Point', coordinates: [1, 2] };
+    assert.throws(() => wkp.encode(point, 5.7), /^TypeError: precision must be an integer$/);
+    const frame = wkp.decodeFrame(wkp.encode(point, 5));
+    frame.precision = 2.5;
+    assert.throws(() => wkp.encodeFrame(frame), /^TypeError: precision must be an integer$/);
+});
+
 test('every geometry type round-trips in 2D, 3D and 4D (web)', async () => {
     const wkp = await createWkp();
     const pos = (d, i) => Array.from({ length: d }, (_, k) => i + k / 10);
