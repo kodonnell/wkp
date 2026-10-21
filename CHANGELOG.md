@@ -36,6 +36,8 @@ Release tags:
 - .NET: `new GeometryFrame(...)` without a precision silently encoded at 0 decimal places;
   `precision` is now a required argument. Encoding a frame whose `Version` is not 1 throws
   `ArgumentException` instead of silently writing version 1.
+- C++ (`wkp/core.hpp`): each thread's context was never freed, leaking its buffers (sized to the
+  largest input) when the thread exited.
 
 ---
 

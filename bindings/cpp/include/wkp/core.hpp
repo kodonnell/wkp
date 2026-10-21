@@ -50,21 +50,31 @@ namespace wkp::core
         (void)passed;
     }
 
+    namespace detail
+    {
+        // Owns one thread's context and frees its buffers when the thread exits.
+        struct thread_context
+        {
+            wkp_context ctx{};
+
+            thread_context()
+            {
+                if (wkp_context_init(&ctx) != WKP_STATUS_OK)
+                {
+                    throw std::runtime_error("Failed to initialize WKP context");
+                }
+            }
+            ~thread_context() { wkp_context_free(&ctx); }
+            thread_context(const thread_context &) = delete;
+            thread_context &operator=(const thread_context &) = delete;
+        };
+    } // namespace detail
+
     inline wkp_context &thread_ctx()
     {
         ensure_basic_self_test();
-        thread_local wkp_context ctx{};
-        thread_local bool initialized = false;
-        if (!initialized)
-        {
-            const auto status = wkp_context_init(&ctx);
-            if (status != WKP_STATUS_OK)
-            {
-                throw std::runtime_error("Failed to initialize WKP context");
-            }
-            initialized = true;
-        }
-        return ctx;
+        thread_local detail::thread_context holder;
+        return holder.ctx;
     }
 
     inline std::vector<int> normalize_precisions(std::size_t dimensions, const std::vector<int> &precisions)
