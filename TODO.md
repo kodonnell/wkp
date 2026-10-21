@@ -1,7 +1,10 @@
 - javascript:
   - add some more expected tests, like python.
+  - musl (Alpine) prebuilt binaries for @wkpjs/node (currently falls back to an error suggesting @wkpjs/web).
 - benchmarks:
   - port the north island file so that can be used in C++/JS tests too.
-- add binding/csharp/ and publish to nuget.
-- add releases for JS?
+- csharp:
+  - optional NetTopologySuite integration (Geometry <-> GeometryFrame), probably as a separate package.
+  - consider netstandard2.0 for .NET Framework / Unity users.
 - allow pushing @wkpjs/web separate to @wkpjs/node to npm.
+- publish `wkp-core` to crates.io (it is already a standalone `no_std` crate)?

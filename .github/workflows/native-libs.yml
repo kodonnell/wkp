@@ -1,0 +1,83 @@
+name: Build native libraries (reusable)
+
+# Cross-platform builds of the Rust native libraries that ship inside the npm and NuGet
+# packages. Linux builds use cargo-zigbuild to target glibc 2.17, so they load on old distros.
+#
+# kind: node -> artifacts `native-node-<platform>-<arch>` containing <platform>-<arch>/wkp.node
+#                (lay out under bindings/javascript/packages/node/prebuilds/)
+# kind: capi -> artifacts `native-capi-<rid>` containing <rid>/native/<libwkp>
+#                (lay out under bindings/csharp/src/Wkp/runtimes/)
+
+on:
+  workflow_call:
+    inputs:
+      kind:
+        description: "node or capi"
+        required: true
+        type: string
+
+jobs:
+  build:
+    name: ${{ inputs.kind }} ${{ matrix.rid }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, target: x86_64-unknown-linux-gnu, rid: linux-x64, node: linux-x64, lib: libwkp.so, zig: true }
+          - { os: ubuntu-latest, target: aarch64-unknown-linux-gnu, rid: linux-arm64, node: linux-arm64, lib: libwkp.so, zig: true }
+          - { os: macos-latest, target: x86_64-apple-darwin, rid: osx-x64, node: darwin-x64, lib: libwkp.dylib, zig: false }
+          - { os: macos-latest, target: aarch64-apple-darwin, rid: osx-arm64, node: darwin-arm64, lib: libwkp.dylib, zig: false }
+          - { os: windows-latest, target: x86_64-pc-windows-msvc, rid: win-x64, node: win32-x64, lib: wkp.dll, zig: false }
+          - { os: windows-latest, target: aarch64-pc-windows-msvc, rid: win-arm64, node: win32-arm64, lib: wkp.dll, zig: false }
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      # setup-python avoids the runner's externally-managed system Python.
+      - name: Set up Python
+        if: matrix.zig
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install cargo-zigbuild
+        if: matrix.zig
+        run: pip install ziglang cargo-zigbuild
+
+      - name: Set up Node
+        if: inputs.kind == 'node'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Build Node addon
+        if: inputs.kind == 'node'
+        shell: bash
+        run: node bindings/javascript/packages/node/scripts/build-native.mjs --target ${{ matrix.target }} --prebuild ${{ matrix.zig && '--zig' || '' }}
+
+      - name: Build C ABI library
+        if: inputs.kind == 'capi'
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${{ matrix.zig }}" == "true" ]]; then
+            cargo zigbuild --release -p wkp-capi --target ${{ matrix.target }}.2.17
+          else
+            cargo build --release -p wkp-capi --target ${{ matrix.target }}
+          fi
+          out=bindings/csharp/src/Wkp/runtimes/${{ matrix.rid }}/native
+          mkdir -p "$out"
+          cp target/${{ matrix.target }}/release/${{ matrix.lib }} "$out/"
+
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-${{ inputs.kind }}-${{ inputs.kind == 'node' && matrix.node || matrix.rid }}
+          path: ${{ inputs.kind == 'node' && 'bindings/javascript/packages/node/prebuilds/' || 'bindings/csharp/src/Wkp/runtimes/' }}
+          if-no-files-found: error

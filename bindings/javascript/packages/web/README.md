@@ -1,16 +1,27 @@
 # @wkpjs/web
 
-Browser/Node WebAssembly bindings for WKP core built with Emscripten.
+Browser/Node WebAssembly bindings for the WKP Rust core.
+
+The package is plain JavaScript (`src/`) plus one dependency-free WebAssembly module
+(`dist/wkp_core.wasm`, built from `native/` for `wasm32-unknown-unknown`; no Emscripten glue).
 
 ## Requirements
 
-- Node.js >= 18
-- Emscripten (`emcc`) available (for build)
+- Node.js >= 18, or any browser with WebAssembly
 - Browser usage requires HTTP(S) origin (not `file://`)
+- Building from source: Rust (stable) with `rustup target add wasm32-unknown-unknown`
+
+## Loading the module
+
+`createWkp(options?)` loads `dist/wkp_core.wasm` (via `fs` in Node, `fetch` in browsers; bundlers
+that understand `new URL('...', import.meta.url)` pick it up automatically). Options, all
+optional:
+
+- `wasmBinary`: the module bytes (`ArrayBuffer` / typed array), e.g. if you inline or fetch it yourself
+- `wasmModule`: an already compiled `WebAssembly.Module`
+- `locateFile(name)`: return the URL to fetch `wkp_core.wasm` from (e.g. a CDN path)
 
 ## Build
-
-Requires Emscripten (`emcc`) in PATH.
 
 From `bindings/javascript`:
 
@@ -70,7 +81,7 @@ Use `createWkp()` to load the WASM module. All functions are returned on the `wk
 ```js
 wkp.encode(geometry, precision, ctx?)    // → string
 wkp.decode(encoded, ctx?)               // → { geometry, version, precision, dimensions }
-wkp.decodeHeader(encoded)               // → { version, precision, dimensions, geometryType }
+wkp.decodeHeader(encoded)               // → [version, precision, dimensions, geometryType]
 ```
 
 ### GeometryFrame — low-level flat representation
@@ -100,7 +111,7 @@ wkp.decodeFloats(encoded, precisions, ctx?)              // → Array<Array<numb
 new wkp.Context()
 ```
 
-`Context` is a marker object — the WASM module manages its own buffer pool internally and does not hold state in the JS object itself.
+A `Context` owns reusable input/output buffers inside the WASM instance. Call `ctx.dispose()` when you are done with a context you created; the default context lives as long as the `wkp` object.
 
 **Default (omit ctx)** — uses a module-level context; fine for most use cases:
 
@@ -118,7 +129,7 @@ const wkp = await createWkp();   // isolated instance — no shared state with m
 const decoded = wkp.decode(data.encoded);
 ```
 
-**Memory control** — the WASM heap is fixed at module load time. If you need to release it entirely, drop the reference to the `wkp` object and allow it to be garbage-collected. There is no way to release a partial allocation short of discarding the whole module instance.
+**Memory control** — WASM memory grows to fit the largest input processed and never shrinks. To release it entirely, drop the reference to the `wkp` object and allow it to be garbage-collected.
 
 ## Example
 

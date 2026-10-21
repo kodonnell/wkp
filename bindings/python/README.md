@@ -1,33 +1,41 @@
 # wkp (Python binding)
 
-Python package with a minimal Shapely-first API on top of WKP core geometry-frame C ABI.
+Python package with a minimal Shapely-first API on top of the WKP Rust core.
 
 ## Architecture
 
-- Uses `nanobind` for the extension module
-- Calls the C ABI in `core/include/wkp/core.h` directly
-- Python package version is managed independently
-- Runtime compatibility check enforces WKP core
+- `src/lib.rs`: the `wkp._core` extension, written with [pyo3](https://pyo3.rs) and
+  [rust-numpy](https://github.com/PyO3/rust-numpy) over `wkp-core` (`core/`)
+- `python/wkp/`: the pure-Python package (Shapely conversion, `GeometryFrame`, contexts)
+- Built with [maturin](https://www.maturin.rs) as abi3 wheels: one wheel per platform works on
+  every CPython from 3.9 up (including 3.14)
+- The package version comes from the Cargo workspace (`Cargo.toml` at the repo root); a runtime
+  check enforces core compatibility
+- Large inputs are processed with the GIL released
 
 ## Dependencies
 
-- Python >= 3.8
-- build: `setuptools`, `wheel`, `nanobind`
+- Python >= 3.9
+- build: Rust (stable) and `maturin` (pulled in automatically by `pip install`)
 - runtime: `numpy`, `shapely`
-- dev/test: `pytest`, `build`, `twine`, `polyline`
+- dev/test: `pytest`, `polyline`
 
-## Install (editable dev)
+## Install (dev)
 
 From repo root:
 
 ```sh
-pip install -e bindings/python[dev]
+pip install -e "bindings/python[dev]"     # or: cd bindings/python && maturin develop --release
 ```
+
+Re-run after changing Rust code (Python changes are picked up directly).
 
 ## Build
 
 ```sh
-python -m build bindings/python
+cd bindings/python
+maturin build --release      # wheel for this platform, in ../../target/wheels
+maturin sdist                # source distribution
 ```
 
 ## Test
@@ -94,6 +102,11 @@ for geom in large_collection:
 del ctx  # releases native buffers immediately
 ```
 
+A `Context` belongs to one thread at a time: using the same one from two threads concurrently
+raises `RuntimeError: Already borrowed` (use the default thread-local contexts, or one `Context`
+per thread). Inputs of 16k+ values are processed with the GIL released, so threads encoding or
+decoding large geometries run in parallel.
+
 **Per-call (no persistent memory)** — create a fresh context for each call; buffers are freed as soon as the call returns:
 
 ```python
@@ -142,25 +155,31 @@ python bindings/python/benchmark/bench_flat_api.py
 python bindings/python/benchmark/bench_flat_api.py --points=50000 --iterations=200
 ```
 
-Example results:
+Example results (wkp 0.6.0, Python 3.10, WSL2 on an i7-12700H, one core):
 
 | Method          | Source   | kb    | Encode (ms) | Decode (ms) | Total (ms)  | Iters |
 | --------------- | -------- | ----- | ----------- | ----------- | ----------- | ----- |
-| shapely_wkb     | nz-coast | 156.3 | 0.50 ± 0.04 | 0.10 ± 0.02 | 0.60 ± 0.05 | 2000  |
-| shapely_wkt     | nz-coast | 379.7 | 1.88 ± 0.09 | 5.09 ± 0.18 | 6.96 ± 0.21 | 721   |
-| shapely_wkt_5dp | nz-coast | 202.8 | 1.30 ± 0.08 | 2.71 ± 0.16 | 4.01 ± 0.18 | 1128  |
-| wkp-5p-bytes    | nz-coast | 42.9  | 0.23 ± 0.03 | 0.15 ± 0.03 | 0.39 ± 0.04 | 2000  |
-| wkp-5p-str      | nz-coast | 42.9  | 0.24 ± 0.03 | 0.15 ± 0.03 | 0.39 ± 0.04 | 2000  |
-| shapely_wkb     | random   | 156.3 | 0.50 ± 0.04 | 0.10 ± 0.02 | 0.60 ± 0.05 | 2000  |
-| shapely_wkt     | random   | 378.4 | 1.86 ± 0.28 | 5.09 ± 0.20 | 6.89 ± 0.21 | 724   |
-| shapely_wkt_5dp | random   | 163.9 | 1.38 ± 0.08 | 2.77 ± 0.14 | 4.15 ± 0.18 | 1073  |
-| wkp-5p-bytes    | random   | 72.2  | 0.31 ± 0.10 | 0.19 ± 0.02 | 0.50 ± 0.10 | 2000  |
-| wkp-5p-str      | random   | 72.2  | 0.28 ± 0.03 | 0.18 ± 0.02 | 0.46 ± 0.04 | 2000  |
+| shapely_wkb     | nz-coast | 156.3 | 0.24 ± 0.05 | 0.07 ± 0.03 | 0.30 ± 0.06 | 2000  |
+| shapely_wkt     | nz-coast | 379.7 | 1.40 ± 0.29 | 4.62 ± 0.40 | 6.08 ± 0.62 | 931   |
+| shapely_wkt_5dp | nz-coast | 202.8 | 1.47 ± 0.33 | 2.89 ± 0.34 | 4.33 ± 0.43 | 1028  |
+| wkp-5p-bytes    | nz-coast | 42.9  | 0.12 ± 0.05 | 0.07 ± 0.01 | 0.20 ± 0.06 | 2000  |
+| wkp-5p-str      | nz-coast | 42.9  | 0.10 ± 0.02 | 0.08 ± 0.02 | 0.18 ± 0.03 | 2000  |
+| wkp-frame-5p    | nz-coast | 42.9  | 0.13 ± 0.14 | 0.06 ± 0.02 | 0.19 ± 0.14 | 2000  |
+| shapely_wkb     | random   | 156.3 | 0.26 ± 0.15 | 0.07 ± 0.02 | 0.32 ± 0.15 | 2000  |
+| shapely_wkt     | random   | 378.4 | 1.40 ± 0.19 | 4.42 ± 0.48 | 5.82 ± 0.51 | 938   |
+| shapely_wkt_5dp | random   | 163.9 | 1.56 ± 0.29 | 2.73 ± 0.37 | 4.26 ± 0.42 | 1008  |
+| wkp-5p-bytes    | random   | 72.2  | 0.12 ± 0.14 | 0.09 ± 0.03 | 0.21 ± 0.15 | 2000  |
+| wkp-5p-str      | random   | 72.2  | 0.11 ± 0.02 | 0.09 ± 0.02 | 0.19 ± 0.03 | 2000  |
+| wkp-frame-5p    | random   | 72.2  | 0.11 ± 0.04 | 0.07 ± 0.02 | 0.18 ± 0.04 | 2000  |
 
+On the same machine, the 0.5.0 (nanobind + C core) build took 0.17 ms to encode and 0.18 ms to
+decode `nz-coast` (`wkp-5p-str`).
 
 ## Packaging / release
 
-- Wheels are built in `.github/workflows/python.yml` using `cibuildwheel`.
+- abi3 wheels (manylinux and musllinux x86_64/aarch64, Windows x64/arm64, macOS x86_64/arm64)
+  and the sdist are built in `.github/workflows/python.yml` with `PyO3/maturin-action`, then
+  tested on Python 3.9 and 3.14.
 - Release/publish runs from tag pushes or `workflow_dispatch` in `.github/workflows/python.yml`.
 - Tag publish (recommended): push a tag in the exact format `pypi-vX.Y.Z` (for example `pypi-v0.1.0`).
 - Publish order is always TestPyPI first, then PyPI.

@@ -6,7 +6,6 @@ import threading
 from dataclasses import dataclass
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as dist_version
-from pathlib import Path
 
 import numpy as np
 import shapely
@@ -15,7 +14,7 @@ from shapely.geometry import GeometryCollection, LineString, MultiLineString, Mu
 from . import _core
 
 __core_version__ = _core.core_version()
-__core_compatibility__ = "0.5.x"
+__core_compatibility__ = "0.6.x"
 
 __all__ = [
     "Context",
@@ -48,12 +47,9 @@ def _binding_version() -> str:
     try:
         return dist_version("wkp")
     except PackageNotFoundError:
-        pyproject = Path(__file__).resolve().parents[2] / "pyproject.toml"
-        content = pyproject.read_text(encoding="utf-8")
-        match = re.search(r'^version\s*=\s*"([^"]+)"', content, flags=re.MULTILINE)
-        if not match:
-            raise RuntimeError(f"Could not parse [project].version from {pyproject}")
-        return match.group(1)
+        # Not installed as a distribution (e.g. imported from a source tree). The package and
+        # extension are built from the same Cargo workspace, so they share a version.
+        return _core.__version__
 
 
 __version__ = _binding_version()

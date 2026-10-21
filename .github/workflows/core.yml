@@ -1,0 +1,89 @@
+name: Core (Rust, C and C++) CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  checks:
+    name: Lint and repository checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Format
+        run: cargo fmt --all --check
+
+      # All crates, including the Python/Node/WebAssembly bindings (they compile for the host).
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Check versions
+        run: python3 scripts/check_versions.py
+
+      - name: Check fixture manifest
+        run: python3 scripts/check_fixture_manifest.py
+
+  msrv:
+    name: Minimum supported Rust (core and C ABI)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@1.85
+
+      - name: Test
+        run: cargo test -p wkp-core -p wkp-capi
+
+  rust:
+    name: Rust tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Test (debug)
+        run: cargo test
+
+      - name: Test (release)
+        run: cargo test --release
+
+      - name: Benchmark
+        run: cargo run --release -p wkp-core --example bench -- 5
+
+  cpp:
+    name: C/C++ build and tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Configure CMake
+        run: cmake -S . -B build/cmake -DCMAKE_BUILD_TYPE=Release -DWKP_BUILD_TESTS=ON -DWKP_BUILD_BENCHMARKS=ON
+
+      - name: Build
+        run: cmake --build build/cmake --config Release
+
+      - name: Run tests
+        run: ctest --test-dir build/cmake -C Release --output-on-failure

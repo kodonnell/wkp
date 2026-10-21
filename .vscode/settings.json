@@ -2,10 +2,10 @@
     "python-envs.defaultEnvManager": "ms-python.python:conda",
     "python-envs.defaultPackageManager": "ms-python.python:conda",
     "python.analysis.extraPaths": [
-        "bindings/python/src"
+        "bindings/python/python"
     ],
     "python.autoComplete.extraPaths": [
-        "bindings/python/src"
+        "bindings/python/python"
     ],
     "python.analysis.exclude": [
         "**/.ignore/**"

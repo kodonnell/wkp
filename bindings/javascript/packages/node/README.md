@@ -1,20 +1,28 @@
 # @wkpjs/node
 
-Node-API native bindings for WKP core.
+Node-API native bindings for the WKP Rust core.
 
 ## Requirements
 
 - Node.js >= 18
-- Native build toolchain for `node-gyp` (C/C++ compiler and Python)
+- Published packages include prebuilt binaries for linux-x64, linux-arm64 (glibc 2.17+),
+  darwin-x64, darwin-arm64, win32-x64 and win32-arm64, so installing needs no compiler. On other
+  platforms (for example musl/Alpine), use `@wkpjs/web`, or build from source.
+- Building from source: Rust (stable)
 
 ## Build
 
-From `bindings/javascript`:
+The addon (`native/`, written with [napi-rs](https://napi.rs)) is built with cargo and copied to
+`build/Release/wkp.node`. From `bindings/javascript`:
 
 ```sh
 npm install
 npm --workspace @wkpjs/node run build
 ```
+
+CI builds the published binaries with `node scripts/build-native.mjs --target <triple> --prebuild`
+(see the script for options); `index.js` loads `prebuilds/<platform>-<arch>/wkp.node` first and
+falls back to `build/Release/wkp.node`.
 
 ## Test
 
@@ -44,16 +52,16 @@ node bindings/javascript/packages/node/benchmark/bench_flat_api.mjs --points=500
 ### Geometry encode / decode
 
 ```js
-encode(geometry, precision, ctx?)     // → string
+encode(geometry, precision, ctx?)     // → Buffer (ASCII)
 decode(encoded, ctx?)                 // → { geometry, version, precision, dimensions }
-decodeHeader(encoded)                 // → { version, precision, dimensions, geometryType }
+decodeHeader(encoded)                 // → [version, precision, dimensions, geometryType]
 ```
 
 ### GeometryFrame — low-level flat representation
 
 ```js
 decodeFrame(encoded, ctx?)            // → GeometryFrame
-encodeFrame(frame, ctx?)              // → string
+encodeFrame(frame, ctx?)              // → Buffer (ASCII)
 ```
 
 `GeometryFrame` fields: `version`, `precision`, `dimensions`, `geometryType`, `coords` (Float64Array, flat `[x0,y0,x1,y1,…]`), `segmentPointCounts` (Uint32Array), `groupSegmentCounts` (Uint32Array).
@@ -63,7 +71,7 @@ Methods: `toGeometry()` → GeoJSON, `toBuffer()` → ArrayBuffer (transferable)
 ### Float helpers
 
 ```js
-encodeFloats(floats, precisions, ctx?)                 // → string
+encodeFloats(floats, precisions, ctx?)                 // → Buffer (ASCII)
 decodeFloatsArray(encoded, precisions, ctx?)            // → Float64Array (flat [x0,y0,x1,y1,...])
 decodeFloats(encoded, precisions, ctx?)                 // → Array<Array<number>>
 ```

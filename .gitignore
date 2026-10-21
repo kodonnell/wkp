@@ -9,3 +9,5 @@ wheelhouse
 *.whl
 .pytest_cache
 *cache*
+# Rust
+/target/

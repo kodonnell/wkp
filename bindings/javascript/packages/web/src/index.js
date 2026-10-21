@@ -1,9 +1,8 @@
-import initWkpCore from '../dist/wkp_core.js';
 import { loadVersionMetadata } from './version.js';
 
-const DEFAULT_ERROR_CAPACITY = 512;
 const TEXT_ENCODER = new TextEncoder();
 const TEXT_DECODER = new TextDecoder();
+// Hidden from bundlers so browser builds don't try to resolve Node built-ins.
 const dynamicImport = new Function('specifier', 'return import(specifier);');
 
 function isNodeRuntime() {
@@ -14,17 +13,36 @@ function isNodeRuntime() {
     );
 }
 
-async function prepareInitOptions(options) {
-    const moduleOptions = options ? { ...options } : {};
-
-    if (!isNodeRuntime() || moduleOptions.wasmBinary || moduleOptions.instantiateWasm) {
-        return moduleOptions;
+/**
+ * Instantiates dist/wkp_core.wasm. Options (all optional):
+ * - `wasmModule`: a compiled `WebAssembly.Module` to instantiate.
+ * - `wasmBinary`: the module bytes (`ArrayBuffer` or typed array).
+ * - `locateFile(path)`: returns the URL to fetch `wkp_core.wasm` from (browser).
+ */
+async function instantiateCore(options = {}) {
+    if (options.wasmModule instanceof WebAssembly.Module) {
+        return new WebAssembly.Instance(options.wasmModule, {}).exports;
     }
-
-    const { readFile } = await dynamicImport('node:fs/promises');
-    const wasmBinary = await readFile(new URL('../dist/wkp_core.wasm', import.meta.url));
-    moduleOptions.wasmBinary = wasmBinary instanceof Uint8Array ? wasmBinary : new Uint8Array(wasmBinary);
-    return moduleOptions;
+    if (options.wasmBinary) {
+        return (await WebAssembly.instantiate(options.wasmBinary, {})).instance.exports;
+    }
+    if (isNodeRuntime() && typeof options.locateFile !== 'function') {
+        const { readFile } = await dynamicImport('node:fs/promises');
+        const bytes = await readFile(new URL('../dist/wkp_core.wasm', import.meta.url));
+        return (await WebAssembly.instantiate(bytes, {})).instance.exports;
+    }
+    const url = typeof options.locateFile === 'function'
+        ? options.locateFile('wkp_core.wasm')
+        : new URL('../dist/wkp_core.wasm', import.meta.url);
+    const response = await fetch(url);
+    if (!response.ok) {
+        throw new Error(`Failed to fetch ${url}: ${response.status} ${response.statusText}`);
+    }
+    if (typeof WebAssembly.instantiateStreaming === 'function'
+        && response.headers.get('content-type')?.startsWith('application/wasm')) {
+        return (await WebAssembly.instantiateStreaming(response, {})).instance.exports;
+    }
+    return (await WebAssembly.instantiate(await response.arrayBuffer(), {})).instance.exports;
 }
 
 function parseSemverMajorMinor(version) {
@@ -154,27 +172,6 @@ function normalizeEncoded(encoded) {
         return encoded;
     }
     throw new TypeError('encoded must be string or Uint8Array');
-}
-
-function readCString(module, ptr) {
-    if (!ptr) {
-        return '';
-    }
-    const bytes = [];
-    let offset = ptr;
-    while (module.HEAPU8[offset] !== 0) {
-        bytes.push(module.HEAPU8[offset]);
-        offset += 1;
-    }
-    return TEXT_DECODER.decode(new Uint8Array(bytes));
-}
-
-function readU32(module, ptr) {
-    return module.HEAPU32[ptr >>> 2] >>> 0;
-}
-
-function readSize(module, ptrToSize) {
-    return readU32(module, ptrToSize);
 }
 
 function normalizeCoord(coord, dimensions, label) {
@@ -409,318 +406,151 @@ function frameToGeometry(geometryType, dimensions, coords, segmentPointCounts, g
 
 export async function createWkp(options) {
     const versionMetadata = await loadVersionMetadata();
-    const moduleOptions = await prepareInitOptions(options);
-    const module = await initWkpCore(moduleOptions);
-
-    const resolveStatus = (symbol, fallback) => {
-        const getter = module.cwrap(symbol, 'number', []);
-        if (typeof getter === 'function') {
-            return getter();
-        }
-        return fallback;
-    };
+    const native = await instantiateCore(options);
+    const memory = native.memory;
 
     const STATUS = Object.freeze({
-        OK: resolveStatus('wkp_wasm_status_ok', 0),
-        INVALID_ARGUMENT: resolveStatus('wkp_wasm_status_invalid_argument', 1),
-        MALFORMED_INPUT: resolveStatus('wkp_wasm_status_malformed_input', 2),
-        ALLOCATION_FAILED: resolveStatus('wkp_wasm_status_allocation_failed', 3),
-        BUFFER_TOO_SMALL: resolveStatus('wkp_wasm_status_buffer_too_small', 4),
-        LIMIT_EXCEEDED: resolveStatus('wkp_wasm_status_limit_exceeded', 5),
-        INTERNAL_ERROR: resolveStatus('wkp_wasm_status_internal_error', 255)
+        OK: 0,
+        INVALID_ARGUMENT: 1,
+        MALFORMED_INPUT: 2,
+        ALLOCATION_FAILED: 3,
+        BUFFER_TOO_SMALL: 4,
+        LIMIT_EXCEEDED: 5,
+        INTERNAL_ERROR: 255
     });
-
-    const checkedMalloc = (size, label) => {
-        const ptr = module._malloc(size);
-        if (ptr === 0) {
-            throw new Error(`Allocation failed for ${label}`);
-        }
-        return ptr;
-    };
-
-    const withTempAllocation = (byteLength, label, fn) => {
-        const ptr = checkedMalloc(Math.max(1, byteLength), label);
-        try {
-            return fn(ptr);
-        } finally {
-            module._free(ptr);
-        }
-    };
-
-    const workspaceCreateNative = module.cwrap(
-        'wkp_wasm_workspace_create',
-        'number',
-        ['number', 'number', 'number', 'number', 'number', 'number', 'number']
-    );
-
-    const workspaceDestroyNative = module.cwrap('wkp_wasm_workspace_destroy', null, ['number']);
-
-    const workspaceEncodeF64Native = module.cwrap(
-        'wkp_wasm_workspace_encode_f64',
-        'number',
-        ['number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number']
-    );
-
-    const workspaceDecodeF64Native = module.cwrap(
-        'wkp_wasm_workspace_decode_f64',
-        'number',
-        ['number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number']
-    );
-
-    const workspaceEncodeGeometryFrameNative = module.cwrap(
-        'wkp_wasm_workspace_encode_geometry_frame_f64',
-        'number',
-        ['number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number']
-    );
-
-    const workspaceDecodeGeometryFrameNative = module.cwrap(
-        'wkp_wasm_workspace_decode_geometry_frame_f64',
-        'number',
-        ['number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number']
-    );
-
-    const decodeHeaderNative = module.cwrap(
-        'wkp_wasm_decode_geometry_header',
-        'number',
-        ['number', 'number', 'number', 'number', 'number', 'number', 'number', 'number']
-    );
-
-    const coreVersionNative = module.cwrap('wkp_wasm_core_version', 'number', []);
-    const basicSelfTestNative = module.cwrap('wkp_wasm_basic_self_test', 'number', ['number']);
 
     const EncodedGeometryType = Object.freeze({
-        POINT: module.cwrap('wkp_wasm_geometry_point', 'number', [])(),
-        LINESTRING: module.cwrap('wkp_wasm_geometry_linestring', 'number', [])(),
-        POLYGON: module.cwrap('wkp_wasm_geometry_polygon', 'number', [])(),
-        MULTIPOINT: module.cwrap('wkp_wasm_geometry_multipoint', 'number', [])(),
-        MULTILINESTRING: module.cwrap('wkp_wasm_geometry_multilinestring', 'number', [])(),
-        MULTIPOLYGON: module.cwrap('wkp_wasm_geometry_multipolygon', 'number', [])()
+        POINT: 1,
+        LINESTRING: 2,
+        POLYGON: 3,
+        MULTIPOINT: 4,
+        MULTILINESTRING: 5,
+        MULTIPOLYGON: 6
     });
+
+    const checkStatus = (status) => {
+        if (status !== STATUS.OK) {
+            throw new Error(statusMessage(status, STATUS));
+        }
+    };
+
+    // Output struct written by the module (see native/src/lib.rs): ten u32 fields.
+    const readOutput = (ctxPtr) => {
+        const o = new Uint32Array(memory.buffer, native.wkp_ctx_output(ctxPtr), 10);
+        return {
+            dataPtr: o[0], dataLen: o[1],
+            segmentsPtr: o[2], segmentsLen: o[3],
+            groupsPtr: o[4], groupsLen: o[5],
+            version: o[6], precision: o[7], dimensions: o[8], geometryType: o[9]
+        };
+    };
+
+    // Lays out typed arrays back to back (8-byte aligned) in the context's input scratch and
+    // returns their addresses.
+    const stage = (ctxPtr, arrays) => {
+        const offsets = [];
+        let total = 0;
+        for (const a of arrays) {
+            offsets.push(total);
+            total += Math.ceil(a.byteLength / 8) * 8;
+        }
+        const base = native.wkp_ctx_input(ctxPtr, Math.max(total, 8));
+        const bytes = new Uint8Array(memory.buffer);
+        arrays.forEach((a, i) => bytes.set(new Uint8Array(a.buffer, a.byteOffset, a.byteLength), base + offsets[i]));
+        return offsets.map((offset) => base + offset);
+    };
 
     class Context {
         constructor(initialCapacity = 4096) {
             if (!Number.isInteger(initialCapacity) || initialCapacity <= 0) {
                 throw new TypeError('initialCapacity must be a positive integer');
             }
-
             this.initialCapacity = initialCapacity;
             this._disposed = false;
-            this._workspacePtr = 0;
-
-            this._workspacePtrPtr = checkedMalloc(4, 'workspace pointer');
-            this._outDataPtrPtr = checkedMalloc(4, 'output data pointer');
-            this._outSizePtr = checkedMalloc(4, 'output size pointer');
-            this._versionPtr = checkedMalloc(4, 'decode version');
-            this._precisionPtr = checkedMalloc(4, 'decode precision');
-            this._dimensionsPtr = checkedMalloc(4, 'decode dimensions');
-            this._geometryTypePtr = checkedMalloc(4, 'decode geometry type');
-            this._coordsPtrPtr = checkedMalloc(4, 'decode coords pointer');
-            this._coordCountPtr = checkedMalloc(4, 'decode coord count');
-            this._segmentCountsPtrPtr = checkedMalloc(4, 'decode segment counts pointer');
-            this._segmentCountPtr = checkedMalloc(4, 'decode segment count');
-            this._groupCountsPtrPtr = checkedMalloc(4, 'decode group counts pointer');
-            this._groupCountPtr = checkedMalloc(4, 'decode group count');
-            this._errPtr = checkedMalloc(DEFAULT_ERROR_CAPACITY, 'workspace error message');
-
-            module.HEAPU8.fill(0, this._errPtr, this._errPtr + DEFAULT_ERROR_CAPACITY);
-            const status = workspaceCreateNative(
-                initialCapacity,
-                256,
-                -1,
-                -1,
-                this._workspacePtrPtr,
-                this._errPtr,
-                DEFAULT_ERROR_CAPACITY
-            );
-            if (status !== STATUS.OK) {
-                const msg = readCString(module, this._errPtr) || statusMessage(status, STATUS);
-                this._freeResources();
-                throw new Error(msg);
-            }
-
-            this._workspacePtr = readU32(module, this._workspacePtrPtr);
-            if (!this._workspacePtr) {
-                this._freeResources();
-                throw new Error('Failed to create native workspace');
-            }
+            this._ptr = native.wkp_ctx_new();
+            native.wkp_ctx_input(this._ptr, initialCapacity);
         }
 
         _checkNotDisposed() {
-            if (this._disposed || !this._workspacePtr) {
+            if (this._disposed || !this._ptr) {
                 throw new Error('Context has been disposed');
             }
         }
 
-        _clearErrorBuffer() {
-            module.HEAPU8.fill(0, this._errPtr, this._errPtr + DEFAULT_ERROR_CAPACITY);
-        }
-
-        _statusError(status) {
-            return readCString(module, this._errPtr) || statusMessage(status, STATUS);
+        _bytesResult(status) {
+            checkStatus(status);
+            const out = readOutput(this._ptr);
+            return new Uint8Array(memory.buffer, out.dataPtr, out.dataLen).slice();
         }
 
         encodeF64(values, dimensions, precisions) {
             this._checkNotDisposed();
             const v = normalizeValues(values);
             const p = normalizePrecisions(precisions);
-
-            return withTempAllocation(v.byteLength, 'encode values', (valuesPtr) =>
-                withTempAllocation(p.byteLength, 'encode precisions', (precisionsPtr) => {
-                    module.HEAPF64.set(v, valuesPtr >>> 3);
-                    module.HEAP32.set(p, precisionsPtr >>> 2);
-                    this._clearErrorBuffer();
-
-                    const status = workspaceEncodeF64Native(
-                        this._workspacePtr,
-                        valuesPtr,
-                        v.length,
-                        dimensions,
-                        precisionsPtr,
-                        p.length,
-                        this._outDataPtrPtr,
-                        this._outSizePtr,
-                        this._errPtr,
-                        DEFAULT_ERROR_CAPACITY
-                    );
-
-                    if (status !== STATUS.OK) {
-                        throw new Error(this._statusError(status));
-                    }
-
-                    const outDataPtr = readU32(module, this._outDataPtrPtr);
-                    const outSize = readSize(module, this._outSizePtr);
-                    return module.HEAPU8.slice(outDataPtr, outDataPtr + outSize);
-                })
-            );
+            const [valuesPtr, precisionsPtr] = stage(this._ptr, [v, p]);
+            return this._bytesResult(native.wkp_encode_f64(this._ptr, valuesPtr, v.length, dimensions, precisionsPtr, p.length));
         }
 
         decodeF64(encoded, dimensions, precisions) {
             this._checkNotDisposed();
             const e = normalizeEncoded(encoded);
             const p = normalizePrecisions(precisions);
+            const [encodedPtr, precisionsPtr] = stage(this._ptr, [e, p]);
+            checkStatus(native.wkp_decode_f64(this._ptr, encodedPtr, e.byteLength, dimensions, precisionsPtr, p.length));
+            const out = readOutput(this._ptr);
+            return new Float64Array(memory.buffer, out.dataPtr, out.dataLen).slice();
+        }
 
-            return withTempAllocation(e.byteLength, 'decode encoded', (encodedPtr) =>
-                withTempAllocation(p.byteLength, 'decode precisions', (precisionsPtr) => {
-                    module.HEAPU8.set(e, encodedPtr);
-                    module.HEAP32.set(p, precisionsPtr >>> 2);
-                    this._clearErrorBuffer();
-
-                    const status = workspaceDecodeF64Native(
-                        this._workspacePtr,
-                        encodedPtr,
-                        e.byteLength,
-                        dimensions,
-                        precisionsPtr,
-                        p.length,
-                        this._outDataPtrPtr,
-                        this._outSizePtr,
-                        this._errPtr,
-                        DEFAULT_ERROR_CAPACITY
-                    );
-
-                    if (status !== STATUS.OK) {
-                        throw new Error(this._statusError(status));
-                    }
-
-                    const outDataPtr = readU32(module, this._outDataPtrPtr);
-                    const outSize = readSize(module, this._outSizePtr);
-                    const view = module.HEAPF64.subarray(outDataPtr >>> 3, (outDataPtr >>> 3) + outSize);
-                    return Float64Array.from(view);
-                })
-            );
+        _encodeFrame(geometryType, coords, dimensions, precision, groupSegmentCounts, segmentPointCounts) {
+            this._checkNotDisposed();
+            const [coordsPtr, groupsPtr, segmentsPtr] = stage(this._ptr, [coords, groupSegmentCounts, segmentPointCounts]);
+            const encoded = this._bytesResult(native.wkp_encode_geometry(
+                this._ptr,
+                geometryType,
+                coordsPtr,
+                coords.length,
+                dimensions,
+                precision,
+                groupsPtr,
+                groupSegmentCounts.length,
+                segmentsPtr,
+                segmentPointCounts.length
+            ));
+            return TEXT_DECODER.decode(encoded);
         }
 
         encodeGeometry(geometry, precision) {
-            this._checkNotDisposed();
             const dimensions = geometryDimensions(geometry);
             const frame = buildGeometryFrame(geometry, dimensions, EncodedGeometryType);
+            return this._encodeFrame(frame.geometryType, frame.coords, dimensions, precision, frame.groupSegmentCounts, frame.segmentPointCounts);
+        }
 
-            return withTempAllocation(frame.coords.byteLength, 'geometry coords', (coordsPtr) =>
-                withTempAllocation(frame.groupSegmentCounts.byteLength, 'geometry group counts', (groupCountsPtr) =>
-                    withTempAllocation(frame.segmentPointCounts.byteLength, 'geometry segment counts', (segmentCountsPtr) => {
-                        module.HEAPF64.set(frame.coords, coordsPtr >>> 3);
-                        module.HEAPU32.set(frame.groupSegmentCounts, groupCountsPtr >>> 2);
-                        module.HEAPU32.set(frame.segmentPointCounts, segmentCountsPtr >>> 2);
-                        this._clearErrorBuffer();
-
-                        const status = workspaceEncodeGeometryFrameNative(
-                            this._workspacePtr,
-                            frame.geometryType,
-                            coordsPtr,
-                            frame.coords.length,
-                            dimensions,
-                            precision,
-                            groupCountsPtr,
-                            frame.groupSegmentCounts.length,
-                            segmentCountsPtr,
-                            frame.segmentPointCounts.length,
-                            this._outDataPtrPtr,
-                            this._outSizePtr,
-                            this._errPtr,
-                            DEFAULT_ERROR_CAPACITY
-                        );
-
-                        if (status !== STATUS.OK) {
-                            throw new Error(this._statusError(status));
-                        }
-
-                        const outDataPtr = readU32(module, this._outDataPtrPtr);
-                        const outSize = readSize(module, this._outSizePtr);
-                        const encodedBytes = module.HEAPU8.slice(outDataPtr, outDataPtr + outSize);
-                        return TEXT_DECODER.decode(encodedBytes);
-                    })
-                )
+        encodeGeometryFromFrame(frame) {
+            return this._encodeFrame(
+                frame.geometryType,
+                frame.coords,
+                frame.dimensions,
+                frame.precision,
+                frame.groupSegmentCounts,
+                frame.segmentPointCounts
             );
         }
 
         _decodeGeometryFrameRaw(encoded) {
             this._checkNotDisposed();
             const e = normalizeEncoded(encoded);
-
-            return withTempAllocation(e.byteLength, 'decode geometry encoded', (encodedPtr) => {
-                module.HEAPU8.set(e, encodedPtr);
-                this._clearErrorBuffer();
-
-                const status = workspaceDecodeGeometryFrameNative(
-                    this._workspacePtr,
-                    encodedPtr,
-                    e.byteLength,
-                    this._versionPtr,
-                    this._precisionPtr,
-                    this._dimensionsPtr,
-                    this._geometryTypePtr,
-                    this._coordsPtrPtr,
-                    this._coordCountPtr,
-                    this._segmentCountsPtrPtr,
-                    this._segmentCountPtr,
-                    this._groupCountsPtrPtr,
-                    this._groupCountPtr,
-                    this._errPtr,
-                    DEFAULT_ERROR_CAPACITY
-                );
-
-                if (status !== STATUS.OK) {
-                    throw new Error(this._statusError(status));
-                }
-
-                const version = module.HEAP32[this._versionPtr >>> 2];
-                const precision = module.HEAP32[this._precisionPtr >>> 2];
-                const dimensions = module.HEAP32[this._dimensionsPtr >>> 2];
-                const geometryType = module.HEAP32[this._geometryTypePtr >>> 2];
-
-                const coordsPtr = readU32(module, this._coordsPtrPtr);
-                const coordCount = readSize(module, this._coordCountPtr);
-                const segmentCountsPtr = readU32(module, this._segmentCountsPtrPtr);
-                const segmentCount = readSize(module, this._segmentCountPtr);
-                const groupCountsPtr = readU32(module, this._groupCountsPtrPtr);
-                const groupCount = readSize(module, this._groupCountPtr);
-
-                const coords = Float64Array.from(module.HEAPF64.subarray(coordsPtr >>> 3, (coordsPtr >>> 3) + coordCount));
-                const segmentPointCounts = Uint32Array.from(module.HEAPU32.subarray(segmentCountsPtr >>> 2, (segmentCountsPtr >>> 2) + segmentCount));
-                const groupSegmentCounts = Uint32Array.from(module.HEAPU32.subarray(groupCountsPtr >>> 2, (groupCountsPtr >>> 2) + groupCount));
-
-                return { version, precision, dimensions, geometryType, coords, segmentPointCounts, groupSegmentCounts };
-            });
+            const [encodedPtr] = stage(this._ptr, [e]);
+            checkStatus(native.wkp_decode_geometry(this._ptr, encodedPtr, e.byteLength));
+            const out = readOutput(this._ptr);
+            return {
+                version: out.version,
+                precision: out.precision,
+                dimensions: out.dimensions,
+                geometryType: out.geometryType,
+                coords: new Float64Array(memory.buffer, out.dataPtr, out.dataLen).slice(),
+                segmentPointCounts: new Uint32Array(memory.buffer, out.segmentsPtr, out.segmentsLen).slice(),
+                groupSegmentCounts: new Uint32Array(memory.buffer, out.groupsPtr, out.groupsLen).slice()
+            };
         }
 
         decodeGeometry(encoded) {
@@ -733,101 +563,25 @@ export async function createWkp(options) {
             };
         }
 
-        encodeGeometryFromFrame(frame) {
-            this._checkNotDisposed();
-            return withTempAllocation(frame.coords.byteLength, 'geometry coords', (coordsPtr) =>
-                withTempAllocation(frame.groupSegmentCounts.byteLength, 'geometry group counts', (groupCountsPtr) =>
-                    withTempAllocation(frame.segmentPointCounts.byteLength, 'geometry segment counts', (segmentCountsPtr) => {
-                        module.HEAPF64.set(frame.coords, coordsPtr >>> 3);
-                        module.HEAPU32.set(frame.groupSegmentCounts, groupCountsPtr >>> 2);
-                        module.HEAPU32.set(frame.segmentPointCounts, segmentCountsPtr >>> 2);
-                        this._clearErrorBuffer();
-
-                        const status = workspaceEncodeGeometryFrameNative(
-                            this._workspacePtr,
-                            frame.geometryType,
-                            coordsPtr,
-                            frame.coords.length,
-                            frame.dimensions,
-                            frame.precision,
-                            groupCountsPtr,
-                            frame.groupSegmentCounts.length,
-                            segmentCountsPtr,
-                            frame.segmentPointCounts.length,
-                            this._outDataPtrPtr,
-                            this._outSizePtr,
-                            this._errPtr,
-                            DEFAULT_ERROR_CAPACITY
-                        );
-
-                        if (status !== STATUS.OK) {
-                            throw new Error(this._statusError(status));
-                        }
-
-                        const outDataPtr = readU32(module, this._outDataPtrPtr);
-                        const outSize = readSize(module, this._outSizePtr);
-                        const encodedBytes = module.HEAPU8.slice(outDataPtr, outDataPtr + outSize);
-                        return TEXT_DECODER.decode(encodedBytes);
-                    })
-                )
-            );
-        }
-
-        _freeResources() {
-            if (this._workspacePtr) {
-                workspaceDestroyNative(this._workspacePtr);
-                this._workspacePtr = 0;
-            }
-
-            const ptrs = [
-                '_workspacePtrPtr',
-                '_outDataPtrPtr',
-                '_outSizePtr',
-                '_versionPtr',
-                '_precisionPtr',
-                '_dimensionsPtr',
-                '_geometryTypePtr',
-                '_coordsPtrPtr',
-                '_coordCountPtr',
-                '_segmentCountsPtrPtr',
-                '_segmentCountPtr',
-                '_groupCountsPtrPtr',
-                '_groupCountPtr',
-                '_errPtr'
-            ];
-
-            for (const name of ptrs) {
-                if (this[name]) {
-                    module._free(this[name]);
-                    this[name] = 0;
-                }
-            }
-        }
-
         dispose() {
             if (this._disposed) {
                 return;
             }
             this._disposed = true;
-            this._freeResources();
+            native.wkp_ctx_free(this._ptr);
+            this._ptr = 0;
         }
     }
 
     function coreVersion() {
-        const ptr = coreVersionNative();
-        return readCString(module, ptr);
+        return TEXT_DECODER.decode(new Uint8Array(memory.buffer, native.wkp_version_ptr(), native.wkp_version_len()));
     }
 
     function runSelfTest() {
-        return withTempAllocation(4, 'basic self test failed check', (failedCheckPtr) => {
-            module.HEAP32[failedCheckPtr >>> 2] = 0;
-            const status = basicSelfTestNative(failedCheckPtr);
-            if (status !== STATUS.OK) {
-                const failedCheck = module.HEAP32[failedCheckPtr >>> 2];
-                throw new Error(`WKP core self-test failed (check ${failedCheck})`);
-            }
-            return true;
-        });
+        if (native.wkp_self_test() !== STATUS.OK) {
+            throw new Error('WKP core self-test failed');
+        }
+        return true;
     }
 
     const runtimeCoreVersion = coreVersion();
@@ -836,51 +590,16 @@ export async function createWkp(options) {
     assertCoreCompatibility(runtimeCoreVersion, versionMetadata.bindingVersion, coreCompatibility);
     runSelfTest();
 
-    function decodeHeader(encoded) {
-        const e = normalizeEncoded(encoded);
-
-        return withTempAllocation(e.byteLength, 'decode header encoded', (encodedPtr) =>
-            withTempAllocation(4, 'decode header version', (versionPtr) =>
-                withTempAllocation(4, 'decode header precision', (precisionPtr) =>
-                    withTempAllocation(4, 'decode header dimensions', (dimensionsPtr) =>
-                        withTempAllocation(4, 'decode header geometry type', (geometryTypePtr) =>
-                            withTempAllocation(DEFAULT_ERROR_CAPACITY, 'decode header error', (errPtr) => {
-                                module.HEAPU8.set(e, encodedPtr);
-                                module.HEAPU8.fill(0, errPtr, errPtr + DEFAULT_ERROR_CAPACITY);
-
-                                const status = decodeHeaderNative(
-                                    encodedPtr,
-                                    e.byteLength,
-                                    versionPtr,
-                                    precisionPtr,
-                                    dimensionsPtr,
-                                    geometryTypePtr,
-                                    errPtr,
-                                    DEFAULT_ERROR_CAPACITY
-                                );
-
-                                if (status !== STATUS.OK) {
-                                    const msg = readCString(module, errPtr) || statusMessage(status, STATUS);
-                                    throw new Error(msg);
-                                }
-
-                                return [
-                                    module.HEAP32[versionPtr >>> 2],
-                                    module.HEAP32[precisionPtr >>> 2],
-                                    module.HEAP32[dimensionsPtr >>> 2],
-                                    module.HEAP32[geometryTypePtr >>> 2]
-                                ];
-                            })
-                        )
-                    )
-                )
-            )
-        );
-    }
-
     // Module-level default context — shared within this WASM instance (one per realm/worker).
     // JS is single-threaded per realm, so this is safe.
     const _defaultCtx = new Context();
+
+    function decodeHeader(encoded) {
+        const e = normalizeEncoded(encoded);
+        const [encodedPtr, outPtr] = stage(_defaultCtx._ptr, [e, new Uint32Array(4)]);
+        checkStatus(native.wkp_decode_header(encodedPtr, e.byteLength, outPtr));
+        return Array.from(new Uint32Array(memory.buffer, outPtr, 4));
+    }
 
     function asContext(ctx) {
         if (!(ctx instanceof Context)) {
@@ -952,7 +671,11 @@ export async function createWkp(options) {
 
         /** Deserialize from an ArrayBuffer produced by {@link toBuffer}. */
         static fromBuffer(buffer) {
-            const ab = buffer instanceof ArrayBuffer ? buffer : buffer.buffer;
+            // A view can start at any offset in its ArrayBuffer, and the typed arrays below need
+            // 8-byte alignment, so copy views into an ArrayBuffer of their own.
+            const ab = buffer instanceof ArrayBuffer
+                ? buffer
+                : buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
             const view = new DataView(ab);
             let o = 0;
             const version = view.getInt32(o, true);       o += 4;
@@ -1019,9 +742,13 @@ export async function createWkp(options) {
         const precisionList = normalizePrecisionList(precisions);
         const dimensions = precisionList.length;
         const decoded = asContext(ctx).decodeF64(encoded, dimensions, precisionList);
-        const rows = [];
-        for (let i = 0; i < decoded.length; i += dimensions) {
-            rows.push(Array.from(decoded.slice(i, i + dimensions)));
+        const rows = new Array(decoded.length / dimensions);
+        for (let r = 0, i = 0; i < decoded.length; r += 1) {
+            const row = new Array(dimensions);
+            for (let d = 0; d < dimensions; d += 1, i += 1) {
+                row[d] = decoded[i];
+            }
+            rows[r] = row;
         }
         return rows;
     }

@@ -152,3 +152,18 @@ test('cross-language buffer format matches Python and web bindings', () => {
     assert.equal(recovered.dimensions, 2);
     assertGeometryClose(recovered.toGeometry(), geometry, 1e-9);
 });
+
+test('GeometryFrame.fromBuffer() accepts views at any byte offset', () => {
+    const geometry = { type: 'LineString', coordinates: [[174.776, -41.289], [174.777, -41.29]] };
+    const buf = new Uint8Array(decodeFrame(encode(geometry, 6)).toBuffer());
+    // Embed at an odd offset, as in a pooled Node Buffer or a slice of a larger message.
+    const host = new Uint8Array(buf.length + 3);
+    host.set(buf, 3);
+    const frame = GeometryFrame.fromBuffer(Buffer.from(host.buffer, 3, buf.length));
+    assertGeometryClose(frame.toGeometry(), geometry);
+});
+
+test('decode rejects non-ASCII strings instead of misreading them', () => {
+    // U+013F has low byte 0x3F ('?'), a valid WKP char if the string were read as 'ascii'.
+    assert.throws(() => decode('@DA@_p~iF~ps|Ŀ'));
+});

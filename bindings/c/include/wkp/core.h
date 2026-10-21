@@ -1,5 +1,20 @@
 #pragma once
 
+/*
+ * WKP C ABI. Implemented in Rust (bindings/c, crate `wkp-capi`) and shipped as
+ * libwkp.{so,dylib,a} / wkp.{dll,lib}.
+ *
+ * Conventions:
+ * - Every function returns a wkp_status; outputs are only written on WKP_STATUS_OK.
+ * - Input pointers may be NULL when their count is 0.
+ * - Output pointers returned through a context (encoded bytes, decoded values, frames) point
+ *   into that context's buffers and stay valid until the next call using the same context, or
+ *   wkp_context_free. Copy them if you need them longer.
+ * - A context is not thread-safe: use one per thread.
+ * - A context must be initialised with wkp_context_init and released with wkp_context_free; do
+ *   not allocate, free or resize its buffers yourself.
+ */
+
 #include <stddef.h>
 #include <stdint.h>
 
@@ -11,8 +26,12 @@ extern "C"
     typedef enum wkp_status
     {
         WKP_STATUS_OK = 0,
+        /* Bad arguments, including non-finite values, values whose magnitude times
+           10^precision is 2^58 or more, precisions outside 0..63, or inconsistent counts. */
         WKP_STATUS_INVALID_ARGUMENT = 1,
+        /* The encoded input is not valid WKP. */
         WKP_STATUS_MALFORMED_INPUT = 2,
+        /* Retained for ABI compatibility; not currently returned. */
         WKP_STATUS_ALLOCATION_FAILED = 3,
         WKP_STATUS_BUFFER_TOO_SMALL = 4,
         WKP_STATUS_LIMIT_EXCEEDED = 5,
@@ -49,8 +68,7 @@ extern "C"
         size_t group_count;
     } wkp_geometry_frame_f64;
 
-    // Reusable caller-owned buffers for convenience wrapper APIs.
-    // Callers must use one context per thread when using wrappers concurrently.
+    /* Reusable buffers. Fields are exposed for ABI stability only; treat them as private. */
     typedef struct wkp_context
     {
         uint8_t *u8;
@@ -64,13 +82,17 @@ extern "C"
         wkp_geometry_frame_f64 frame;
     } wkp_context;
 
+    /* NUL-terminated library version, for example "0.6.0". */
+    const char *wkp_version(void);
+
     wkp_status wkp_context_init(
         wkp_context *ctx);
 
     void wkp_context_free(
         wkp_context *ctx);
 
-    // Utility APIs that auto-resize buffers inside the provided context on BUFFER_TOO_SMALL.
+    /* Encodes a headerless float stream. precisions has 1 entry (all dimensions) or
+       `dimensions` entries; value_count must be a multiple of dimensions (1..16). */
     wkp_status wkp_encode_f64(
         wkp_context *ctx,
         const double *values,
@@ -91,6 +113,8 @@ extern "C"
         const double **out_values,
         size_t *out_size);
 
+    /* Encodes a geometry with a header. Topology: segment_point_counts gives the points in each
+       ring/linestring/point, group_segment_counts the segments in each polygon/part. */
     wkp_status wkp_encode_geometry_frame(
         wkp_context *ctx,
         int geometry_type,
@@ -119,9 +143,8 @@ extern "C"
         int *out_dimensions,
         int *out_geometry_type);
 
-    // Runs a minimal built-in self-test suite for core encode/decode paths.
-    // Returns WKP_STATUS_OK when all checks pass.
-    // If non-NULL, out_failed_check receives a 1-based check index for failures.
+    /* Runs a minimal built-in self-test of the encode/decode paths. Returns WKP_STATUS_OK when
+       all checks pass; otherwise out_failed_check (if non-NULL) receives a 1-based check index. */
     wkp_status wkp_basic_self_test(
         int *out_failed_check);
 

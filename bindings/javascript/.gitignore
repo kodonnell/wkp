@@ -5,3 +5,4 @@ packages/*/dist/*.js
 packages/web/src/version.generated.js
 !packages/*/dist/.gitkeep
 npm-debug.log*
+packages/node/prebuilds/

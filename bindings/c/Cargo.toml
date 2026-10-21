@@ -1,0 +1,17 @@
+[package]
+name = "wkp-capi"
+description = "C ABI for wkp-core (see include/wkp/core.h)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[lib]
+# Produces libwkp.{so,dylib,a} / wkp.{dll,lib}.
+name = "wkp"
+crate-type = ["cdylib", "staticlib", "rlib"]
+
+[dependencies]
+wkp-core = { path = "../../core" }

@@ -157,3 +157,13 @@ test('cross-language buffer format matches Python and Node bindings (web)', asyn
     assert.equal(recovered.dimensions, 2);
     assertGeometryClose(recovered.toGeometry(), geometry, 1e-9);
 });
+
+test('GeometryFrame.fromBuffer() accepts views at any byte offset (web)', async () => {
+    const wkp = await createWkp();
+    const geometry = { type: 'LineString', coordinates: [[174.776, -41.289], [174.777, -41.29]] };
+    const buf = new Uint8Array(wkp.decodeFrame(wkp.encode(geometry, 6)).toBuffer());
+    const host = new Uint8Array(buf.length + 3);
+    host.set(buf, 3);
+    const frame = wkp.GeometryFrame.fromBuffer(new Uint8Array(host.buffer, 3, buf.length));
+    assertGeometryClose(frame.toGeometry(), geometry);
+});

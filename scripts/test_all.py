@@ -5,7 +5,8 @@ Run the full WKP test suite across all language bindings.
 Usage:
     python scripts/test_all.py
     python scripts/test_all.py --skip-web        # skip web/WASM (requires built dist)
-    python scripts/test_all.py --skip-cpp        # skip C++ ctest
+    python scripts/test_all.py --skip-cpp        # skip C/C++ ctest
+    python scripts/test_all.py --skip-csharp     # skip .NET tests
     python scripts/test_all.py --integration     # include slow integration fixture tests
 """
 from __future__ import annotations
@@ -21,7 +22,7 @@ REPO = Path(__file__).resolve().parents[1]
 JS_ROOT = REPO / "bindings" / "javascript"
 NODE_PKG = JS_ROOT / "packages" / "node"
 WEB_PKG = JS_ROOT / "packages" / "web"
-CPP_BUILD = REPO / "build" / "core"
+CPP_BUILD = REPO / "build" / "cmake"
 
 
 def _run(label: str, cmd: list[str], cwd: Path) -> tuple[bool, float]:
@@ -42,11 +43,18 @@ def main() -> int:
     parser.add_argument("--skip-python", action="store_true", help="Skip Python tests")
     parser.add_argument("--skip-node", action="store_true", help="Skip Node.js tests")
     parser.add_argument("--skip-web", action="store_true", help="Skip Web/WASM tests")
-    parser.add_argument("--skip-cpp", action="store_true", help="Skip C++ ctest")
+    parser.add_argument("--skip-rust", action="store_true", help="Skip cargo tests (core + C ABI)")
+    parser.add_argument("--skip-cpp", action="store_true", help="Skip C/C++ ctest")
+    parser.add_argument("--skip-csharp", action="store_true", help="Skip .NET tests")
     parser.add_argument("--integration", action="store_true", help="Include slow integration fixture tests (Python)")
     args = parser.parse_args()
 
     results: list[tuple[str, bool, float]] = []
+
+    # --- Rust ---
+    if not args.skip_rust:
+        ok, t = _run("Rust (cargo test)", ["cargo", "test"], REPO)
+        results.append(("Rust", ok, t))
 
     # --- Python ---
     if not args.skip_python:
@@ -67,7 +75,7 @@ def main() -> int:
 
     # --- Web ---
     if not args.skip_web:
-        web_dist = WEB_PKG / "dist" / "wkp_core.js"
+        web_dist = WEB_PKG / "dist" / "wkp_core.wasm"
         if not web_dist.exists():
             print(f"\n[SKIP] Web/WASM — dist not built ({web_dist} missing). Run `npm --workspace @wkpjs/web run build` first.")
             results.append(("Web/WASM", False, 0.0))
@@ -81,18 +89,23 @@ def main() -> int:
             )
             results.append(("Web/WASM", ok, t))
 
-    # --- C++ ---
+    # --- C/C++ ---
     if not args.skip_cpp:
         if not CPP_BUILD.exists():
-            print(f"\n[SKIP] C++ — build dir not found ({CPP_BUILD}). Run `python scripts/build_all.py` first.")
-            results.append(("C++", False, 0.0))
+            print(f"\n[SKIP] C/C++ — build dir not found ({CPP_BUILD}). Run `python scripts/build_all.py` first.")
+            results.append(("C/C++", False, 0.0))
         else:
             ok, t = _run(
-                "C++ (ctest)",
+                "C/C++ (ctest)",
                 ["ctest", "--test-dir", str(CPP_BUILD), "-C", "Release", "--output-on-failure"],
                 REPO,
             )
-            results.append(("C++", ok, t))
+            results.append(("C/C++", ok, t))
+
+    # --- .NET ---
+    if not args.skip_csharp:
+        ok, t = _run(".NET (dotnet test)", ["dotnet", "test", "bindings/csharp/tests/Wkp.Tests", "-c", "Release"], REPO)
+        results.append((".NET", ok, t))
 
     # --- Summary ---
     print(f"\n{'='*60}")

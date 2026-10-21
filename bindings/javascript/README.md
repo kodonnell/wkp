@@ -1,29 +1,30 @@
 # WKP JavaScript bindings
 
-Monorepo workspace for JavaScript bindings over the shared WKP C ABI.
+Monorepo workspace for the JavaScript bindings over the WKP Rust core.
 
 ## Packages
 
-- `@wkpjs/node`: Node-API native addon (`packages/node`)
-- `@wkpjs/web`: Emscripten/WebAssembly module (`packages/web`)
+- `@wkpjs/node`: Node-API native addon (`packages/node`, Rust in `packages/node/native`)
+- `@wkpjs/web`: WebAssembly module (`packages/web`, Rust in `packages/web/native`)
 
 ## Architecture
 
-- Both packages consume `core/include/wkp/core.h`
-- Core algorithm code lives once in `core/src/core.c`
-- JS packages stay thin wrappers for language/runtime ergonomics
+- Both native layers are small Rust crates over `wkp-core` (`core/`), so the algorithm lives once
+- The JS in each package handles argument normalisation, GeoJSON conversion and `GeometryFrame`
+- Neither package has npm dependencies; `@wkpjs/node` ships prebuilt binaries for each platform
 
 ## Dependencies
 
 - Node.js >= 18
 - npm workspaces
-- native build toolchain for `node-gyp` (`@wkpjs/node`)
-- Emscripten (`emcc`) for `@wkpjs/web`
+- Rust (stable) to build either package from source, plus
+  `rustup target add wasm32-unknown-unknown` for `@wkpjs/web`
 
 ## Versioning
 
-Node/Web package versions are managed independently (currently `0.5.0`).
-Both runtimes enforce WKP core compatibility at runtime (`0.5.0`).
+Package versions follow the Cargo workspace version (currently `0.6.0`);
+`node scripts/sync-version.mjs --write` updates them from `Cargo.toml`.
+Both runtimes enforce WKP core compatibility at runtime (`0.6.0`).
 The web package generates `packages/web/src/version.generated.js` from `packages/web/package.json` during build/test/pack flows, keeps it out of git, and falls back to a local dev version if that generated file is absent.
 
 From `bindings/javascript`:

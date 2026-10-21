@@ -33,15 +33,49 @@ jobs:
             exit 1
           fi
 
-  js-build:
+  node-addons:
+    name: Node addons
     needs: validate-tag
-    name: JavaScript build (${{ matrix.os }})
+    uses: ./.github/workflows/native-libs.yml
+    with:
+      kind: node
+
+  wasm:
+    name: WebAssembly module
+    needs: validate-tag
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Build
+        working-directory: bindings/javascript
+        run: npm run build:web
+
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: wasm
+          path: bindings/javascript/packages/web/dist/wkp_core.wasm
+          if-no-files-found: error
+
+  js-test:
+    name: JavaScript tests (${{ matrix.os }})
+    needs: [node-addons, wasm]
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
-
     steps:
       - uses: actions/checkout@v4
 
@@ -49,70 +83,93 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 24
-          cache: npm
-          cache-dependency-path: bindings/javascript/package-lock.json
 
-      - name: Setup Emscripten
-        uses: mymindstorm/setup-emsdk@v14
+      - name: Download Node addons
+        uses: actions/download-artifact@v4
         with:
-          version: 3.1.58
+          pattern: native-node-*
+          path: bindings/javascript/packages/node/prebuilds
+          merge-multiple: true
 
-      - name: Install JS dependencies
+      - name: Download WebAssembly module
+        uses: actions/download-artifact@v4
+        with:
+          name: wasm
+          path: bindings/javascript/packages/web/dist
+
+      - name: Install
         working-directory: bindings/javascript
         run: npm ci
 
-      - name: Build Node addon
-        working-directory: bindings/javascript
-        run: npm run build:node
-
-      - name: Build WebAssembly package
-        working-directory: bindings/javascript
-        run: npm run build:web
-
-      - name: Run JavaScript tests
+      - name: Test
         working-directory: bindings/javascript
         run: npm run test
 
-      - name: Verify runtime compatibility
-        working-directory: bindings/javascript
-        run: npm run check:runtime-compatibility
-
-      - name: Pack npm tarballs
+      - name: Verify versions and runtime compatibility
         working-directory: bindings/javascript
         run: |
-          mkdir -p ../../artifacts/npm
-          npm --workspace @wkpjs/node pack --pack-destination ../../artifacts/npm
-          npm --workspace @wkpjs/web pack --pack-destination ../../artifacts/npm
+          node scripts/sync-version.mjs --check
+          npm run check:runtime-compatibility
 
-      - name: Verify web tarball contains generated version module
+  pack:
+    name: Pack npm tarballs
+    needs: js-test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Download Node addons
+        uses: actions/download-artifact@v4
+        with:
+          pattern: native-node-*
+          path: bindings/javascript/packages/node/prebuilds
+          merge-multiple: true
+
+      - name: Download WebAssembly module
+        uses: actions/download-artifact@v4
+        with:
+          name: wasm
+          path: bindings/javascript/packages/web/dist
+
+      - name: Pack
+        working-directory: bindings/javascript
+        run: |
+          npm ci
+          mkdir -p ../../artifacts/npm
+          # --ignore-scripts: the prebuilt binaries above are what ships; don't rebuild in prepack.
+          node packages/web/scripts/generate-version-module.mjs
+          npm --workspace @wkpjs/node pack --ignore-scripts --pack-destination ../../artifacts/npm
+          npm --workspace @wkpjs/web pack --ignore-scripts --pack-destination ../../artifacts/npm
+
+      - name: Verify tarball contents
         shell: bash
         run: |
           set -euo pipefail
-          WEB_TARBALL=$(find artifacts/npm -maxdepth 1 -type f -name 'wkpjs-web-*.tgz' | head -n 1)
-          if [[ -z "$WEB_TARBALL" ]]; then
-            echo "Could not find packed @wkpjs/web tarball in artifacts/npm"
-            exit 1
-          fi
+          check() {
+            local tarball; tarball=$(find artifacts/npm -maxdepth 1 -name "$1" | head -n 1)
+            [[ -n "$tarball" ]] || { echo "Missing tarball $1"; exit 1; }
+            local listing; listing=$(tar -tzf "$tarball")
+            shift
+            for entry in "$@"; do
+              grep -qx "package/$entry" <<<"$listing" || { echo "$tarball is missing $entry"; echo "$listing"; exit 1; }
+            done
+          }
+          check 'wkpjs-web-*.tgz' src/index.js src/version.generated.js dist/wkp_core.wasm
+          check 'wkpjs-node-*.tgz' index.js \
+            prebuilds/linux-x64/wkp.node prebuilds/linux-arm64/wkp.node \
+            prebuilds/darwin-x64/wkp.node prebuilds/darwin-arm64/wkp.node \
+            prebuilds/win32-x64/wkp.node prebuilds/win32-arm64/wkp.node
 
-          TAR_CONTENTS=$(mktemp)
-          tar -tzf "$WEB_TARBALL" > "$TAR_CONTENTS"
-
-          if ! grep -qx 'package/src/version.generated.js' "$TAR_CONTENTS"; then
-            echo "Packed @wkpjs/web tarball is missing package/src/version.generated.js"
-            echo "Tarball checked: $WEB_TARBALL"
-            cat "$TAR_CONTENTS"
-            exit 1
-          fi
-
-      - name: Upload JavaScript artifacts
+      - name: Upload tarballs
         uses: actions/upload-artifact@v4
         with:
-          name: js-artifacts-${{ matrix.os }}
-          path: |
-            bindings/javascript/packages/node/build/Release/*.node
-            bindings/javascript/packages/web/dist/wkp_core.js
-            bindings/javascript/packages/web/dist/wkp_core.wasm
-            artifacts/npm/*.tgz
+          name: npm-tarballs
+          path: artifacts/npm/*.tgz
 
   release:
     name: Create GitHub release
@@ -125,23 +182,18 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
+          name: npm-tarballs
           path: dist/
-          pattern: js-artifacts-*
-          merge-multiple: true
 
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
-          files: |
-            dist/**/*.tgz
-            dist/**/*.node
-            dist/**/wkp_core.js
-            dist/**/wkp_core.wasm
+          files: dist/*.tgz
           generate_release_notes: true
 
   npm-publish:
     name: Publish JavaScript packages
-    needs: js-build
+    needs: pack
     if: startsWith(github.ref, 'refs/tags/npm-v') || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     environment: npm
@@ -159,48 +211,33 @@ jobs:
           registry-url: https://registry.npmjs.org
           scope: '@wkpjs'
 
-      - name: Setup Emscripten
-        uses: mymindstorm/setup-emsdk@v14
+      - name: Download tarballs
+        uses: actions/download-artifact@v4
         with:
-          version: 3.1.58
+          name: npm-tarballs
+          path: tarballs/
 
-      - name: Install dependencies
-        working-directory: bindings/javascript
-        run: npm ci
-
-      - name: Build packages
-        working-directory: bindings/javascript
-        run: |
-          npm run build:node
-          npm run build:web
-
-      - name: Run JavaScript tests
-        working-directory: bindings/javascript
-        run: npm run test
-
-      - name: Verify runtime compatibility
-        working-directory: bindings/javascript
-        run: npm run check:runtime-compatibility
-
+      # Publishing the tested tarballs (rather than re-packing) guarantees the shipped binaries
+      # are exactly the ones the test matrix ran against.
       - name: Publish (dry run)
         if: github.event_name == 'workflow_dispatch' && inputs.dry_run
-        working-directory: bindings/javascript
         env:
           NODE_AUTH_TOKEN: ""
           NPM_TOKEN: ""
         run: |
-          npm --workspace @wkpjs/node publish --access public --provenance --dry-run
-          npm --workspace @wkpjs/web publish --access public --provenance --dry-run
+          for tarball in tarballs/*.tgz; do
+            npm publish "$tarball" --access public --provenance --dry-run
+          done
 
       - name: Publish
         if: startsWith(github.ref, 'refs/tags/npm-v') || (github.event_name == 'workflow_dispatch' && !inputs.dry_run)
-        working-directory: bindings/javascript
         env:
           NODE_AUTH_TOKEN: ""
           NPM_TOKEN: ""
         run: |
-          npm --workspace @wkpjs/node publish --access public --provenance
-          npm --workspace @wkpjs/web publish --access public --provenance
+          for tarball in tarballs/*.tgz; do
+            npm publish "$tarball" --access public --provenance
+          done
 
       - name: Trigger Pages deploy for published web package
         if: startsWith(github.ref, 'refs/tags/npm-v') || (github.event_name == 'workflow_dispatch' && !inputs.dry_run)

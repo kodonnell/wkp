@@ -27,18 +27,23 @@ This section defines the raw numeric stream used by `encode_f64`/`decode_f64` an
 - `precisions`: either:
   - one integer applied to all dimensions, or
   - one integer per dimension.
+  - each precision is in `0..63`.
 
 ### 2.2 Quantization
 
 For each dimension `d`, compute:
 
-- `factor[d] = 10 ^ precision[d]`
+- `factor[d] = 10 ^ precision[d]`, computed in double precision by repeated multiplication
+  (`1.0 * 10.0 * 10.0 * ...`), so results are reproducible across platforms.
 
 For each input value `v[i]` at dimension `d = i % dimensions`:
 
 - `scaled[i] = llround(v[i] * factor[d])`
 
 `llround` semantics are used (round to nearest, halfway cases away from zero).
+
+Every value must be finite with `|v[i] * factor[d]| < 2^58`; otherwise encoding fails. This
+keeps every delta's zigzag value below `2^60`, i.e. at most 12 chars, which every decoder accepts.
 
 ### 2.3 Delta State
 
@@ -63,7 +68,12 @@ Encode each `delta` as follows:
    - emit final byte: `u + 63`
 3. Append emitted bytes as ASCII chars.
 
-Decoding performs the exact inverse and reconstructs values by cumulative per-dimension addition.
+Decoding performs the exact inverse and reconstructs values by cumulative per-dimension addition,
+then `value = (double)previous[d] / factor[d]` (a division, not multiplication by the reciprocal,
+so results are exact to the double nearest the decimal value).
+
+Valid encoded chars are `?` (63) through `~` (126). A value is at most 12 chars (60 bits);
+longer values, chars outside that range, and a value cut off by the end of input are malformed.
 
 ## 3. Geometry Header
 
@@ -81,7 +91,7 @@ Where:
 
 - `V`: format version (`0..63`)
 - `P`: precision (`0..63`), uniform for all dimensions in geometry APIs
-- `D`: dimensions (`1..16` in current implementation)
+- `D`: dimensions (`1..16` in current implementation; decoders reject other values as malformed)
 - `T`: geometry type (`1..6` in current implementation)
 
 Current geometry type codes:
@@ -195,13 +205,19 @@ Malformed inputs include (non-exhaustive):
 - header shorter than 4 chars
 - invalid header field chars (decoded value outside `0..63`)
 - unsupported `V`
-- malformed varint stream
+- `D` outside `1..16`
+- malformed varint stream (see Section 2.4)
 - decoded scalar count not divisible by `dimensions`
 - empty segment between separators
+- empty body
 
 ## 7. Determinism and Compatibility Notes
 
 - Encoding is deterministic for a fixed input and precision.
+- The 0.6.0 Rust implementation produces byte-identical output to the 0.5.x C implementation for
+  every input the C implementation accepted correctly; it only rejects inputs the C
+  implementation mishandled (non-finite or oversized values, precisions outside `0..63`, chars
+  above `~`, bad `D`).
 - Because separator boundaries no longer reset deltas, encoded bytes for multi-part geometry differ from older behavior.
 - This spec intentionally keeps header version value `1` for this change.
 - Implementations must ensure all participating encoders/decoders in the ecosystem are updated together.
@@ -213,4 +229,5 @@ Not specified in wire format:
 - CRS/SRID
 - ring orientation normalization
 - polygon validity checks beyond structural constraints
-- NaN/Inf canonicalization policy
+
+NaN and infinite values cannot be encoded (Section 2.2).

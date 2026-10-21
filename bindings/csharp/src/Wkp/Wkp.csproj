@@ -1,0 +1,56 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <RootNamespace>Wkp</RootNamespace>
+    <!-- Self-explanatory members (enum values, simple properties) have no doc comments. -->
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+
+    <PackageId>Wkp</PackageId>
+    <!-- Kept in sync with the Cargo workspace version by scripts/check_versions.py. -->
+    <Version>0.6.0</Version>
+    <Authors>kodonnell</Authors>
+    <Description>Well Known Polylines - fast and compact encoding of geometries to strings using the Google Polylines algorithm.</Description>
+    <PackageTags>wkp;polyline;google-polyline;geometry;gis;geospatial;encoding</PackageTags>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageProjectUrl>https://github.com/kodonnell/wkp</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/kodonnell/wkp</RepositoryUrl>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="../../README.md" Pack="true" PackagePath="/" Link="README.md" />
+    <!--
+      Native libraries (libwkp.so / libwkp.dylib / wkp.dll) built from bindings/c, one per RID, in
+      runtimes/<rid>/native/. CI downloads them for every RID and packs with
+      -p:WkpSkipNativeBuild=true; local builds compile the current machine's one (below).
+    -->
+    <None Include="runtimes/**/*" Pack="true" PackagePath="runtimes/" CopyToOutputDirectory="PreserveNewest" LinkBase="runtimes/" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <WkpRepoRoot>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)../../../../'))</WkpRepoRoot>
+    <WkpNativeFile Condition="$([MSBuild]::IsOSPlatform('Windows'))">wkp.dll</WkpNativeFile>
+    <WkpNativeFile Condition="$([MSBuild]::IsOSPlatform('OSX'))">libwkp.dylib</WkpNativeFile>
+    <WkpNativeFile Condition="'$(WkpNativeFile)' == ''">libwkp.so</WkpNativeFile>
+    <WkpCargoTargetDir Condition="'$(CARGO_TARGET_DIR)' != ''">$([MSBuild]::EnsureTrailingSlash('$(CARGO_TARGET_DIR)'))</WkpCargoTargetDir>
+    <WkpCargoTargetDir Condition="'$(WkpCargoTargetDir)' == ''">$(WkpRepoRoot)target/</WkpCargoTargetDir>
+  </PropertyGroup>
+
+  <!-- Builds the C ABI library for this machine with cargo (requires Rust on PATH). -->
+  <Target Name="WkpBuildNative" BeforeTargets="PrepareForBuild" Condition="'$(WkpSkipNativeBuild)' != 'true'">
+    <Exec Command="cargo build --release -p wkp-capi" WorkingDirectory="$(WkpRepoRoot)" />
+    <Copy SourceFiles="$(WkpCargoTargetDir)release/$(WkpNativeFile)"
+          DestinationFolder="$(MSBuildThisFileDirectory)runtimes/$(NETCoreSdkRuntimeIdentifier)/native/"
+          SkipUnchangedFiles="true" />
+    <ItemGroup>
+      <!-- Re-glob: the item above was evaluated before this target created the file. -->
+      <None Remove="runtimes/**/*" />
+      <None Include="runtimes/**/*" Pack="true" PackagePath="runtimes/" CopyToOutputDirectory="PreserveNewest" LinkBase="runtimes/" />
+    </ItemGroup>
+  </Target>
+
+</Project>

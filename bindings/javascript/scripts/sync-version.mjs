@@ -7,7 +7,7 @@ const __dirname = dirname(__filename);
 
 const jsRoot = resolve(__dirname, '..');
 const repoRoot = resolve(jsRoot, '..', '..');
-const headerPath = resolve(repoRoot, 'core', 'include', 'wkp', '_version.h');
+const cargoTomlPath = resolve(repoRoot, 'Cargo.toml');
 
 const packageFiles = [
     resolve(jsRoot, 'package.json'),
@@ -29,10 +29,11 @@ function renderWebVersionModule(version, compatibility) {
 }
 
 function readCoreVersion() {
-    const header = readFileSync(headerPath, 'utf8');
-    const match = header.match(/#define\s+WKP_CORE_VERSION\s+"([^"]+)"/);
+    // The Cargo workspace version is the single source of truth for every package.
+    const cargoToml = readFileSync(cargoTomlPath, 'utf8');
+    const match = cargoToml.match(/\[workspace\.package\][^[]*?\nversion\s*=\s*"([^"]+)"/);
     if (!match) {
-        throw new Error(`Could not parse WKP_CORE_VERSION from ${headerPath}`);
+        throw new Error(`Could not parse [workspace.package] version from ${cargoTomlPath}`);
     }
     return match[1];
 }
@@ -139,7 +140,7 @@ if (write) {
 }
 
 if (drift.length || lockResult.changed || (webVersionResult.exists && webVersionResult.changed)) {
-    console.error(`Version drift detected. Expected ${version} from core/include/wkp/_version.h`);
+    console.error(`Version drift detected. Expected ${version} from Cargo.toml [workspace.package]`);
     for (const r of drift) {
         console.error(`- ${r.path}: ${r.current} -> ${version}`);
     }

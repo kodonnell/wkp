@@ -1,9 +1,66 @@
-const load = require('node-gyp-build');
+const fs = require('node:fs');
+const path = require('node:path');
 
-const core = load(__dirname);
 const packageInfo = require('./package.json');
 const BINDING_VERSION = packageInfo.version;
 const CORE_COMPATIBILITY = packageInfo.wkpCoreCompatibility;
+
+function isMusl() {
+    if (process.platform !== 'linux') {
+        return false;
+    }
+    if (typeof process.report?.getReport !== 'function') {
+        return false;
+    }
+    // Skip the (slow) network section of the report; restore the setting afterwards.
+    const excludeNetwork = process.report.excludeNetwork;
+    process.report.excludeNetwork = true;
+    try {
+        return !process.report.getReport()?.header?.glibcVersionRuntime;
+    } finally {
+        process.report.excludeNetwork = excludeNetwork;
+    }
+}
+
+function loadNative() {
+    // Published packages ship prebuilt binaries per platform; local builds land in build/Release.
+    const target = `${process.platform}-${process.arch}${isMusl() ? '-musl' : ''}`;
+    const candidates = [
+        path.join(__dirname, 'prebuilds', target, 'wkp.node'),
+        path.join(__dirname, 'build', 'Release', 'wkp.node')
+    ];
+    for (const candidate of candidates) {
+        if (fs.existsSync(candidate)) {
+            return require(candidate);
+        }
+    }
+    throw new Error(
+        `@wkpjs/node has no native binary for ${target}. Looked in:\n  ${candidates.join('\n  ')}\n`
+        + 'Use @wkpjs/web (WebAssembly) on this platform, or build the addon from a checkout of '
+        + 'https://github.com/kodonnell/wkp (bindings/javascript: `npm run build:node`).'
+    );
+}
+
+const native = loadNative();
+
+// Invalid arguments surface from the native layer with code "InvalidArg"; keep the historical
+// contract of throwing TypeError for those.
+function wrapNative(fn) {
+    return (...args) => {
+        try {
+            return fn(...args);
+        } catch (error) {
+            if (error && error.code === 'InvalidArg') {
+                throw new TypeError(error.message);
+            }
+            throw error;
+        }
+    };
+}
+
+const core = Object.fromEntries(
+    Object.entries(native).map(([name, value]) => [name, typeof value === 'function' ? wrapNative(value) : value])
+);
 
 function parseSemverMajorMinor(version) {
     const corePart = String(version).split('-', 1)[0];
@@ -44,7 +101,7 @@ if (typeof core.runSelfTest !== 'function') {
 }
 core.runSelfTest();
 
-const EncodedGeometryType = Object.freeze({ ...core.EncodedGeometryType });
+const EncodedGeometryType = Object.freeze({ ...core.geometryTypes() });
 
 class Context { }
 
@@ -62,7 +119,9 @@ function asContext(ctx) {
 
 function normalizeEncodedBytes(encodedValue) {
     if (typeof encodedValue === 'string') {
-        return Buffer.from(encodedValue, 'ascii');
+        // UTF-8, not 'ascii': 'ascii' keeps only the low byte of each char, so a non-ASCII char
+        // could turn into a valid WKP char. As UTF-8 it becomes bytes >= 0x80, which are rejected.
+        return Buffer.from(encodedValue, 'utf8');
     }
     if (Buffer.isBuffer(encodedValue)) {
         return encodedValue;
@@ -251,8 +310,8 @@ function buildGeometryFrame(geometry, dimensions) {
     return {
         geometryType,
         coords: Float64Array.from(flatCoords),
-        segmentPointCounts,   // plain Array — native addon requires this
-        groupSegmentCounts    // plain Array — native addon requires this
+        segmentPointCounts: Uint32Array.from(segmentPointCounts),
+        groupSegmentCounts: Uint32Array.from(groupSegmentCounts)
     };
 }
 
@@ -422,7 +481,12 @@ class GeometryFrame {
 
     /** Deserialize from an ArrayBuffer produced by {@link toBuffer}. */
     static fromBuffer(buffer) {
-        const view = new DataView(buffer instanceof ArrayBuffer ? buffer : buffer.buffer);
+        // A view (e.g. a pooled Node Buffer) can start at any offset in its ArrayBuffer, and the
+        // typed arrays below need 8-byte alignment, so copy views into an ArrayBuffer of their own.
+        const ab = buffer instanceof ArrayBuffer
+            ? buffer
+            : buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
+        const view = new DataView(ab);
         let o = 0;
         const version = view.getInt32(o, true);       o += 4;
         const precision = view.getInt32(o, true);     o += 4;
@@ -431,11 +495,11 @@ class GeometryFrame {
         const ncoords = Number(view.getBigUint64(o, true)); o += 8;
         const nseg = Number(view.getBigUint64(o, true));    o += 8;
         const ngrp = Number(view.getBigUint64(o, true));    o += 8;
-        const coords = new Float64Array(buffer instanceof ArrayBuffer ? buffer : buffer.buffer, o, ncoords);
+        const coords = new Float64Array(ab, o, ncoords);
         o += ncoords * 8;
-        const segmentPointCounts = new Uint32Array(buffer instanceof ArrayBuffer ? buffer : buffer.buffer, o, nseg);
+        const segmentPointCounts = new Uint32Array(ab, o, nseg);
         o += nseg * 4;
-        const groupSegmentCounts = new Uint32Array(buffer instanceof ArrayBuffer ? buffer : buffer.buffer, o, ngrp);
+        const groupSegmentCounts = new Uint32Array(ab, o, ngrp);
         return new GeometryFrame({ version, precision, dimensions, geometryType, coords, segmentPointCounts, groupSegmentCounts });
     }
 }
@@ -450,23 +514,26 @@ function decodeHeader(encodedValue) {
     return [header[0], header[1], header[2], header[3]];
 }
 
+function decodeFrameRaw(encodedValue) {
+    const [version, precision, dimensions, geometryType, coords, segmentPointCounts, groupSegmentCounts] =
+        core.decodeGeometryFrameFlat(normalizeEncodedBytes(encodedValue));
+    return { version, precision, dimensions, geometryType, coords, segmentPointCounts, groupSegmentCounts };
+}
+
 function decode(encodedValue, ctx = _defaultCtx) {
     asContext(ctx);
-    return core.decodeGeometryFrame(normalizeEncodedBytes(encodedValue));
+    const raw = decodeFrameRaw(encodedValue);
+    return {
+        version: raw.version,
+        precision: raw.precision,
+        dimensions: raw.dimensions,
+        geometry: frameToGeometry(raw.geometryType, raw.dimensions, raw.coords, raw.segmentPointCounts, raw.groupSegmentCounts)
+    };
 }
 
 function decodeFrame(encodedValue, ctx = _defaultCtx) {
     asContext(ctx);
-    const raw = core.decodeGeometryFrameFlat(normalizeEncodedBytes(encodedValue));
-    return new GeometryFrame({
-        version: raw.version,
-        precision: raw.precision,
-        dimensions: raw.dimensions,
-        geometryType: raw.geometryType,
-        coords: raw.coords,
-        segmentPointCounts: raw.segmentPointCounts,
-        groupSegmentCounts: raw.groupSegmentCounts,
-    });
+    return new GeometryFrame(decodeFrameRaw(encodedValue));
 }
 
 function decodeFloatsArray(encodedValue, precisions, ctx = _defaultCtx) {
@@ -503,8 +570,8 @@ function encodeFrame(frame, ctx = _defaultCtx) {
         frame.coords,
         frame.dimensions,
         frame.precision,
-        Array.from(frame.groupSegmentCounts),
-        Array.from(frame.segmentPointCounts)
+        frame.groupSegmentCounts,
+        frame.segmentPointCounts
     );
 }
 
@@ -521,9 +588,13 @@ function decodeFloats(encodedValue, precisions, ctx = _defaultCtx) {
     const precisionList = normalizePrecisions(precisions);
     const dimensions = precisionList.length;
     const decoded = core.decodeF64(normalizeEncodedBytes(encodedValue), dimensions, precisionList);
-    const rows = [];
-    for (let i = 0; i < decoded.length; i += dimensions) {
-        rows.push(Array.from(decoded.slice(i, i + dimensions)));
+    const rows = new Array(decoded.length / dimensions);
+    for (let r = 0, i = 0; i < decoded.length; r += 1) {
+        const row = new Array(dimensions);
+        for (let d = 0; d < dimensions; d += 1, i += 1) {
+            row[d] = decoded[i];
+        }
+        rows[r] = row;
     }
     return rows;
 }

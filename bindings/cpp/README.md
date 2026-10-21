@@ -4,7 +4,7 @@ C++ convenience layer over the WKP C ABI.
 
 ## Architecture
 
-- Public C ABI: `core/include/wkp/core.h`
+- Public C ABI: `bindings/c/include/wkp/core.h` (implemented in Rust, see `bindings/c/README.md`)
 - C++ wrapper header: `bindings/cpp/include/wkp/core.hpp`
 - Wrapper methods are ABI-backed, keeping core internals binding-agnostic
 - Context ownership is explicit at the ABI layer: initialize one `wkp_context`, reuse it, then free it
@@ -17,29 +17,30 @@ C++ convenience layer over the WKP C ABI.
 
 ## Dependencies
 
-- CMake >= 3.18
+- CMake >= 3.22
 - C++17 compiler
-- doctest (fetched by root CMake when tests enabled)
+- Rust (stable), to build the C ABI library
+- Corrosion and doctest (fetched by the root CMake)
 
 ## Build
 
-From repo root:
+From repo root (this also builds the Rust C ABI library through Corrosion):
 
 ```sh
-cmake -S . -B build/core -DCMAKE_BUILD_TYPE=Release -DWKP_BUILD_TESTS=ON -DWKP_BUILD_BENCHMARKS=ON
-cmake --build build/core --config Release
+cmake -S . -B build/cmake -DCMAKE_BUILD_TYPE=Release -DWKP_BUILD_TESTS=ON -DWKP_BUILD_BENCHMARKS=ON
+cmake --build build/cmake --config Release
 ```
 
 ## Test
 
 ```sh
-ctest --test-dir build/core -C Release --output-on-failure
+ctest --test-dir build/cmake -C Release --output-on-failure
 ```
 
 ## Benchmark
 
 ```sh
-build/core/Release/wkp_cpp_benchmark 10000 2 5 1000
+build/cmake/wkp_cpp_benchmark 10000 2 5 1000   # build/cmake/Release/ on Windows
 ```
 
 ## Float encode / decode

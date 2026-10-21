@@ -1,0 +1,31 @@
+[workspace]
+resolver = "2"
+members = [
+    "core",
+    "bindings/c",
+    "bindings/python",
+    "bindings/javascript/packages/node/native",
+    "bindings/javascript/packages/web/native",
+]
+# Plain `cargo build` / `cargo test` cover the core and C ABI only; the binding crates need
+# their host toolchains (Python, Node) and are built by their own packaging tools.
+default-members = ["core", "bindings/c"]
+
+[workspace.package]
+version = "0.6.0"
+edition = "2021"
+rust-version = "1.85"
+license = "MIT"
+repository = "https://github.com/kodonnell/wkp"
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+# Shipped binaries (wheels, .node, .wasm, libwkp) don't need symbol tables.
+strip = "symbols"
+
+# WebAssembly build: no unwinding support is needed, and dropping it shrinks the module.
+[profile.release-wasm]
+inherits = "release"
+panic = "abort"
