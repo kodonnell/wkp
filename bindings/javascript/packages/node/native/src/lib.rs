@@ -1,5 +1,5 @@
 //! Node-API addon for `@wkpjs/node`. `index.js` normalises arguments and builds the public API;
-//! this layer only moves typed arrays in and out of `wkp-core`.
+//! this layer only moves typed arrays in and out of `wkp`.
 //!
 //! Errors from invalid arguments carry `code: "InvalidArg"`, which `index.js` rethrows as
 //! `TypeError`.
@@ -9,7 +9,7 @@ use std::{mem, ptr};
 
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
-use wkp_core::Frame;
+use wkp::Frame;
 
 thread_local! {
     // Reused output buffers (one set per JS thread). Results are copied into JS-owned memory, so
@@ -19,10 +19,10 @@ thread_local! {
     static FRAME: RefCell<Frame> = RefCell::new(Frame::default());
 }
 
-fn core_err(e: wkp_core::Error) -> Error {
+fn core_err(e: wkp::Error) -> Error {
     let status = match e {
-        wkp_core::Error::InvalidArgument => Status::InvalidArg,
-        wkp_core::Error::MalformedInput => Status::GenericFailure,
+        wkp::Error::InvalidArgument => Status::InvalidArg,
+        wkp::Error::MalformedInput => Status::GenericFailure,
     };
     Error::new(status, format!("WKP core error: {e}"))
 }
@@ -70,11 +70,11 @@ pub fn run_self_test() -> Result<bool> {
     let values = [38.5, -120.2, 40.7, -120.95, 43.252, -126.453];
     let mut buf = Vec::new();
     let mut frame = Frame::default();
-    let ok = wkp_core::encode_f64(&values, 2, &[5], &mut buf).is_ok()
+    let ok = wkp::encode_f64(&values, 2, &[5], &mut buf).is_ok()
         && buf == b"_p~iF~ps|U_ulLnnqC_mqNvxq`@"
-        && wkp_core::encode_geometry(2, &values, 2, 5, &[1], &[3], &mut buf).is_ok()
+        && wkp::encode_geometry(2, &values, 2, 5, &[1], &[3], &mut buf).is_ok()
         && buf == b"@DAA_p~iF~ps|U_ulLnnqC_mqNvxq`@"
-        && wkp_core::decode_geometry(&buf, &mut frame).is_ok()
+        && wkp::decode_geometry(&buf, &mut frame).is_ok()
         && frame.coords == values;
     if ok {
         Ok(true)
@@ -119,7 +119,7 @@ pub fn encode_f64<'env>(
     precisions: Vec<i32>,
 ) -> Result<BufferSlice<'env>> {
     BYTES.with_borrow_mut(|out| {
-        wkp_core::encode_f64(values, dimensions as usize, &precisions, out).map_err(core_err)?;
+        wkp::encode_f64(values, dimensions as usize, &precisions, out).map_err(core_err)?;
         BufferSlice::copy_from(env, out.as_slice())
     })
 }
@@ -132,7 +132,7 @@ pub fn decode_f64<'env>(
     precisions: Vec<i32>,
 ) -> Result<Float64ArraySlice<'env>> {
     VALUES.with_borrow_mut(|out| {
-        wkp_core::decode_f64(encoded, dimensions as usize, &precisions, out).map_err(core_err)?;
+        wkp::decode_f64(encoded, dimensions as usize, &precisions, out).map_err(core_err)?;
         typed_array_copy(env, out, TypedArrayType::Float64)
     })
 }
@@ -147,11 +147,11 @@ pub fn encode_geometry_frame_f64<'env>(
     group_segment_counts: &[u32],
     segment_point_counts: &[u32],
 ) -> Result<BufferSlice<'env>> {
-    let geometry_type = u8::try_from(geometry_type).map_err(|_| core_err(wkp_core::Error::InvalidArgument))?;
+    let geometry_type = u8::try_from(geometry_type).map_err(|_| core_err(wkp::Error::InvalidArgument))?;
     let groups = to_usize(group_segment_counts);
     let segments = to_usize(segment_point_counts);
     BYTES.with_borrow_mut(|out| {
-        wkp_core::encode_geometry(
+        wkp::encode_geometry(
             geometry_type,
             coords,
             dimensions as usize,
@@ -168,7 +168,7 @@ pub fn encode_geometry_frame_f64<'env>(
 /// Returns `[version, precision, dimensions, geometryType]`.
 #[napi]
 pub fn decode_geometry_header(encoded: &[u8]) -> Result<Vec<u32>> {
-    let h = wkp_core::decode_header(encoded).map_err(core_err)?;
+    let h = wkp::decode_header(encoded).map_err(core_err)?;
     Ok(vec![
         h.version as u32,
         h.precision as u32,
@@ -194,7 +194,7 @@ pub fn decode_geometry_frame_flat<'env>(
     Uint32ArraySlice<'env>,
 )> {
     FRAME.with_borrow_mut(|f| {
-        wkp_core::decode_geometry(encoded, f).map_err(core_err)?;
+        wkp::decode_geometry(encoded, f).map_err(core_err)?;
         let segs: Vec<u32> = f.segment_point_counts.iter().map(|&n| n as u32).collect();
         let groups: Vec<u32> = f.group_segment_counts.iter().map(|&n| n as u32).collect();
         let h = f.header;

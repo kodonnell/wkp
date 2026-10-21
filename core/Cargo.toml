@@ -1,5 +1,5 @@
 [package]
-name = "wkp-core"
+name = "wkp"
 description = "Well Known Polylines - compact, fast polyline-style geometry encoding"
 version.workspace = true
 edition.workspace = true
@@ -9,6 +9,3 @@ repository.workspace = true
 readme = "README.md"
 keywords = ["polyline", "geometry", "gis", "encoding", "geospatial"]
 categories = ["encoding", "science::geo", "no-std"]
-
-[lib]
-name = "wkp_core"

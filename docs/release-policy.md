@@ -7,7 +7,7 @@ This repository has one core implementation and multiple independently versioned
 - Python package: `wkp` on PyPI
 - JavaScript packages: `@wkpjs/node` and `@wkpjs/web` on npm
 - .NET package: `Wkp` on NuGet
-- Rust crate: `wkp-core` on crates.io
+- Rust crate: `wkp` on crates.io
 - C ABI (`libwkp`) and C++ header: built and tested in CI (`core.yml`), not currently published as a standalone package
 
 All packages share one version, set in `Cargo.toml` (`[workspace.package]`); see
@@ -35,7 +35,7 @@ All packages share one version, set in `Cargo.toml` (`[workspace.package]`); see
 
 - `crates-vX.Y.Z`
   - Runs `.github/workflows/crates.yml`
-  - Tests and packages `wkp-core`, then publishes it to crates.io (trusted publishing; the first
+  - Tests and packages `wkp`, then publishes it to crates.io (trusted publishing; the first
     release is manual, see [publishing.md](publishing.md))
 
 - `wkp-vX.Y.Z`

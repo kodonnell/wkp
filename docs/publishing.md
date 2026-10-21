@@ -13,7 +13,7 @@ packages share the version in the root `Cargo.toml`; bump it there, run
 | PyPI      | `wkp`                         | `pypi-vX.Y.Z`     | `python.yml`   | `pypi`             |
 | npm       | `@wkpjs/node`, `@wkpjs/web`   | `npm-vX.Y.Z`      | `js.yml`       | `npm`              |
 | NuGet     | `Wkp`                         | `nuget-vX.Y.Z`    | `csharp.yml`   | `nuget`            |
-| crates.io | `wkp-core`                    | `crates-vX.Y.Z`   | `crates.yml`   | `crates`           |
+| crates.io | `wkp`                    | `crates-vX.Y.Z`   | `crates.yml`   | `crates`           |
 
 PyPI and npm are already set up. NuGet and crates.io need the one-time setup below.
 
@@ -62,9 +62,9 @@ release is done by hand.
 
    ```bash
    cargo login            # paste the token
-   cargo test -p wkp-core --release
-   cargo publish -p wkp-core --dry-run
-   cargo publish -p wkp-core
+   cargo test -p wkp --release
+   cargo publish -p wkp --dry-run
+   cargo publish -p wkp
    ```
 
    Revoke the token afterwards.
@@ -81,11 +81,10 @@ release is done by hand.
 
 Notes:
 
-- Only `wkp-core` is published. The binding crates (`wkp-capi`, `wkp-py`, `wkp-node`, `wkp-wasm`)
+- Only `wkp` is published. The binding crates (`wkp-capi`, `wkp-py`, `wkp-node`, `wkp-wasm`)
   are `publish = false`.
-- Crate names are first-come, first-served. Both `wkp` and `wkp-core` were free at the time of
-  writing. `wkp` is the nicer name for Rust users (`cargo add wkp`): to use it, rename the package
-  in `core/Cargo.toml` before the first publish. The library name `wkp_core` can stay.
+- Crate names are first-come, first-served. `wkp` was free at the time of writing; it is claimed
+  by the first publish.
 - Published versions cannot be deleted, only *yanked*. Yanking stops new dependents but keeps
   the download available.
 - `cargo publish` only packages files inside `core/`. The golden and reference tests travel with

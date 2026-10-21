@@ -1,4 +1,4 @@
-# wkp-core
+# wkp (Rust core)
 
 The Rust implementation of WKP, shared by every binding. `no_std` (needs `alloc`), no
 dependencies. The wire format is specified in `../SPEC.md`.
@@ -9,7 +9,7 @@ All functions write into caller-provided buffers (cleared first), so reusing the
 `Frame` across calls avoids reallocating.
 
 ```rust
-use wkp_core::{decode_f64, decode_geometry, decode_header, encode_f64, encode_geometry, Frame};
+use wkp::{decode_f64, decode_geometry, decode_header, encode_f64, encode_geometry, Frame};
 
 // Geometry with a header: LINESTRING (38.5 -120.2, 40.7 -120.95, 43.252 -126.453) at 5dp.
 let coords = [38.5, -120.2, 40.7, -120.95, 43.252, -126.453];
@@ -58,12 +58,12 @@ differences are for inputs the C core handled badly:
 - The per-dimension loops are specialised for 1–4 dimensions.
 - Rounding is `llround`-compatible but done with plain arithmetic, so it inlines.
 
-Run the benchmark with `cargo run --release -p wkp-core --example bench`.
+Run the benchmark with `cargo run --release -p wkp --example bench`.
 
 ## Tests
 
 ```sh
-cargo test -p wkp-core
+cargo test -p wkp
 ```
 
 - unit tests in `src/lib.rs`

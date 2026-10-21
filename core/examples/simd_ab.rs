@@ -1,12 +1,12 @@
 //! Decode timing with the SIMD decoder off vs on, interleaved so CPU clock drift and other
 //! load hit both sides equally.
 //!
-//! Usage: cargo run --release -p wkp-core --example simd_ab
+//! Usage: cargo run --release -p wkp --example simd_ab
 use std::hint::black_box;
 use std::path::Path;
 use std::time::Instant;
 
-use wkp_core::{decode_f64, decode_geometry, encode_f64, encode_geometry, set_simd_enabled, Frame};
+use wkp::{decode_f64, decode_geometry, encode_f64, encode_geometry, set_simd_enabled, Frame};
 
 fn once(batch: usize, f: &mut impl FnMut()) -> f64 {
     let t = Instant::now();

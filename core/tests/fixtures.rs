@@ -3,7 +3,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use wkp_core::{decode_f64, decode_geometry, encode_f64, encode_geometry, Frame};
+use wkp::{decode_f64, decode_geometry, encode_f64, encode_geometry, Frame};
 
 fn fixture_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../data/integration_tests")

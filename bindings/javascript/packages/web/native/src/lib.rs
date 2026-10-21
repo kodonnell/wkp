@@ -10,7 +10,7 @@
 //! Any call may grow linear memory, so JS must re-create its views of `memory.buffer` after
 //! each call.
 
-use wkp_core::{Error, Frame};
+use wkp::{Error, Frame};
 
 const STATUS_OK: i32 = 0;
 
@@ -116,7 +116,7 @@ pub unsafe extern "C" fn wkp_encode_f64(
     precision_count: usize,
 ) -> i32 {
     let ctx = &mut *ctx;
-    let r = wkp_core::encode_f64(
+    let r = wkp::encode_f64(
         slice(values, value_count),
         dimensions,
         slice(precisions, precision_count),
@@ -145,7 +145,7 @@ pub unsafe extern "C" fn wkp_encode_geometry(
     let Ok(geometry_type) = u8::try_from(geometry_type) else {
         return status(Err(Error::InvalidArgument));
     };
-    let r = wkp_core::encode_geometry(
+    let r = wkp::encode_geometry(
         geometry_type,
         slice(coords, coord_count),
         dimensions,
@@ -170,7 +170,7 @@ pub unsafe extern "C" fn wkp_decode_f64(
     precision_count: usize,
 ) -> i32 {
     let ctx = &mut *ctx;
-    let r = wkp_core::decode_f64(
+    let r = wkp::decode_f64(
         slice(encoded, encoded_len),
         dimensions,
         slice(precisions, precision_count),
@@ -189,7 +189,7 @@ pub unsafe extern "C" fn wkp_decode_f64(
 #[no_mangle]
 pub unsafe extern "C" fn wkp_decode_geometry(ctx: *mut Context, encoded: *const u8, encoded_len: usize) -> i32 {
     let ctx = &mut *ctx;
-    let r = wkp_core::decode_geometry(slice(encoded, encoded_len), &mut ctx.frame);
+    let r = wkp::decode_geometry(slice(encoded, encoded_len), &mut ctx.frame);
     let f = &ctx.frame;
     ctx.output = Output {
         data_ptr: f.coords.as_ptr() as usize,
@@ -212,7 +212,7 @@ pub unsafe extern "C" fn wkp_decode_geometry(ctx: *mut Context, encoded: *const 
 /// `encoded` must be valid for `encoded_len` bytes and `out` for 4 u32s.
 #[no_mangle]
 pub unsafe extern "C" fn wkp_decode_header(encoded: *const u8, encoded_len: usize, out: *mut u32) -> i32 {
-    match wkp_core::decode_header(slice(encoded, encoded_len)) {
+    match wkp::decode_header(slice(encoded, encoded_len)) {
         Ok(h) => {
             let fields = [h.version, h.precision, h.dimensions, h.geometry_type].map(u32::from);
             core::ptr::copy_nonoverlapping(fields.as_ptr(), out, 4);
@@ -239,11 +239,11 @@ pub extern "C" fn wkp_self_test() -> i32 {
     let values = [38.5, -120.2, 40.7, -120.95, 43.252, -126.453];
     let mut buf = Vec::new();
     let mut frame = Frame::default();
-    let ok = wkp_core::encode_f64(&values, 2, &[5], &mut buf).is_ok()
+    let ok = wkp::encode_f64(&values, 2, &[5], &mut buf).is_ok()
         && buf == b"_p~iF~ps|U_ulLnnqC_mqNvxq`@"
-        && wkp_core::encode_geometry(2, &values, 2, 5, &[1], &[3], &mut buf).is_ok()
+        && wkp::encode_geometry(2, &values, 2, 5, &[1], &[3], &mut buf).is_ok()
         && buf == b"@DAA_p~iF~ps|U_ulLnnqC_mqNvxq`@"
-        && wkp_core::decode_geometry(&buf, &mut frame).is_ok()
+        && wkp::decode_geometry(&buf, &mut frame).is_ok()
         && frame.coords == values;
     if ok {
         STATUS_OK

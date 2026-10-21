@@ -1,8 +1,8 @@
 # WKP C ABI
 
 `include/wkp/core.h` is the stable C ABI for WKP, implemented in Rust by this crate (`wkp-capi`)
-on top of `wkp-core`. It is what the C++ header (`bindings/cpp`) and the .NET binding
-(`bindings/csharp`) call. (Python and JavaScript use `wkp-core` directly.)
+on top of `wkp`. It is what the C++ header (`bindings/cpp`) and the .NET binding
+(`bindings/csharp`) call. (Python and JavaScript use `wkp` directly.)
 
 ## Build
 

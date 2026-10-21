@@ -25,7 +25,7 @@ GitHub Pages: https://kodonnell.github.io/wkp/
 One Rust implementation of the format, with thin bindings for each language:
 
 ```
-core/ (wkp-core, Rust)
+core/ (crate `wkp`, Rust)
  ├─ bindings/python                      pyo3 extension      -> wkp (PyPI)
  ├─ bindings/javascript/packages/node    Node-API addon      -> @wkpjs/node (npm)
  ├─ bindings/javascript/packages/web     WebAssembly module  -> @wkpjs/web (npm)
@@ -51,7 +51,7 @@ The core moved from C to Rust in 0.6.0:
 
 ## Repository layout
 
-- `core/`: the Rust implementation (`wkp-core`), unit tests, golden vectors and fixture tests, `examples/bench.rs`
+- `core/`: the Rust implementation (`wkp`), unit tests, golden vectors and fixture tests, `examples/bench.rs`
 - `bindings/c/`: C ABI (`include/wkp/core.h`), built as `libwkp`; C ABI tests
 - `bindings/cpp/`: C++ convenience header, C++ tests and benchmark (built with CMake from the repo root)
 - `bindings/python/`: pyo3 extension + Python package (`wkp` on PyPI)
@@ -94,7 +94,7 @@ See the binding READMEs below for JavaScript, C/C++ and C# usage.
 
 Core (Rust, no bindings):
 
-- `cargo run --release -p wkp-core --example bench`
+- `cargo run --release -p wkp --example bench`
 
 Geometry encode/decode comparison (WKP vs WKB/WKT):
 
@@ -132,7 +132,7 @@ dotnet test bindings/csharp/tests/Wkp.Tests
 - `pypi-vX.Y.Z`: publish the Python package, create a Python GitHub release.
 - `npm-vX.Y.Z`: publish the JavaScript packages, create a JavaScript GitHub release.
 - `nuget-vX.Y.Z`: publish the .NET package, create a .NET GitHub release.
-- `crates-vX.Y.Z`: publish the Rust core (`wkp-core`) to crates.io.
+- `crates-vX.Y.Z`: publish the Rust core (`wkp`) to crates.io.
 - `wkp-vX.Y.Z`: create a product-level GitHub release only; it does not publish any packages.
 - C/C++ have CI artifacts, but no standalone package/release workflow.
 

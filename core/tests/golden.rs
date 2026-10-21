@@ -7,7 +7,7 @@
 //! - `bad  <encoded> <status> <header> <segments> <groups> <coords>`: C decode of corrupted
 //!   input, where status 0 means it decoded, 1 invalid argument, 2 malformed input.
 
-use wkp_core::{decode_f64, decode_geometry, encode_f64, encode_geometry, Error, Frame};
+use wkp::{decode_f64, decode_geometry, encode_f64, encode_geometry, Error, Frame};
 
 fn list<T: std::str::FromStr>(s: &str) -> Vec<T>
 where

@@ -1,12 +1,12 @@
 //! Core encode/decode benchmark.
 //!
-//! Usage: cargo run --release -p wkp-core --example bench [rounds]
+//! Usage: cargo run --release -p wkp --example bench [rounds]
 
 use std::hint::black_box;
 use std::path::Path;
 use std::time::Instant;
 
-use wkp_core::{decode_f64, decode_geometry, encode_f64, encode_geometry, Frame};
+use wkp::{decode_f64, decode_geometry, encode_f64, encode_geometry, Frame};
 
 /// Median per-call time in microseconds over `rounds` batches of ~20ms each.
 fn time_us(rounds: usize, mut f: impl FnMut()) -> f64 {

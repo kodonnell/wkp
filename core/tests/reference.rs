@@ -2,7 +2,7 @@
 //! on random and adversarial input (every byte value, long continuation runs, separators in odd
 //! places, truncation). Also checks that encoding round-trips through the reference decoder.
 
-use wkp_core::{decode_f64, decode_geometry, encode_f64, encode_geometry, Error, Frame};
+use wkp::{decode_f64, decode_geometry, encode_f64, encode_geometry, Error, Frame};
 
 /// splitmix64.
 struct Rng(u64);
@@ -209,7 +209,7 @@ fn long_inputs_match_reference_with_and_without_simd() {
         let want_geom = ref_decode_geometry(&encoded);
         ok += want.is_ok() as usize;
         for simd in [true, false] {
-            wkp_core::set_simd_enabled(simd);
+            wkp::set_simd_enabled(simd);
             let got = decode_f64(&body, dims, &[precision], &mut values)
                 .map(|()| values.iter().map(|x| x.to_bits()).collect::<Vec<_>>());
             assert_eq!(got, want, "decode_f64 case {case} simd {simd} body {body:?}");
@@ -223,7 +223,7 @@ fn long_inputs_match_reference_with_and_without_simd() {
             assert_eq!(got, want_geom, "decode_geometry case {case} simd {simd}");
         }
     }
-    wkp_core::set_simd_enabled(true);
+    wkp::set_simd_enabled(true);
     assert!(ok > 1000, "{ok}");
 }
 

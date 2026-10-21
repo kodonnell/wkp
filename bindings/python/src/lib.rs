@@ -4,7 +4,7 @@ use numpy::{PyArray1, PyArray2, PyArrayMethods, PyReadonlyArray2, PyUntypedArray
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyDict, PyList, PyTuple};
-use wkp_core::Frame;
+use wkp::Frame;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -31,7 +31,7 @@ impl Context {
     }
 }
 
-fn core_err(e: wkp_core::Error) -> PyErr {
+fn core_err(e: wkp::Error) -> PyErr {
     PyValueError::new_err(format!("WKP core error: {e}"))
 }
 
@@ -54,7 +54,7 @@ fn array2<'py>(py: Python<'py>, values: &[f64], dims: usize) -> Bound<'py, PyArr
     arr
 }
 
-fn header_tuple(h: wkp_core::Header) -> (i32, i32, i32, i32) {
+fn header_tuple(h: wkp::Header) -> (i32, i32, i32, i32) {
     (
         h.version as i32,
         h.precision as i32,
@@ -77,11 +77,11 @@ fn self_test() -> PyResult<()> {
     let values = [38.5, -120.2, 40.7, -120.95, 43.252, -126.453];
     let mut buf = Vec::new();
     let mut frame = Frame::default();
-    let ok = wkp_core::encode_f64(&values, 2, &[5], &mut buf).is_ok()
+    let ok = wkp::encode_f64(&values, 2, &[5], &mut buf).is_ok()
         && buf == b"_p~iF~ps|U_ulLnnqC_mqNvxq`@"
-        && wkp_core::encode_geometry(2, &values, 2, 5, &[1], &[3], &mut buf).is_ok()
+        && wkp::encode_geometry(2, &values, 2, 5, &[1], &[3], &mut buf).is_ok()
         && buf == b"@DAA_p~iF~ps|U_ulLnnqC_mqNvxq`@"
-        && wkp_core::decode_geometry(&buf, &mut frame).is_ok()
+        && wkp::decode_geometry(&buf, &mut frame).is_ok()
         && frame.coords == values;
     if ok {
         Ok(())
@@ -92,7 +92,7 @@ fn self_test() -> PyResult<()> {
 
 #[pyfunction]
 fn decode_geometry_header(encoded: &[u8]) -> PyResult<(i32, i32, i32, i32)> {
-    wkp_core::decode_header(encoded).map(header_tuple).map_err(core_err)
+    wkp::decode_header(encoded).map(header_tuple).map_err(core_err)
 }
 
 #[pyfunction]
@@ -106,7 +106,7 @@ fn encode_f64<'py>(
     let values = contiguous(&values)?;
     let bytes = &mut ctx.bytes;
     run(py, values.len(), || {
-        wkp_core::encode_f64(values, dimensions, &precisions, bytes)
+        wkp::encode_f64(values, dimensions, &precisions, bytes)
     })
     .map_err(core_err)?;
     Ok(PyBytes::new(py, &ctx.bytes))
@@ -122,7 +122,7 @@ fn decode_f64<'py>(
 ) -> PyResult<Bound<'py, PyArray1<f64>>> {
     let coords = &mut ctx.frame.coords;
     run(py, encoded.len(), || {
-        wkp_core::decode_f64(encoded, dimensions, &precisions, coords)
+        wkp::decode_f64(encoded, dimensions, &precisions, coords)
     })
     .map_err(core_err)?;
     Ok(PyArray1::from_slice(py, &ctx.frame.coords))
@@ -140,10 +140,10 @@ fn encode_geometry_frame<'py>(
 ) -> PyResult<Bound<'py, PyBytes>> {
     let dims = coords.shape()[1];
     let coords = contiguous(&coords)?;
-    let geometry_type = u8::try_from(geometry_type).map_err(|_| core_err(wkp_core::Error::InvalidArgument))?;
+    let geometry_type = u8::try_from(geometry_type).map_err(|_| core_err(wkp::Error::InvalidArgument))?;
     let bytes = &mut ctx.bytes;
     run(py, coords.len(), || {
-        wkp_core::encode_geometry(
+        wkp::encode_geometry(
             geometry_type,
             coords,
             dims,
@@ -159,7 +159,7 @@ fn encode_geometry_frame<'py>(
 
 fn decode_into(py: Python<'_>, ctx: &mut Context, encoded: &[u8]) -> PyResult<()> {
     let frame = &mut ctx.frame;
-    run(py, encoded.len(), || wkp_core::decode_geometry(encoded, frame)).map_err(core_err)
+    run(py, encoded.len(), || wkp::decode_geometry(encoded, frame)).map_err(core_err)
 }
 
 /// Returns `(version, precision, dimensions, geometry_type, groups)` where `groups` is a list of

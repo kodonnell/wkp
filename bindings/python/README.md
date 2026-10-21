@@ -5,7 +5,7 @@ Python package with a minimal Shapely-first API on top of the WKP Rust core.
 ## Architecture
 
 - `src/lib.rs`: the `wkp._core` extension, written with [pyo3](https://pyo3.rs) and
-  [rust-numpy](https://github.com/PyO3/rust-numpy) over `wkp-core` (`core/`)
+  [rust-numpy](https://github.com/PyO3/rust-numpy) over `wkp` (`core/`)
 - `python/wkp/`: the pure-Python package (Shapely conversion, `GeometryFrame`, contexts)
 - Built with [maturin](https://www.maturin.rs) as abi3 wheels: one wheel per platform works on
   every CPython from 3.9 up (including 3.14)

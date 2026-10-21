@@ -9,7 +9,7 @@ Monorepo workspace for the JavaScript bindings over the WKP Rust core.
 
 ## Architecture
 
-- Both native layers are small Rust crates over `wkp-core` (`core/`), so the algorithm lives once
+- Both native layers are small Rust crates over `wkp` (`core/`), so the algorithm lives once
 - The JS in each package handles argument normalisation, GeoJSON conversion and `GeometryFrame`
 - Neither package has npm dependencies; `@wkpjs/node` ships prebuilt binaries for each platform
 

@@ -1,6 +1,6 @@
 [package]
 name = "wkp-wasm"
-description = "WebAssembly exports of wkp-core for @wkpjs/web"
+description = "WebAssembly exports of the wkp crate for @wkpjs/web"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -13,4 +13,4 @@ name = "wkp_core"
 crate-type = ["cdylib"]
 
 [dependencies]
-wkp-core = { path = "../../../../../core" }
+wkp = { path = "../../../../../core" }

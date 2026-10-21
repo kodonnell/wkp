@@ -42,7 +42,7 @@ jobs:
         uses: dtolnay/rust-toolchain@1.85
 
       - name: Test
-        run: cargo test -p wkp-core -p wkp-capi
+        run: cargo test -p wkp -p wkp-capi
 
   rust:
     name: Rust tests (${{ matrix.os }})
@@ -64,7 +64,7 @@ jobs:
         run: cargo test --release
 
       - name: Benchmark
-        run: cargo run --release -p wkp-core --example bench -- 5
+        run: cargo run --release -p wkp --example bench -- 5
 
   cpp:
     name: C/C++ build and tests (${{ matrix.os }})

@@ -1,4 +1,4 @@
-//! C ABI declared in `include/wkp/core.h`, backed by `wkp-core`.
+//! C ABI declared in `include/wkp/core.h`, backed by `wkp`.
 //!
 //! Context buffers are Rust `Vec`s stored as raw parts in the C struct, so a context must only
 //! be initialised, used and freed through these functions.
@@ -12,7 +12,7 @@ use core::ffi::c_char;
 use core::mem::ManuallyDrop;
 use core::{ptr, slice};
 
-use wkp_core::{Error, Frame};
+use wkp::{Error, Frame};
 
 pub type wkp_status = i32;
 pub const WKP_STATUS_OK: wkp_status = 0;
@@ -176,7 +176,7 @@ pub unsafe extern "C" fn wkp_encode_f64(
     encode_with(ctx, out_data, out_size, |buf| {
         let values = slice_or_empty(values, value_count).ok_or(WKP_STATUS_INVALID_ARGUMENT)?;
         let precisions = slice_or_empty(precisions, precision_count).ok_or(WKP_STATUS_INVALID_ARGUMENT)?;
-        wkp_core::encode_f64(values, dimensions, precisions, buf).map_err(status)
+        wkp::encode_f64(values, dimensions, precisions, buf).map_err(status)
     })
 }
 
@@ -200,7 +200,7 @@ pub unsafe extern "C" fn wkp_encode_geometry_frame(
         let groups = slice_or_empty(group_segment_counts, group_count).ok_or(WKP_STATUS_INVALID_ARGUMENT)?;
         let segs = slice_or_empty(segment_point_counts, segment_count).ok_or(WKP_STATUS_INVALID_ARGUMENT)?;
         let geometry_type = u8::try_from(geometry_type).map_err(|_| WKP_STATUS_INVALID_ARGUMENT)?;
-        wkp_core::encode_geometry(geometry_type, coords, dimensions, precision, groups, segs, buf).map_err(status)
+        wkp::encode_geometry(geometry_type, coords, dimensions, precision, groups, segs, buf).map_err(status)
     })
 }
 
@@ -227,7 +227,7 @@ pub unsafe extern "C" fn wkp_decode_f64(
     let mut buf = take(&mut ctx.f64_, &mut ctx.f64_cap);
     // Keep the returned pointer non-NULL even for empty output, as the C core did.
     buf.reserve(1);
-    let r = wkp_core::decode_f64(encoded, dimensions, precisions, &mut buf);
+    let r = wkp::decode_f64(encoded, dimensions, precisions, &mut buf);
     let len = buf.len();
     put(buf, &mut ctx.f64_, &mut ctx.f64_cap);
     match r {
@@ -259,7 +259,7 @@ pub unsafe extern "C" fn wkp_decode_geometry_frame(
         segment_point_counts: take(&mut ctx.sizes_a, &mut ctx.sizes_a_cap),
         group_segment_counts: take(&mut ctx.sizes_b, &mut ctx.sizes_b_cap),
     };
-    let r = wkp_core::decode_geometry(encoded, &mut frame);
+    let r = wkp::decode_geometry(encoded, &mut frame);
     let h = frame.header;
     let (nc, ns, ng) = (
         frame.coords.len(),
@@ -303,7 +303,7 @@ pub unsafe extern "C" fn wkp_decode_geometry_header(
     let Some(encoded) = slice_or_empty(encoded, encoded_size) else {
         return WKP_STATUS_INVALID_ARGUMENT;
     };
-    match wkp_core::decode_header(encoded) {
+    match wkp::decode_header(encoded) {
         Ok(h) => {
             *out_version = h.version as i32;
             *out_precision = h.precision as i32;
@@ -328,20 +328,20 @@ pub unsafe extern "C" fn wkp_basic_self_test(out_failed_check: *mut i32) -> wkp_
         *out = 0;
     }
     let mut buf = Vec::new();
-    if wkp_core::encode_f64(&values, 2, &[5], &mut buf).is_err() || buf != b"_p~iF~ps|U_ulLnnqC_mqNvxq`@" {
+    if wkp::encode_f64(&values, 2, &[5], &mut buf).is_err() || buf != b"_p~iF~ps|U_ulLnnqC_mqNvxq`@" {
         return fail(2);
     }
     let mut decoded = Vec::new();
-    if wkp_core::decode_f64(&buf, 2, &[5], &mut decoded).is_err() || decoded != values {
+    if wkp::decode_f64(&buf, 2, &[5], &mut decoded).is_err() || decoded != values {
         return fail(5);
     }
-    if wkp_core::encode_geometry(2, &values, 2, 5, &[1], &[3], &mut buf).is_err()
+    if wkp::encode_geometry(2, &values, 2, 5, &[1], &[3], &mut buf).is_err()
         || buf != b"@DAA_p~iF~ps|U_ulLnnqC_mqNvxq`@"
     {
         return fail(8);
     }
     let mut frame = Frame::default();
-    if wkp_core::decode_geometry(&buf, &mut frame).is_err() || frame.coords != values {
+    if wkp::decode_geometry(&buf, &mut frame).is_err() || frame.coords != values {
         return fail(13);
     }
     WKP_STATUS_OK
