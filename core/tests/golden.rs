@@ -5,7 +5,8 @@
 //! - `f64  <dims> <precisions> <values> <encoded> <decoded>`
 //! - `geom <type> <dims> <precision> <groups> <segments> <coords> <encoded> <decoded>`
 //! - `bad  <encoded> <status> <header> <segments> <groups> <coords>`: C decode of corrupted
-//!   input, where status 0 means it decoded, 1 invalid argument, 2 malformed input.
+//!   input, where status 0 means it decoded, 1 invalid argument (a bad header), 2 malformed
+//!   input.
 
 use wkp::{decode_f64, decode_geometry, encode_f64, encode_geometry, Error, Frame};
 
@@ -81,7 +82,9 @@ fn matches_c_core_golden_vectors() {
                         assert_eq!(frame.group_segment_counts, list::<usize>(f[5]), "{ctx}");
                         assert_eq!(bits(&frame.coords), bits(&list(f[6])), "{ctx}");
                     }
-                    "1" => assert_eq!(got, Err(Error::InvalidArgument), "{ctx}"),
+                    // The C core reported a bad header as an invalid argument; it is malformed
+                    // input since 0.6.1.
+                    "1" => assert_eq!(got, Err(Error::MalformedInput), "{ctx}"),
                     "2" => assert_eq!(got, Err(Error::MalformedInput), "{ctx}"),
                     s => panic!("unexpected status {s} at {ctx}"),
                 }

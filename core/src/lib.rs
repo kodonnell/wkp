@@ -373,6 +373,9 @@ pub fn encode_geometry(
         || geometry_type as i32 > HEADER_MAX
         || group_segment_counts.is_empty()
         || segment_point_counts.is_empty()
+        // An empty group or segment encodes to an empty run, which decoders reject (SPEC.md).
+        || group_segment_counts.contains(&0)
+        || segment_point_counts.contains(&0)
     {
         return Err(Error::InvalidArgument);
     }
@@ -961,20 +964,22 @@ pub fn decode_f64(encoded: &[u8], dims: usize, precisions: &[i32], out: &mut Vec
     Ok(())
 }
 
+/// Decodes the 4-char `VPDT` header. Input that is too short, has a char outside `?`..`~`, or
+/// has an unsupported version is [`Error::MalformedInput`].
 pub fn decode_header(encoded: &[u8]) -> Result<Header> {
     if encoded.len() < 4 {
-        return Err(Error::InvalidArgument);
+        return Err(Error::MalformedInput);
     }
     let mut fields = [0u8; 4];
     for (f, &c) in fields.iter_mut().zip(encoded) {
         let v = c.wrapping_sub(HEADER_OFFSET);
         if v as i32 > HEADER_MAX {
-            return Err(Error::InvalidArgument);
+            return Err(Error::MalformedInput);
         }
         *f = v;
     }
     if fields[0] != GEOMETRY_VERSION {
-        return Err(Error::InvalidArgument);
+        return Err(Error::MalformedInput);
     }
     Ok(Header {
         version: fields[0],
@@ -1118,6 +1123,30 @@ mod tests {
         let mut frame = Frame::default();
         assert_eq!(decode_geometry(b"@D?A??", &mut frame), Err(Error::MalformedInput));
         assert_eq!(decode_geometry(b"@D~A??", &mut frame), Err(Error::MalformedInput));
+    }
+
+    #[test]
+    fn rejects_empty_parts() {
+        // Each would encode to an empty run, which decoders reject.
+        let coords = [1.0, 2.0];
+        let mut out = Vec::new();
+        for (groups, segments) in [(&[1][..], &[0][..]), (&[1, 0], &[1]), (&[2], &[1, 0]), (&[0, 1], &[1])] {
+            let r = encode_geometry(4, &coords, 2, 5, groups, segments, &mut out);
+            assert_eq!(r, Err(Error::InvalidArgument), "{groups:?} {segments:?}");
+            assert!(out.is_empty());
+        }
+    }
+
+    #[test]
+    fn bad_header_is_malformed_input() {
+        for bad in [&b""[..], b"@DA", b"ADAA??", b"@D\x7fA??", b"@D\x20A??"] {
+            assert_eq!(decode_header(bad), Err(Error::MalformedInput), "{bad:?}");
+            assert_eq!(
+                decode_geometry(bad, &mut Frame::default()),
+                Err(Error::MalformedInput),
+                "{bad:?}"
+            );
+        }
     }
 
     #[test]

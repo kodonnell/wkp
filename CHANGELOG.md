@@ -11,7 +11,20 @@ Release tags:
 
 ---
 
-## [0.6.0] — unreleased
+## [0.6.1] — unreleased
+
+### Fixed
+- Encoding a geometry with an empty part (a segment with no points, or a group with no
+  segments) succeeded but produced output that no decoder accepts. It is now an
+  invalid-argument error.
+- A malformed geometry header (too short, a char outside `?`..`~`, or an unsupported version)
+  was reported as an invalid argument instead of malformed input. In C# that is now
+  `FormatException` instead of `ArgumentException`; in JavaScript (Node) a plain `Error` instead
+  of `TypeError`.
+
+---
+
+## [0.6.0]
 
 The core is now written in Rust (`core/`, crate `wkp`) and every binding uses it. Encoded
 output is unchanged: it is byte-for-byte identical to 0.5.x for all valid inputs (checked

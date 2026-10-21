@@ -45,7 +45,7 @@ pub type RefFrame = (Vec<u64>, Vec<usize>, Vec<usize>);
 
 pub fn ref_decode_geometry(src: &[u8]) -> Result<RefFrame, Error> {
     if src.len() < 4 || src[..4].iter().any(|&c| !(63..=126).contains(&c)) || src[0] != 64 {
-        return Err(Error::InvalidArgument);
+        return Err(Error::MalformedInput);
     }
     let (precision, dims) = ((src[1] - 63) as i32, (src[2] - 63) as usize);
     if dims == 0 || dims > 16 || src.len() == 4 {

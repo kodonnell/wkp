@@ -86,7 +86,9 @@ public class WkpTests
         Assert.Throws<FormatException>(() => WkpCodec.Decode("@DAA_"));
         // Non-ASCII must not be silently replaced with '?', which is a valid WKP char.
         Assert.Throws<FormatException>(() => WkpCodec.Decode("@DAA_p~iF~ps|U_ulLnnqC_mqNvxq`é"));
-        Assert.Throws<ArgumentException>(() => WkpCodec.DecodeHeader("@@"));
+        Assert.Throws<FormatException>(() => WkpCodec.DecodeHeader("@@"));
+        // A part with no points would encode to something no decoder accepts.
+        Assert.Throws<ArgumentException>(() => WkpCodec.Encode(GeometryType.MultiPoint, Array.Empty<double>(), 2, 5, new[] { 1 }, new[] { 0 }));
         var ctx = new WkpContext();
         ctx.Dispose();
         Assert.Throws<ObjectDisposedException>(() => ctx.Decode("@DA@??"));
