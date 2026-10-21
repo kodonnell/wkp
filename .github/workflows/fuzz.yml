@@ -15,6 +15,12 @@ on:
         description: "Seconds per target"
         default: "600"
 
+# A newer push to a pull request cancels that PR's older runs. Every other run (main, tags,
+# schedule, manual) gets its own group, so it is never cancelled or held back.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
 jobs:
   fuzz:
     name: Fuzz ${{ matrix.target }}
