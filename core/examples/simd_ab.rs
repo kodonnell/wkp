@@ -1,4 +1,4 @@
-//! Decode timing with the SIMD decoder off vs on, interleaved so CPU clock drift and other
+//! Decode and encode timing with the SIMD paths off vs on, interleaved so CPU clock drift and other
 //! load hit both sides equally.
 //!
 //! Usage: cargo run --release -p wkp --example simd_ab
@@ -6,7 +6,7 @@ use std::hint::black_box;
 use std::path::Path;
 use std::time::Instant;
 
-use wkp::{decode_f64, decode_geometry, encode_f64, encode_geometry, set_simd_enabled, Frame};
+use wkp::{decode_geometry, encode_geometry, set_simd_enabled, Frame};
 
 fn once(batch: usize, f: &mut impl FnMut()) -> f64 {
     let t = Instant::now();
@@ -76,7 +76,23 @@ fn main() {
         .enumerate()
         .flat_map(|(i, c)| [c[0], c[1], 100.0 + 50.0 * (i as f64 * 0.01).sin()])
         .collect();
-    let cases: [(&str, &[f64], usize, i32); 8] = [
+    // 3D tracks of 100 and 1000 points (lon/lat steps ~20 m, elevation steps ~1 m).
+    let track3 = |n: usize, rng: &mut Rng| -> Vec<f64> {
+        let (mut x, mut y, mut z) = (174.7, -36.8, 120.0);
+        (0..n)
+            .flat_map(|_| {
+                x += rng.range(-2e-4, 2e-4);
+                y += rng.range(-2e-4, 2e-4);
+                z += rng.range(-1.0, 1.0);
+                [x, y, z]
+            })
+            .collect()
+    };
+    let track3_100 = track3(100, &mut rng);
+    let track3_1000 = track3(1000, &mut rng);
+    let cases: [(&str, &[f64], usize, i32); 10] = [
+        ("track 3D 100pt p6", &track3_100, 3, 6),
+        ("track 3D 1000pt p6", &track3_1000, 3, 6),
         ("nz-coast 2D p5", &nz, 2, 5),
         ("nz-coast 2D p7", &nz, 2, 7),
         ("gps track 2D p6", &track, 2, 6),
@@ -87,22 +103,21 @@ fn main() {
         ("random 2D p10", &random2d, 2, 10),
     ];
     println!(
-        "{:<18} {:>6} {:>22} {:>22}",
-        "case", "B/val", "decode_f64 off->on", "decode_geom off->on"
+        "{:<19} {:>5} {:>24} {:>24}",
+        "case", "B/val", "decode off -> on", "encode off -> on"
     );
-    let (mut values, mut frame) = (Vec::new(), Frame::default());
+    let (mut out, mut frame) = (Vec::new(), Frame::default());
     for (name, coords, dims, p) in cases {
-        let mut enc = Vec::new();
-        encode_f64(coords, dims, &[p], &mut enc).unwrap();
+        let segments = [coords.len() / dims];
         let mut geom = Vec::new();
-        encode_geometry(2, coords, dims, p, &[1], &[coords.len() / dims], &mut geom).unwrap();
-        let (a0, a1) = ab(|| decode_f64(black_box(&enc), dims, &[p], &mut values).unwrap());
-        let (b0, b1) = ab(|| decode_geometry(black_box(&geom), &mut frame).unwrap());
+        encode_geometry(2, coords, dims, p, &[1], &segments, &mut geom).unwrap();
+        let (d0, d1) = ab(|| decode_geometry(black_box(&geom), &mut frame).unwrap());
+        let (e0, e1) = ab(|| encode_geometry(2, black_box(coords), dims, p, &[1], &segments, &mut out).unwrap());
         println!(
-            "{name:<18} {:>6.2} {a0:>7.1} -> {a1:>6.1}us {:>4.2}x {b0:>7.1} -> {b1:>6.1}us {:>4.2}x",
-            enc.len() as f64 / coords.len() as f64,
-            a0 / a1,
-            b0 / b1
+            "{name:<19} {:>5.2} {d0:>8.2} -> {d1:>7.2}us {:>4.2}x {e0:>8.2} -> {e1:>7.2}us {:>4.2}x",
+            geom.len() as f64 / coords.len() as f64,
+            d0 / d1,
+            e0 / e1
         );
     }
 }

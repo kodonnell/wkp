@@ -264,6 +264,14 @@ fn encode_points(
     factors: &[f64; MAX_DIMS],
     prev: &mut [i64; MAX_DIMS],
 ) -> Result<()> {
+    // Vectorised where possible; it hands back whatever it could not convert exactly.
+    #[cfg(target_arch = "x86_64")]
+    let coords = if coords.len() >= 16 && simd::avx2_available() {
+        let done = unsafe { simd::encode_prefix(sink, coords, dims, factors, prev) };
+        &coords[done..]
+    } else {
+        coords
+    };
     let mut in_range = true;
     // Locals, not `sink.len`: byte stores may alias the sink's fields as far as LLVM knows,
     // which would force a reload after every store.
@@ -585,42 +593,189 @@ unsafe fn decode_deltas_local(src: &[u8], pos: &mut usize, out: *mut i64, n: &mu
 /// groups. The only loop-carried dependency is window offset -> table -> offset, and the
 /// number of values per window never needs a branch.
 ///
+/// This module also holds the vectorised encoder ([`encode_prefix`], AVX2).
+///
 /// x86-64 only, with the CPU features detected at runtime; other targets (aarch64, wasm) use
-/// the SWAR loop alone. Decoding is 1.3-1.9x faster on path-like data (see
-/// `examples/simd_ab.rs`), and unchanged on unrelated points.
+/// the scalar/SWAR code alone. Decoding is 1.3-1.9x faster on path-like data and unchanged on
+/// unrelated points; encoding is ~2x faster on both (see `examples/simd_ab.rs`).
 #[cfg(target_arch = "x86_64")]
 mod simd {
-    use super::{gather5, get_varint_slow, is_value_char, unzigzag, Result, BIAS, GROUP};
+    use super::{
+        gather5, get_varint_slow, is_value_char, put_varint, unzigzag, zigzag, Result, Sink, BIAS, GROUP, MAX_DIMS,
+        MAX_VARINT_LEN,
+    };
     use core::arch::x86_64::*;
     use core::sync::atomic::{AtomicU8, Ordering};
 
-    /// 0 = not yet probed, 1 = unavailable, 2 = available, 3 = disabled by the caller.
+    const PROBED: u8 = 1;
+    const SSE41: u8 = 2;
+    const AVX2: u8 = 4;
+    const DISABLED: u8 = 8;
     static STATE: AtomicU8 = AtomicU8::new(0);
 
-    /// Whether the CPU has SSSE3 and SSE4.1 (and the SIMD path is not disabled).
     #[inline(always)]
-    pub fn available() -> bool {
+    fn features() -> u8 {
         match STATE.load(Ordering::Relaxed) {
-            2 => true,
             0 => probe(),
-            _ => false,
+            s if s & DISABLED != 0 => 0,
+            s => s,
         }
     }
 
-    #[cold]
-    fn probe() -> bool {
-        // CPUID leaf 1, ECX: bit 9 = SSSE3, bit 19 = SSE4.1. `__cpuid` is safe on newer
-        // compilers, unsafe on the MSRV.
-        #[allow(unused_unsafe)]
-        let ecx = unsafe { __cpuid(1) }.ecx;
-        let ok = ecx & (1 << 9) != 0 && ecx & (1 << 19) != 0;
-        STATE.store(if ok { 2 } else { 1 }, Ordering::Relaxed);
-        ok
+    /// Whether the CPU has SSSE3 and SSE4.1, for the decoder (and SIMD is not disabled).
+    #[inline(always)]
+    pub fn available() -> bool {
+        features() & SSE41 != 0
     }
 
-    /// Turns the SIMD path off (or back on, if the CPU supports it) for this process.
+    /// Whether the CPU has AVX2, for the encoder (and SIMD is not disabled).
+    #[inline(always)]
+    pub fn avx2_available() -> bool {
+        features() & AVX2 != 0
+    }
+
+    // `__cpuid` is safe on newer compilers, unsafe on the MSRV.
+    #[cold]
+    #[allow(unused_unsafe)]
+    fn probe() -> u8 {
+        let leaf1 = unsafe { __cpuid(1) };
+        let mut found = PROBED;
+        // ECX bit 9 = SSSE3, bit 19 = SSE4.1.
+        if leaf1.ecx & (1 << 9) != 0 && leaf1.ecx & (1 << 19) != 0 {
+            found |= SSE41;
+        }
+        // AVX2 (leaf 7, EBX bit 5), with AVX (ECX bit 28) and the OS saving YMM state
+        // (OSXSAVE, ECX bit 27, then XCR0 bits 1-2).
+        let avx = (1 << 27) | (1 << 28);
+        if leaf1.ecx & avx == avx
+            && unsafe { xcr0() } & 6 == 6
+            && unsafe { __cpuid(0) }.eax >= 7
+            && unsafe { __cpuid_count(7, 0) }.ebx & (1 << 5) != 0
+        {
+            found |= AVX2;
+        }
+        STATE.store(found, Ordering::Relaxed);
+        found
+    }
+
+    #[target_feature(enable = "xsave")]
+    unsafe fn xcr0() -> u64 {
+        _xgetbv(0)
+    }
+
+    /// Turns the SIMD paths off (or back on, where the CPU supports them) for this process.
     pub fn set_enabled(enabled: bool) {
-        STATE.store(if enabled { 0 } else { 3 }, Ordering::Relaxed);
+        STATE.store(if enabled { 0 } else { DISABLED }, Ordering::Relaxed);
+    }
+
+    /// Values per chunk of [`encode_prefix`] (rounded down to a multiple of the dimensions).
+    const CHUNK: usize = 256;
+
+    /// Encodes as much of `coords` (point-major, `dims` per point) as it can, continuing the
+    /// delta state in `prev`, and returns how many values it consumed (a multiple of `dims`).
+    /// It stops before any chunk holding a value it cannot convert exactly (|value * factor| >=
+    /// 2^50, or NaN/infinity) and leaves the rest to the scalar encoder, which produces the same
+    /// output and reports any error.
+    ///
+    /// Per chunk, four values at a time: scale; round half away from zero exactly as
+    /// `round_half_away` does (truncate, then compare the fraction with +-0.5); convert to i64
+    /// via the 2^52 magic number (exact for |r| <= 2^51); take the delta against the same
+    /// dimension one point earlier and zigzag it. The varints are then written by the scalar
+    /// SWAR writer.
+    ///
+    /// # Safety
+    /// The CPU must support AVX2.
+    #[target_feature(enable = "avx2")]
+    pub unsafe fn encode_prefix(
+        sink: &mut Sink<'_>,
+        coords: &[f64],
+        dims: usize,
+        factors: &[f64; MAX_DIMS],
+        prev: &mut [i64; MAX_DIMS],
+    ) -> usize {
+        let per_chunk = CHUNK - CHUNK % dims;
+        // Factor for value i of a chunk: pattern[i % (4 * dims)]. Vector loads start at multiples
+        // of 4, so each stays within one period.
+        let period = 4 * dims;
+        let mut pattern = [0.0; 4 * MAX_DIMS];
+        for (j, f) in pattern[..period].iter_mut().enumerate() {
+            *f = factors[j % dims];
+        }
+        // The previous point's scaled values, then this chunk's.
+        let mut scaled = [0i64; MAX_DIMS + CHUNK];
+        let mut zigzagged = [0u64; CHUNK];
+
+        let limit = _mm256_set1_pd((1u64 << 50) as f64);
+        let abs_mask = _mm256_castsi256_pd(_mm256_set1_epi64x(i64::MAX));
+        let half = _mm256_set1_pd(0.5);
+        let neg_half = _mm256_set1_pd(-0.5);
+        let one = _mm256_set1_pd(1.0);
+        let magic_f = _mm256_set1_pd(6_755_399_441_055_744.0); // 1.5 * 2^52
+        let magic_i = _mm256_set1_epi64x(0x4338_0000_0000_0000); // its bits
+        let zero = _mm256_setzero_si256();
+
+        let mut done = 0;
+        while done < coords.len() {
+            let m = per_chunk.min(coords.len() - done);
+            let chunk = coords.as_ptr().add(done);
+            scaled[..dims].copy_from_slice(&prev[..dims]);
+            let out = scaled.as_mut_ptr().add(dims);
+
+            let mut in_range = _mm256_castsi256_pd(_mm256_set1_epi64x(-1));
+            let (mut i, mut k) = (0, 0);
+            while i + 4 <= m {
+                let x = _mm256_mul_pd(_mm256_loadu_pd(chunk.add(i)), _mm256_loadu_pd(pattern.as_ptr().add(k)));
+                // False for NaN too (ordered compare).
+                in_range = _mm256_and_pd(in_range, _mm256_cmp_pd::<_CMP_LT_OQ>(_mm256_and_pd(x, abs_mask), limit));
+                let t = _mm256_round_pd::<{ _MM_FROUND_TO_ZERO | _MM_FROUND_NO_EXC }>(x);
+                let frac = _mm256_sub_pd(x, t);
+                let up = _mm256_and_pd(_mm256_cmp_pd::<_CMP_GE_OQ>(frac, half), one);
+                let down = _mm256_and_pd(_mm256_cmp_pd::<_CMP_LE_OQ>(frac, neg_half), one);
+                let r = _mm256_sub_pd(_mm256_add_pd(t, up), down);
+                let s = _mm256_sub_epi64(_mm256_castpd_si256(_mm256_add_pd(r, magic_f)), magic_i);
+                _mm256_storeu_si256(out.add(i) as *mut __m256i, s);
+                i += 4;
+                k += 4;
+                if k == period {
+                    k = 0;
+                }
+            }
+            let mut tail_in_range = true;
+            while i < m {
+                let x = *chunk.add(i) * factors[i % dims];
+                tail_in_range &= x.abs() < (1u64 << 50) as f64;
+                *out.add(i) = if tail_in_range { super::round_half_away(x) } else { 0 };
+                i += 1;
+            }
+            if _mm256_movemask_pd(in_range) != 0xF || !tail_in_range {
+                break;
+            }
+
+            i = 0;
+            while i + 4 <= m {
+                let cur = _mm256_loadu_si256(scaled.as_ptr().add(dims + i) as *const __m256i);
+                let before = _mm256_loadu_si256(scaled.as_ptr().add(i) as *const __m256i);
+                let d = _mm256_sub_epi64(cur, before);
+                // zigzag: (d << 1) ^ (d >> 63), with the arithmetic shift as a sign mask.
+                let z = _mm256_xor_si256(_mm256_slli_epi64::<1>(d), _mm256_cmpgt_epi64(zero, d));
+                _mm256_storeu_si256(zigzagged.as_mut_ptr().add(i) as *mut __m256i, z);
+                i += 4;
+            }
+            while i < m {
+                zigzagged[i] = zigzag(scaled[dims + i].wrapping_sub(scaled[i]));
+                i += 1;
+            }
+            prev[..dims].copy_from_slice(&scaled[m..m + dims]);
+
+            sink.ensure(m * MAX_VARINT_LEN);
+            let (ptr, mut len) = (sink.ptr, sink.len);
+            for &u in &zigzagged[..m] {
+                len += put_varint(ptr.add(len), u);
+            }
+            sink.len = len;
+            done += m;
+        }
+        done
     }
 
     #[repr(C, align(16))]
