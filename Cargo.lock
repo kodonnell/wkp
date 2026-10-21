@@ -446,18 +446,18 @@ checksum = "f0805222e57f7521d6a62e36fa9163bc891acd422f971defe97d64e70d0a4fe5"
 
 [[package]]
 name = "wkp"
-version = "0.6.0"
+version = "0.6.1"
 
 [[package]]
 name = "wkp-capi"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "wkp",
 ]
 
 [[package]]
 name = "wkp-node"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "napi",
  "napi-build",
@@ -467,7 +467,7 @@ dependencies = [
 
 [[package]]
 name = "wkp-py"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "numpy",
  "pyo3",
@@ -476,7 +476,7 @@ dependencies = [
 
 [[package]]
 name = "wkp-wasm"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "wkp",
 ]

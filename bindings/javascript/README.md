@@ -22,7 +22,7 @@ Monorepo workspace for the JavaScript bindings over the WKP Rust core.
 
 ## Versioning
 
-Package versions follow the Cargo workspace version (currently `0.6.0`);
+Package versions follow the Cargo workspace version (currently `0.6.1`);
 `node scripts/sync-version.mjs --write` updates them from `Cargo.toml`.
 Both runtimes enforce WKP core compatibility at runtime (`0.6.0`).
 The web package generates `packages/web/src/version.generated.js` from `packages/web/package.json` during build/test/pack flows, keeps it out of git, and falls back to a local dev version if that generated file is absent.

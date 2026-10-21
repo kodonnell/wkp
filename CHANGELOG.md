@@ -11,7 +11,7 @@ Release tags:
 
 ---
 
-## [0.6.1] — unreleased
+## [0.6.1] — 2026-10-22
 
 ### Fixed
 - Encoding a geometry with an empty part (a segment with no points, or a group with no
