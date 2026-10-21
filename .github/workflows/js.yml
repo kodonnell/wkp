@@ -245,6 +245,7 @@ jobs:
           name: npm-tarballs
           path: tarballs/
 
+      # "./" makes npm read the argument as a file; "tarballs/x.tgz" alone is taken as a GitHub repo.
       # Publishing the tested tarballs (rather than re-packing) guarantees the shipped binaries
       # are exactly the ones the test matrix ran against.
       - name: Publish (dry run)
@@ -254,7 +255,7 @@ jobs:
           NPM_TOKEN: ""
         run: |
           for tarball in tarballs/*.tgz; do
-            npm publish "$tarball" --access public --provenance --dry-run
+            npm publish "./$tarball" --access public --provenance --dry-run
           done
 
       - name: Publish
@@ -264,7 +265,7 @@ jobs:
           NPM_TOKEN: ""
         run: |
           for tarball in tarballs/*.tgz; do
-            npm publish "$tarball" --access public --provenance
+            npm publish "./$tarball" --access public --provenance
           done
 
       - name: Trigger Pages deploy for published web package
