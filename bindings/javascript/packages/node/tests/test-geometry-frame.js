@@ -166,4 +166,26 @@ test('GeometryFrame.fromBuffer() accepts views at any byte offset', () => {
 test('decode rejects non-ASCII strings instead of misreading them', () => {
     // U+013F has low byte 0x3F ('?'), a valid WKP char if the string were read as 'ascii'.
     assert.throws(() => decode('@DA@_p~iF~ps|Ŀ'));
+    // Also after a long valid prefix, and for a surrogate pair (4 bytes of UTF-8).
+    const valid = encode({ type: 'LineString', coordinates: [[0, 0], [1, 1], [2, 2]] }, 6).toString('latin1');
+    assert.throws(() => decode(valid + 'Ŀ'));
+    assert.throws(() => decode(valid + '😀'));
+});
+
+test('decode accepts strings, Buffers, Uint8Arrays and views at an offset alike', () => {
+    const geometry = { type: 'LineString', coordinates: [[174.776, -41.289, 12.5], [174.777, -41.29, 13.25]] };
+    const encoded = encode(geometry, 6);
+    const host = new Uint8Array(encoded.length + 5);
+    host.set(encoded, 5);
+    const inputs = [encoded, encoded.toString('latin1'), new Uint8Array(encoded), host.subarray(5)];
+    for (const input of inputs) {
+        assertGeometryClose(decode(input).geometry, geometry);
+        assert.deepEqual(Array.from(decodeFrame(input).coords), Array.from(decodeFrame(encoded).coords));
+    }
+    // Strings read into the reused native buffer must not leak between calls.
+    const short = encode({ type: 'Point', coordinates: [1, 2] }, 5).toString('latin1');
+    assertGeometryClose(decode(short).geometry, { type: 'Point', coordinates: [1, 2] });
+    assertGeometryClose(decode(encoded.toString('latin1')).geometry, geometry);
+    assert.throws(() => decode(new Int8Array(4)), TypeError);
+    assert.throws(() => decode(42), TypeError);
 });

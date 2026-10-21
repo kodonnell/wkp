@@ -17,6 +17,81 @@ thread_local! {
     static BYTES: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
     static VALUES: RefCell<Vec<f64>> = const { RefCell::new(Vec::new()) };
     static FRAME: RefCell<Frame> = RefCell::new(Frame::default());
+    // Encoded strings, copied out of JS (see `Encoded`).
+    static INPUT: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
+}
+
+/// An encoded WKP value from JS: a string, read into a reused per-thread buffer (no JS `Buffer`
+/// is created), or a `Uint8Array`/`Buffer`, read in place.
+///
+/// Strings are copied as UTF-8, so any non-ASCII char becomes bytes >= 0x80, which the decoder
+/// rejects, rather than being truncated into a valid WKP char.
+pub struct Encoded {
+    ptr: *const u8,
+    len: usize,
+}
+
+impl Encoded {
+    /// The bytes. For strings they live in `INPUT`, so they are valid until the next `Encoded`
+    /// string is read on this thread; each native call reads at most one.
+    fn bytes(&self) -> &[u8] {
+        if self.len == 0 {
+            &[]
+        } else {
+            unsafe { std::slice::from_raw_parts(self.ptr, self.len) }
+        }
+    }
+}
+
+impl TypeName for Encoded {
+    fn type_name() -> &'static str {
+        "string | Uint8Array"
+    }
+
+    fn value_type() -> ValueType {
+        ValueType::Unknown
+    }
+}
+
+impl FromNapiValue for Encoded {
+    unsafe fn from_napi_value(env: napi::sys::napi_env, value: napi::sys::napi_value) -> Result<Self> {
+        let mut kind = 0;
+        check_status!(napi::sys::napi_typeof(env, value, &mut kind))?;
+        if kind != napi::sys::ValueType::napi_string {
+            let bytes = <&[u8]>::from_napi_value(env, value)?;
+            return Ok(Encoded {
+                ptr: bytes.as_ptr(),
+                len: bytes.len(),
+            });
+        }
+        // UTF-16 length is O(1); each UTF-16 unit is at most 3 bytes of UTF-8 (a surrogate pair,
+        // two units, is 4), so one copy with that capacity never truncates.
+        let mut units = 0;
+        check_status!(napi::sys::napi_get_value_string_utf16(
+            env,
+            value,
+            ptr::null_mut(),
+            0,
+            &mut units
+        ))?;
+        INPUT.with_borrow_mut(|buf| {
+            buf.clear();
+            buf.reserve(units * 3 + 1);
+            let mut written = 0;
+            check_status!(napi::sys::napi_get_value_string_utf8(
+                env,
+                value,
+                buf.as_mut_ptr().cast(),
+                buf.capacity(),
+                &mut written
+            ))?;
+            buf.set_len(written);
+            Ok(Encoded {
+                ptr: buf.as_ptr(),
+                len: written,
+            })
+        })
+    }
 }
 
 fn core_err(e: wkp::Error) -> Error {
@@ -127,12 +202,12 @@ pub fn encode_f64<'env>(
 #[napi]
 pub fn decode_f64<'env>(
     env: &'env Env,
-    encoded: &[u8],
+    encoded: Encoded,
     dimensions: u32,
     precisions: Vec<i32>,
 ) -> Result<Float64ArraySlice<'env>> {
     VALUES.with_borrow_mut(|out| {
-        wkp::decode_f64(encoded, dimensions as usize, &precisions, out).map_err(core_err)?;
+        wkp::decode_f64(encoded.bytes(), dimensions as usize, &precisions, out).map_err(core_err)?;
         typed_array_copy(env, out, TypedArrayType::Float64)
     })
 }
@@ -167,8 +242,8 @@ pub fn encode_geometry_frame_f64<'env>(
 
 /// Returns `[version, precision, dimensions, geometryType]`.
 #[napi]
-pub fn decode_geometry_header(encoded: &[u8]) -> Result<Vec<u32>> {
-    let h = wkp::decode_header(encoded).map_err(core_err)?;
+pub fn decode_geometry_header(encoded: Encoded) -> Result<Vec<u32>> {
+    let h = wkp::decode_header(encoded.bytes()).map_err(core_err)?;
     Ok(vec![
         h.version as u32,
         h.precision as u32,
@@ -183,7 +258,7 @@ pub fn decode_geometry_header(encoded: &[u8]) -> Result<Vec<u32>> {
 #[allow(clippy::type_complexity)]
 pub fn decode_geometry_frame_flat<'env>(
     env: &'env Env,
-    encoded: &[u8],
+    encoded: Encoded,
 ) -> Result<(
     u32,
     u32,
@@ -194,7 +269,7 @@ pub fn decode_geometry_frame_flat<'env>(
     Uint32ArraySlice<'env>,
 )> {
     FRAME.with_borrow_mut(|f| {
-        wkp::decode_geometry(encoded, f).map_err(core_err)?;
+        wkp::decode_geometry(encoded.bytes(), f).map_err(core_err)?;
         let segs: Vec<u32> = f.segment_point_counts.iter().map(|&n| n as u32).collect();
         let groups: Vec<u32> = f.group_segment_counts.iter().map(|&n| n as u32).collect();
         let h = f.header;

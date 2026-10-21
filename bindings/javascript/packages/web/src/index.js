@@ -164,11 +164,10 @@ function flattenFloatRows(values, dimensions) {
     return Float64Array.from(flat);
 }
 
+// Strings are staged straight into wasm memory as UTF-8 (see `stage`), so a non-ASCII char
+// becomes bytes >= 0x80, which the decoder rejects.
 function normalizeEncoded(encoded) {
-    if (typeof encoded === 'string') {
-        return TEXT_ENCODER.encode(encoded);
-    }
-    if (encoded instanceof Uint8Array) {
+    if (typeof encoded === 'string' || encoded instanceof Uint8Array) {
         return encoded;
     }
     throw new TypeError('encoded must be string or Uint8Array');
@@ -445,19 +444,37 @@ export async function createWkp(options) {
         };
     };
 
-    // Lays out typed arrays back to back (8-byte aligned) in the context's input scratch and
-    // returns their addresses.
-    const stage = (ctxPtr, arrays) => {
+    // Lays out typed arrays and strings back to back (8-byte aligned) in the context's input
+    // scratch and returns their addresses and byte lengths. Strings are written as UTF-8 with
+    // `encodeInto`, straight into wasm memory: first assuming ASCII (one byte per char), then, if
+    // that did not fit, with room for any UTF-8.
+    const stage = (ctxPtr, items, bytesPerChar = 1) => {
+        const sizes = items.map((a) => (typeof a === 'string' ? a.length * bytesPerChar : a.byteLength));
         const offsets = [];
         let total = 0;
-        for (const a of arrays) {
+        for (const size of sizes) {
             offsets.push(total);
-            total += Math.ceil(a.byteLength / 8) * 8;
+            total += Math.ceil(size / 8) * 8;
         }
+        // May grow memory, so views are created after it.
         const base = native.wkp_ctx_input(ctxPtr, Math.max(total, 8));
         const bytes = new Uint8Array(memory.buffer);
-        arrays.forEach((a, i) => bytes.set(new Uint8Array(a.buffer, a.byteOffset, a.byteLength), base + offsets[i]));
-        return offsets.map((offset) => base + offset);
+        const ptrs = offsets.map((offset) => base + offset);
+        const lengths = [];
+        for (let i = 0; i < items.length; i += 1) {
+            const a = items[i];
+            if (typeof a === 'string') {
+                const { read, written } = TEXT_ENCODER.encodeInto(a, bytes.subarray(ptrs[i], ptrs[i] + sizes[i]));
+                if (read !== a.length) {
+                    return stage(ctxPtr, items, 3);
+                }
+                lengths.push(written);
+            } else {
+                bytes.set(new Uint8Array(a.buffer, a.byteOffset, a.byteLength), ptrs[i]);
+                lengths.push(a.byteLength);
+            }
+        }
+        return { ptrs, lengths };
     };
 
     class Context {
@@ -487,7 +504,7 @@ export async function createWkp(options) {
             this._checkNotDisposed();
             const v = normalizeValues(values);
             const p = normalizePrecisions(precisions);
-            const [valuesPtr, precisionsPtr] = stage(this._ptr, [v, p]);
+            const { ptrs: [valuesPtr, precisionsPtr] } = stage(this._ptr, [v, p]);
             return this._bytesResult(native.wkp_encode_f64(this._ptr, valuesPtr, v.length, dimensions, precisionsPtr, p.length));
         }
 
@@ -495,16 +512,16 @@ export async function createWkp(options) {
             this._checkNotDisposed();
             const e = normalizeEncoded(encoded);
             const p = normalizePrecisions(precisions);
-            const [encodedPtr, precisionsPtr] = stage(this._ptr, [e, p]);
-            checkStatus(native.wkp_decode_f64(this._ptr, encodedPtr, e.byteLength, dimensions, precisionsPtr, p.length));
+            const { ptrs: [encodedPtr, precisionsPtr], lengths: [encodedLen] } = stage(this._ptr, [e, p]);
+            checkStatus(native.wkp_decode_f64(this._ptr, encodedPtr, encodedLen, dimensions, precisionsPtr, p.length));
             const out = readOutput(this._ptr);
             return new Float64Array(memory.buffer, out.dataPtr, out.dataLen).slice();
         }
 
         _encodeFrame(geometryType, coords, dimensions, precision, groupSegmentCounts, segmentPointCounts) {
             this._checkNotDisposed();
-            const [coordsPtr, groupsPtr, segmentsPtr] = stage(this._ptr, [coords, groupSegmentCounts, segmentPointCounts]);
-            const encoded = this._bytesResult(native.wkp_encode_geometry(
+            const { ptrs: [coordsPtr, groupsPtr, segmentsPtr] } = stage(this._ptr, [coords, groupSegmentCounts, segmentPointCounts]);
+            checkStatus(native.wkp_encode_geometry(
                 this._ptr,
                 geometryType,
                 coordsPtr,
@@ -516,7 +533,9 @@ export async function createWkp(options) {
                 segmentsPtr,
                 segmentPointCounts.length
             ));
-            return TEXT_DECODER.decode(encoded);
+            // Straight from wasm memory: the string is the only copy.
+            const out = readOutput(this._ptr);
+            return TEXT_DECODER.decode(new Uint8Array(memory.buffer, out.dataPtr, out.dataLen));
         }
 
         encodeGeometry(geometry, precision) {
@@ -539,8 +558,8 @@ export async function createWkp(options) {
         _decodeGeometryFrameRaw(encoded) {
             this._checkNotDisposed();
             const e = normalizeEncoded(encoded);
-            const [encodedPtr] = stage(this._ptr, [e]);
-            checkStatus(native.wkp_decode_geometry(this._ptr, encodedPtr, e.byteLength));
+            const { ptrs: [encodedPtr], lengths: [encodedLen] } = stage(this._ptr, [e]);
+            checkStatus(native.wkp_decode_geometry(this._ptr, encodedPtr, encodedLen));
             const out = readOutput(this._ptr);
             return {
                 version: out.version,
@@ -596,8 +615,8 @@ export async function createWkp(options) {
 
     function decodeHeader(encoded) {
         const e = normalizeEncoded(encoded);
-        const [encodedPtr, outPtr] = stage(_defaultCtx._ptr, [e, new Uint32Array(4)]);
-        checkStatus(native.wkp_decode_header(encodedPtr, e.byteLength, outPtr));
+        const { ptrs: [encodedPtr, outPtr], lengths: [encodedLen] } = stage(_defaultCtx._ptr, [e, new Uint32Array(4)]);
+        checkStatus(native.wkp_decode_header(encodedPtr, encodedLen, outPtr));
         return Array.from(new Uint32Array(memory.buffer, outPtr, 4));
     }
 

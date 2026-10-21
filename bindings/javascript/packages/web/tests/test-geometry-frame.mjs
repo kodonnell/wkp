@@ -167,3 +167,24 @@ test('GeometryFrame.fromBuffer() accepts views at any byte offset (web)', async 
     const frame = wkp.GeometryFrame.fromBuffer(new Uint8Array(host.buffer, 3, buf.length));
     assertGeometryClose(frame.toGeometry(), geometry);
 });
+
+test('decode accepts strings and byte arrays alike, and rejects non-ASCII strings (web)', async () => {
+    const wkp = await createWkp();
+    const geometry = { type: 'LineString', coordinates: [[174.776, -41.289, 12.5], [174.777, -41.29, 13.25]] };
+    const encoded = wkp.encode(geometry, 6);
+    const bytes = new TextEncoder().encode(encoded);
+    const host = new Uint8Array(bytes.length + 5);
+    host.set(bytes, 5);
+    for (const input of [encoded, bytes, host.subarray(5)]) {
+        assertGeometryClose(wkp.decode(input).geometry, geometry);
+        assert.deepEqual(wkp.decodeHeader(input), [1, 6, 3, 2]);
+    }
+    // Non-ASCII takes the UTF-8 restaging path and must still be rejected, not misread.
+    assert.throws(() => wkp.decode(encoded + 'Ŀ'));
+    assert.throws(() => wkp.decode('😀' + encoded));
+    // A string much longer than the context's initial scratch (memory may grow mid-staging).
+    const long = { type: 'LineString', coordinates: Array.from({ length: 20000 }, (_, i) => [i * 1e-4, -i * 1e-4, i]) };
+    const longEncoded = wkp.encode(long, 6);
+    assert.equal(wkp.decodeFrame(longEncoded).coords.length, 60000);
+    assert.equal(wkp.decodeFloatsArray(wkp.encodeFloats([[1.5, 2.5, 3.5]], [5, 5, 5]), [5, 5, 5]).length, 3);
+});

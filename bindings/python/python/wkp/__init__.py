@@ -110,11 +110,19 @@ def _as_f64_c(values) -> np.ndarray:
     return np.require(values, dtype=np.float64, requirements=("C", "A"))
 
 
-def _as_encoded_bytes(bites) -> bytes:
+def _as_encoded_bytes(bites) -> bytes | str:
+    """`str` and `bytes` go to the native module as they are; other bytes-like objects
+    (bytearray, memoryview, ...) are converted to `bytes`."""
+    if type(bites) is bytes or type(bites) is str:
+        return bites
+    if isinstance(bites, str):
+        return str(bites)
     try:
-        return bytes(bites)
+        # Via memoryview, so only real bytes-like objects are accepted (`bytes(5)` would be five
+        # zero bytes).
+        return bytes(memoryview(bites))
     except TypeError as exc:
-        raise TypeError("bites must be bytes-like") from exc
+        raise TypeError("bites must be str or bytes-like") from exc
 
 
 def _normalize_precisions(precisions) -> list[int]:

@@ -54,6 +54,9 @@ decode(encoded, *, ctx=None) -> DecodedGeometry
 decode_header(encoded) -> (version, precision, dimensions, geometry_type)
 ```
 
+`encoded` can be `bytes`, `str` (e.g. read from a text column or JSON) or any other bytes-like
+object. Encoders return `bytes`; use `.decode("ascii")` for a `str`.
+
 ### GeometryFrame — low-level flat representation
 
 ```python

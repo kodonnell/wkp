@@ -98,7 +98,7 @@ class GeometryFrame:
 
     @classmethod
     def from_buffer(
-        cls, buffer: Union[bytes, bytearray, memoryview]
+        cls, buffer: Union[str, bytes, bytearray, memoryview]
     ) -> GeometryFrame:
         """Deserialize from a binary buffer produced by :meth:`to_buffer`."""
         ...
@@ -115,7 +115,7 @@ def encode(
 
 
 def decode(
-    bites: Union[bytes, bytearray, memoryview],
+    bites: Union[str, bytes, bytearray, memoryview],
     *,
     ctx: Context | None = None,
 ) -> DecodedGeometry:
@@ -124,7 +124,7 @@ def decode(
 
 
 def decode_frame(
-    bites: Union[bytes, bytearray, memoryview],
+    bites: Union[str, bytes, bytearray, memoryview],
     *,
     ctx: Context | None = None,
 ) -> GeometryFrame:
@@ -147,7 +147,7 @@ def encode_frame(
 
 
 def decode_header(
-    bites: Union[bytes, bytearray, memoryview],
+    bites: Union[str, bytes, bytearray, memoryview],
 ) -> tuple[int, int, int, int]:
     """
     Decode only the WKP header without decoding coordinates.
@@ -168,7 +168,7 @@ def encode_floats(
 
 
 def decode_floats(
-    encoded: Union[bytes, bytearray, memoryview],
+    encoded: Union[str, bytes, bytearray, memoryview],
     precisions: Union[int, Sequence[int]],
     *,
     ctx: Context | None = None,
@@ -182,7 +182,7 @@ def decode_floats(
 
 
 def decode_floats_array(
-    encoded: Union[bytes, bytearray, memoryview],
+    encoded: Union[str, bytes, bytearray, memoryview],
     precisions: Union[int, Sequence[int]],
     *,
     ctx: Context | None = None,

@@ -117,17 +117,12 @@ function asContext(ctx) {
     return ctx;
 }
 
+// Strings and Uint8Arrays (including Buffers) go to the addon as they are: it reads strings as
+// UTF-8 into a reused buffer (so a non-ASCII char becomes bytes >= 0x80, which are rejected,
+// rather than being truncated into a valid WKP char) and reads byte arrays in place.
 function normalizeEncodedBytes(encodedValue) {
-    if (typeof encodedValue === 'string') {
-        // UTF-8, not 'ascii': 'ascii' keeps only the low byte of each char, so a non-ASCII char
-        // could turn into a valid WKP char. As UTF-8 it becomes bytes >= 0x80, which are rejected.
-        return Buffer.from(encodedValue, 'utf8');
-    }
-    if (Buffer.isBuffer(encodedValue)) {
+    if (typeof encodedValue === 'string' || encodedValue instanceof Uint8Array) {
         return encodedValue;
-    }
-    if (encodedValue instanceof Uint8Array) {
-        return Buffer.from(encodedValue);
     }
     throw new TypeError('encoded must be string, Buffer, or Uint8Array');
 }
