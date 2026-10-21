@@ -175,7 +175,7 @@ jobs:
     environment: nuget
     permissions:
       contents: write
-      id-token: write # trusted publishing (OIDC); see docs/publishing.md
+      id-token: write # trusted publishing (OIDC)
     steps:
       - uses: actions/download-artifact@v4
         with:

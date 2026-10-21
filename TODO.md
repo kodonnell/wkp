@@ -6,4 +6,3 @@
   - optional NetTopologySuite integration (Geometry <-> GeometryFrame), probably as a separate package.
   - consider netstandard2.0 for .NET Framework / Unity users.
 - allow pushing @wkpjs/web separate to @wkpjs/node to npm.
-- first (manual) crates.io publish of `wkp`, then trusted publishing; see `docs/publishing.md`.

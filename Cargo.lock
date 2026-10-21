@@ -445,15 +445,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f0805222e57f7521d6a62e36fa9163bc891acd422f971defe97d64e70d0a4fe5"
 
 [[package]]
+name = "wkp"
+version = "0.6.0"
+
+[[package]]
 name = "wkp-capi"
 version = "0.6.0"
 dependencies = [
- "wkp-core",
+ "wkp",
 ]
-
-[[package]]
-name = "wkp-core"
-version = "0.6.0"
 
 [[package]]
 name = "wkp-node"
@@ -462,7 +462,7 @@ dependencies = [
  "napi",
  "napi-build",
  "napi-derive",
- "wkp-core",
+ "wkp",
 ]
 
 [[package]]
@@ -471,12 +471,12 @@ version = "0.6.0"
 dependencies = [
  "numpy",
  "pyo3",
- "wkp-core",
+ "wkp",
 ]
 
 [[package]]
 name = "wkp-wasm"
 version = "0.6.0"
 dependencies = [
- "wkp-core",
+ "wkp",
 ]

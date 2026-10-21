@@ -30,13 +30,12 @@ All packages share one version, set in `Cargo.toml` (`[workspace.package]`); see
 - `nuget-vX.Y.Z`
   - Runs `.github/workflows/csharp.yml`
   - Builds native libraries for each platform, packs and smoke-tests the NuGet package
-  - Publishes `Wkp` to nuget.org (trusted publishing; see [publishing.md](publishing.md))
+  - Publishes `Wkp` to nuget.org (trusted publishing)
   - Creates a .NET-specific GitHub release
 
 - `crates-vX.Y.Z`
   - Runs `.github/workflows/crates.yml`
-  - Tests and packages `wkp`, then publishes it to crates.io (trusted publishing; the first
-    release is manual, see [publishing.md](publishing.md))
+  - Tests and packages `wkp`, then publishes it to crates.io (trusted publishing)
 
 - `wkp-vX.Y.Z`
   - Runs `.github/workflows/wkp-release.yml`
