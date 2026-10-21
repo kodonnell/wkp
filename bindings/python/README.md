@@ -8,14 +8,14 @@ Python package with a minimal Shapely-first API on top of the WKP Rust core.
   [rust-numpy](https://github.com/PyO3/rust-numpy) over `wkp` (`core/`)
 - `python/wkp/`: the pure-Python package (Shapely conversion, `GeometryFrame`, contexts)
 - Built with [maturin](https://www.maturin.rs) as abi3 wheels: one wheel per platform works on
-  every CPython from 3.9 up (including 3.14)
+  every CPython from 3.10 up (including 3.14)
 - The package version comes from the Cargo workspace (`Cargo.toml` at the repo root); a runtime
   check enforces core compatibility
 - Large inputs are processed with the GIL released
 
 ## Dependencies
 
-- Python >= 3.9
+- Python >= 3.10
 - build: Rust (stable) and `maturin` (pulled in automatically by `pip install`)
 - runtime: `numpy`, `shapely`
 - dev/test: `pytest`, `polyline`
@@ -182,7 +182,7 @@ decode `nz-coast` (`wkp-5p-str`).
 
 - abi3 wheels (manylinux and musllinux x86_64/aarch64, Windows x64/arm64, macOS x86_64/arm64)
   and the sdist are built in `.github/workflows/python.yml` with `PyO3/maturin-action`, then
-  tested on Python 3.9 and 3.14.
+  tested on Python 3.10 and 3.14.
 - Release/publish runs from tag pushes or `workflow_dispatch` in `.github/workflows/python.yml`.
 - Tag publish (recommended): push a tag in the exact format `pypi-vX.Y.Z` (for example `pypi-v0.1.0`).
 - Publish order is always TestPyPI first, then PyPI.

@@ -1,7 +1,5 @@
 //! `wkp._core`: the native extension behind the `wkp` Python package (`python/wkp`).
 
-use std::borrow::Cow;
-
 use numpy::{PyArray1, PyArray2, PyArrayMethods, PyReadonlyArray2, PyUntypedArrayMethods};
 use pyo3::exceptions::{PyRuntimeError, PyTypeError, PyValueError};
 use pyo3::prelude::*;
@@ -45,20 +43,16 @@ fn run<T: Send>(py: Python<'_>, values: usize, f: impl Send + FnOnce() -> T) -> 
     }
 }
 
-/// The bytes of an encoded value: a `bytes` object (borrowed) or a `str` (as UTF-8, so any
-/// non-ASCII char becomes bytes >= 0x80, which the decoder rejects). The wrapper converts other
+/// The bytes of an encoded value: a `bytes` object or a `str`, both borrowed without copying.
+/// A `str` is read as UTF-8, which for the usual all-ASCII string is CPython's own buffer; any
+/// non-ASCII char becomes bytes >= 0x80, which the decoder rejects. The wrapper converts other
 /// bytes-like objects to `bytes` first.
-fn encoded_bytes<'a>(obj: &'a Bound<'_, PyAny>) -> PyResult<Cow<'a, [u8]>> {
+fn encoded_bytes<'a>(obj: &'a Bound<'_, PyAny>) -> PyResult<&'a [u8]> {
     if let Ok(b) = obj.cast::<PyBytes>() {
-        return Ok(Cow::Borrowed(b.as_bytes()));
+        return Ok(b.as_bytes());
     }
     if let Ok(s) = obj.cast::<PyString>() {
-        // `to_str` would borrow CPython's own UTF-8 buffer, but needs the 3.10 stable ABI; the
-        // wheels target 3.9, so this copies once.
-        return Ok(match s.to_cow()? {
-            Cow::Borrowed(s) => Cow::Borrowed(s.as_bytes()),
-            Cow::Owned(s) => Cow::Owned(s.into_bytes()),
-        });
+        return Ok(s.to_str()?.as_bytes());
     }
     Err(PyTypeError::new_err("encoded must be str or bytes"))
 }
@@ -113,7 +107,7 @@ fn self_test() -> PyResult<()> {
 #[pyfunction]
 fn decode_geometry_header(encoded: &Bound<'_, PyAny>) -> PyResult<(i32, i32, i32, i32)> {
     let encoded = encoded_bytes(encoded)?;
-    wkp::decode_header(&encoded).map(header_tuple).map_err(core_err)
+    wkp::decode_header(encoded).map(header_tuple).map_err(core_err)
 }
 
 #[pyfunction]
@@ -144,7 +138,7 @@ fn decode_f64<'py>(
     let encoded = encoded_bytes(encoded)?;
     let coords = &mut ctx.frame.coords;
     run(py, encoded.len(), || {
-        wkp::decode_f64(&encoded, dimensions, &precisions, coords)
+        wkp::decode_f64(encoded, dimensions, &precisions, coords)
     })
     .map_err(core_err)?;
     Ok(PyArray1::from_slice(py, &ctx.frame.coords))
@@ -182,7 +176,7 @@ fn encode_geometry_frame<'py>(
 fn decode_into(py: Python<'_>, ctx: &mut Context, encoded: &Bound<'_, PyAny>) -> PyResult<()> {
     let encoded = encoded_bytes(encoded)?;
     let frame = &mut ctx.frame;
-    run(py, encoded.len(), || wkp::decode_geometry(&encoded, frame)).map_err(core_err)
+    run(py, encoded.len(), || wkp::decode_geometry(encoded, frame)).map_err(core_err)
 }
 
 /// Returns `(version, precision, dimensions, geometry_type, groups)` where `groups` is a list of

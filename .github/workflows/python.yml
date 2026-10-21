@@ -82,7 +82,7 @@ jobs:
           name: sdist
           path: bindings/python/dist/*.tar.gz
 
-  # abi3 wheels: one per platform covers every CPython from 3.9 up (including 3.14).
+  # abi3 wheels: one per platform covers every CPython from 3.10 up (including 3.14).
   build_wheels:
     name: Wheel ${{ matrix.os }} ${{ matrix.target }} ${{ matrix.manylinux }}
     needs: [validate-tag, test-fast]
@@ -133,7 +133,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
-        python: ["3.9", "3.14"]
+        python: ["3.10", "3.14"]
     steps:
       - uses: actions/checkout@v4
 

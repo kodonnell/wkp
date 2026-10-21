@@ -12,7 +12,7 @@ authors = [
 license = "MIT"
 # Version comes from the Cargo workspace (Cargo.toml at the repo root).
 dynamic = ["version"]
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 dependencies = [
     "numpy",
     "shapely",

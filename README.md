@@ -46,7 +46,7 @@ core/ (crate `wkp`, Rust)
 The core moved from C to Rust in 0.6.0:
 
 - **Faster.** The Rust core is 1.7–2.2x faster than the C core at encoding and 1.5–1.9x faster at decoding, with identical output (measured in one process on the same data, gcc -O3 vs rustc). The gains are algorithmic: values are encoded and decoded 8 bytes at a time instead of one char at a time, and rounding no longer calls into libm. In Python, end-to-end encode/decode of a 10k-point linestring is about 1.7x/2.2x faster. In Node, `decode` to GeoJSON is about 12x faster, because the GeoJSON is now built in JavaScript instead of through per-element Node-API calls.
-- **Simpler builds.** Python uses maturin with abi3 wheels: one wheel per platform covers every CPython from 3.9 up, including 3.14. Node prebuilt binaries come from cargo, so there is no node-gyp or compiler at install time. The web build is `cargo build --target wasm32-unknown-unknown`, with no Emscripten. C# packs the same C ABI library.
+- **Simpler builds.** Python uses maturin with abi3 wheels: one wheel per platform covers every CPython from 3.10 up, including 3.14. Node prebuilt binaries come from cargo, so there is no node-gyp or compiler at install time. The web build is `cargo build --target wasm32-unknown-unknown`, with no Emscripten. C# packs the same C ABI library.
 - **Safer.** The decoder is memory-safe on untrusted input. The C core could be crashed by a crafted header (division by zero, stack buffer overrun).
 
 ## Repository layout
@@ -64,7 +64,7 @@ The core moved from C to Rust in 0.6.0:
 ## Dependencies
 
 - Rust (stable; the core and C ABI support 1.85+): https://rustup.rs
-- Python binding: Python >= 3.9, `maturin` to build; runtime `numpy`, `shapely`
+- Python binding: Python >= 3.10, `maturin` to build; runtime `numpy`, `shapely`
 - JavaScript bindings: Node.js >= 18; `rustup target add wasm32-unknown-unknown` for `@wkpjs/web`
 - C/C++: CMake >= 3.22 and a C++17 compiler (Corrosion and doctest are fetched by CMake)
 - C#: .NET 8 SDK
