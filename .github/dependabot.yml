@@ -9,6 +9,10 @@ updates:
     groups:
       actions:
         patterns: ["*"]
+    # Its ref is the Rust toolchain to install (@stable, @nightly, @1.85 = the MSRV), not a
+    # version of the action.
+    ignore:
+      - dependency-name: dtolnay/rust-toolchain
 
   - package-ecosystem: cargo
     directories: ["/", "/fuzz"]
