@@ -1,4 +1,4 @@
-[![PyPI version fury.io](https://badge.fury.io/py/wkp.svg)](https://pypi.python.org/pypi/wkp/)
+[![PyPI](https://img.shields.io/pypi/v/wkp.svg)](https://pypi.org/project/wkp/)
 [![npm @wkpjs/node](https://img.shields.io/npm/v/%40wkpjs%2Fnode.svg?label=%40wkpjs%2Fnode)](https://www.npmjs.com/package/@wkpjs/node)
 [![npm @wkpjs/web](https://img.shields.io/npm/v/%40wkpjs%2Fweb.svg?label=%40wkpjs%2Fweb)](https://www.npmjs.com/package/@wkpjs/web)
 [![NuGet](https://img.shields.io/nuget/v/Wkp.svg)](https://www.nuget.org/packages/Wkp)
