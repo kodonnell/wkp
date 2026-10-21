@@ -7,6 +7,7 @@ This repository has one core implementation and multiple independently versioned
 - Python package: `wkp` on PyPI
 - JavaScript packages: `@wkpjs/node` and `@wkpjs/web` on npm
 - .NET package: `Wkp` on NuGet
+- Rust crate: `wkp-core` on crates.io
 - C ABI (`libwkp`) and C++ header: built and tested in CI (`core.yml`), not currently published as a standalone package
 
 All packages share one version, set in `Cargo.toml` (`[workspace.package]`); see
@@ -29,8 +30,13 @@ All packages share one version, set in `Cargo.toml` (`[workspace.package]`); see
 - `nuget-vX.Y.Z`
   - Runs `.github/workflows/csharp.yml`
   - Builds native libraries for each platform, packs and smoke-tests the NuGet package
-  - Publishes `Wkp` to nuget.org (needs the `NUGET_API_KEY` secret in the `nuget` environment)
+  - Publishes `Wkp` to nuget.org (trusted publishing; see [publishing.md](publishing.md))
   - Creates a .NET-specific GitHub release
+
+- `crates-vX.Y.Z`
+  - Runs `.github/workflows/crates.yml`
+  - Tests and packages `wkp-core`, then publishes it to crates.io (trusted publishing; the first
+    release is manual, see [publishing.md](publishing.md))
 
 - `wkp-vX.Y.Z`
   - Runs `.github/workflows/wkp-release.yml`

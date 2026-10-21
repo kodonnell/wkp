@@ -132,10 +132,12 @@ dotnet test bindings/csharp/tests/Wkp.Tests
 - `pypi-vX.Y.Z`: publish the Python package, create a Python GitHub release.
 - `npm-vX.Y.Z`: publish the JavaScript packages, create a JavaScript GitHub release.
 - `nuget-vX.Y.Z`: publish the .NET package, create a .NET GitHub release.
+- `crates-vX.Y.Z`: publish the Rust core (`wkp-core`) to crates.io.
 - `wkp-vX.Y.Z`: create a product-level GitHub release only; it does not publish any packages.
 - C/C++ have CI artifacts, but no standalone package/release workflow.
 
-See `docs/release-policy.md` for the full release policy.
+See `docs/release-policy.md` for the full release policy, and `docs/publishing.md` for registry
+accounts and trusted-publishing setup.
 
 ## Detailed docs
 

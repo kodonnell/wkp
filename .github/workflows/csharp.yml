@@ -143,6 +143,7 @@ jobs:
     environment: nuget
     permissions:
       contents: write
+      id-token: write # trusted publishing (OIDC); see docs/publishing.md
     steps:
       - uses: actions/download-artifact@v4
         with:
@@ -154,8 +155,15 @@ jobs:
         with:
           dotnet-version: 8.0.x
 
+      # Exchanges the GitHub OIDC token for a NuGet API key that is valid for one hour.
+      - name: NuGet login
+        id: login
+        uses: NuGet/login@v1
+        with:
+          user: ${{ vars.NUGET_USER }}
+
       - name: Push
-        run: dotnet nuget push "dist/*.nupkg" --api-key "${{ secrets.NUGET_API_KEY }}" --source https://api.nuget.org/v3/index.json
+        run: dotnet nuget push "dist/*.nupkg" --api-key "${{ steps.login.outputs.NUGET_API_KEY }}" --source https://api.nuget.org/v3/index.json
 
       - name: Create release
         uses: softprops/action-gh-release@v2
