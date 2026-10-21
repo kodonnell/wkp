@@ -42,6 +42,14 @@ Release tags:
 - C++ (`wkp/core.hpp`): each thread's context was never freed, leaking its buffers (sized to the
   largest input) when the thread exited.
 
+### Documentation
+- The limits (precision 0-63, `|value| × 10^precision` below 2^58, 1-16 dimensions, finite
+  values, no empty parts) are documented in the README and every binding's README.
+- Corrected: `@wkpjs/web` `encodeFloats` returns a `Uint8Array`, not a string; the C++ README
+  documents the `core.hpp` wrapper (it showed raw C ABI calls); the Python README's
+  `GeometryFrame.from_buffer` example, its context wording, and M-value support; the .NET
+  README's `Header` output and exceptions.
+
 ---
 
 ## [0.6.0]

@@ -91,6 +91,18 @@ A thread-local context is managed automatically. Pass `ctx=Context()` explicitly
 
 See the binding READMEs below for JavaScript, C/C++ and C# usage.
 
+## Limits
+
+The same in every language:
+
+- Precision is an integer from 0 to 63 (decimal places kept).
+- Every `|value| × 10^precision` must be below 2^58, e.g. ±2.8 × 10^12 at precision 5.
+- 1 to 16 dimensions.
+- Values must be finite (no NaN or infinity).
+- Every part of a geometry has at least one point.
+
+Encoding anything else is an error, never silently wrong output.
+
 ## Benchmarks
 
 Core (Rust, no bindings):

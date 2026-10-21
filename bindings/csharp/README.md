@@ -31,7 +31,8 @@ string encoded = WkpCodec.Encode(GeometryType.LineString, coords, dimensions: 2,
 GeometryFrame frame = WkpCodec.Decode(encoded);
 // frame.Coords, frame.SegmentPointCounts, frame.GroupSegmentCounts, frame.Precision, ...
 
-Header header = WkpCodec.DecodeHeader(encoded); // (Version 1, Precision 5, Dimensions 2, LineString)
+Header header = WkpCodec.DecodeHeader(encoded);
+// Header { Version = 1, Precision = 5, Dimensions = 2, GeometryType = LineString }
 
 // Headerless float streams (one precision per dimension):
 string floats = WkpCodec.EncodeFloats(coords, new[] { 5, 5 });
@@ -44,8 +45,12 @@ double[] values = WkpCodec.DecodeFloats(floats, new[] { 5, 5 });
 `GeometryFrame.ToBuffer()` / `FromBuffer()` use the same binary layout as the Python and
 JavaScript bindings.
 
-Errors: invalid arguments throw `ArgumentException`; malformed encoded input throws
-`FormatException`.
+Errors: invalid arguments throw `ArgumentException`; malformed encoded input (including a
+non-ASCII char) throws `FormatException`. `GeometryFrame.ToBuffer` / `FromBuffer` throw
+`OverflowException` for counts that do not fit the buffer format.
+
+Limits: precision 0-63, with every `|value| × 10^precision` below 2^58 (e.g. ±2.8 × 10^12 at
+precision 5); 1-16 dimensions; values must be finite.
 
 ## Build and test from source
 

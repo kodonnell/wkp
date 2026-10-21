@@ -76,7 +76,16 @@ decodeFloatsArray(encoded, precisions, ctx?)            // → Float64Array (fla
 decodeFloats(encoded, precisions, ctx?)                 // → Array<Array<number>>
 ```
 
+`floats` is an array of rows, one value per dimension. `precisions` has one integer per
+dimension; a single number means one dimension.
+
 `decodeFloatsArray` returns the decoded values as a flat `Float64Array` with no intermediate array construction — the cost is a single memcpy from the native buffer. `decodeFloats` is a convenience wrapper on top that slices it into an array of rows. Use `decodeFloatsArray` when feeding into typed-array pipelines (WebGL, DataView, workers).
+
+### Limits
+
+Precision is an integer from 0 to 63, and every `|value| × 10^precision` must be below 2^58
+(e.g. ±2.8 × 10^12 at precision 5). Geometries and float streams have 1 to 16 dimensions, and
+values must be finite. Anything else throws.
 
 ### Context
 

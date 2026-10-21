@@ -37,6 +37,9 @@ The C ABI tests are in `tests/` (doctest); `cargo test -p wkp-capi` runs the Rus
   call on the same context; copy them if you need them longer.
 - Input pointers may be NULL when their count is 0.
 - `wkp_version()` returns the library version string.
+- Limits: precision 0-63, with every `|value| × 10^precision` below 2^58 (e.g. ±2.8 × 10^12 at
+  precision 5); 1-16 dimensions; values must be finite. Anything else is
+  `WKP_STATUS_INVALID_ARGUMENT` when encoding.
 
 ```c
 #include <wkp/core.h>

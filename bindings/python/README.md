@@ -57,6 +57,17 @@ decode_header(encoded) -> (version, precision, dimensions, geometry_type)
 `encoded` can be `bytes`, `str` (e.g. read from a text column or JSON) or any other bytes-like
 object. Encoders return `bytes`; use `.decode("ascii")` for a `str`.
 
+Supported geometries are Point, LineString (and LinearRing, which decodes as a LineString),
+Polygon, MultiPoint, MultiLineString and MultiPolygon, in 2D or 3D (XYZ). Geometries with M
+values raise `ValueError`: Shapely cannot rebuild them when decoding. Data with more than 3
+dimensions can be encoded with `encode_frame` and decoded with `decode_frame`.
+
+### Limits
+
+Precision is an integer from 0 to 63, and every `|value| × 10^precision` must be below 2^58
+(e.g. ±2.8 × 10^12 at precision 5). Geometries and float streams have 1 to 16 dimensions, and
+values must be finite. Anything else raises `ValueError`.
+
 ### GeometryFrame — low-level flat representation
 
 ```python
@@ -86,7 +97,7 @@ decode_floats(encoded, precisions, *, ctx=None) -> np.ndarray        # shaped (N
 Context()
 ```
 
-A `Context` owns a reusable native C buffer pool. Buffers grow to fit the largest geometry processed, then stay allocated and get reused on subsequent calls — avoiding repeated allocations.
+A `Context` owns reusable native buffers. Buffers grow to fit the largest geometry processed, then stay allocated and get reused on subsequent calls — avoiding repeated allocations.
 
 **Thread-local (default)** — one context per thread, created lazily, lives for the thread's lifetime:
 
@@ -102,7 +113,7 @@ ctx = wkp.Context()
 for geom in large_collection:
     encoded = encode(geom, precision, ctx=ctx)
     ...
-del ctx  # releases native buffers immediately
+del ctx  # in CPython, releases the native buffers once nothing else refers to ctx
 ```
 
 A `Context` belongs to one thread at a time: using the same one from two threads concurrently
@@ -122,7 +133,7 @@ This costs one allocation/free per call but guarantees no native memory persists
 
 ```python
 from shapely.geometry import LineString
-from wkp import decode, decode_frame, encode
+from wkp import GeometryFrame, decode, decode_frame, encode
 
 geom = LineString([
     (174.776, -41.289),
@@ -140,7 +151,8 @@ print(decoded.geometry.wkt)
 frame = decode_frame(encoded)
 print(frame.coords)          # numpy float64 array, shape (3, 2)
 buf = frame.to_buffer()      # compact binary blob
-frame2 = frame.from_buffer(buf)  # round-trip
+frame2 = GeometryFrame.from_buffer(buf)  # round-trip
+assert frame2 == frame
 ```
 
 ## Benchmark

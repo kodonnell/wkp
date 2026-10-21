@@ -98,12 +98,21 @@ Methods: `toGeometry()` → GeoJSON, `toBuffer()` → ArrayBuffer (transferable)
 ### Float helpers
 
 ```js
-wkp.encodeFloats(floats, precisions, ctx?)              // → string
+wkp.encodeFloats(floats, precisions, ctx?)              // → Uint8Array (ASCII)
 wkp.decodeFloatsArray(encoded, precisions, ctx?)         // → Float64Array (flat [x0,y0,x1,y1,...])
 wkp.decodeFloats(encoded, precisions, ctx?)              // → Array<Array<number>>
 ```
 
+`floats` is an array of rows, one value per dimension. `precisions` has one integer per
+dimension; a single number means one dimension. Use `new TextDecoder().decode(bytes)` for a string.
+
 `decodeFloatsArray` returns the decoded values as a flat `Float64Array` with no intermediate array construction — a single copy from the WASM heap. `decodeFloats` is a convenience wrapper on top that slices it into an array of rows.
+
+### Limits
+
+Precision is an integer from 0 to 63, and every `|value| × 10^precision` must be below 2^58
+(e.g. ±2.8 × 10^12 at precision 5). Geometries and float streams have 1 to 16 dimensions, and
+values must be finite. Anything else throws.
 
 ### Context
 

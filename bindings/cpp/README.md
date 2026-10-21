@@ -5,9 +5,10 @@ C++ convenience layer over the WKP C ABI.
 ## Architecture
 
 - Public C ABI: `bindings/c/include/wkp/core.h` (implemented in Rust, see `bindings/c/README.md`)
-- C++ wrapper header: `bindings/cpp/include/wkp/core.hpp`
-- Wrapper methods are ABI-backed, keeping core internals binding-agnostic
-- Context ownership is explicit at the ABI layer: initialize one `wkp_context`, reuse it, then free it
+- C++ wrapper header: `bindings/cpp/include/wkp/core.hpp`, header-only, namespace `wkp::core`
+- The wrapper keeps one C ABI context per thread (created on first use, freed when the thread
+  exits) and turns error statuses into exceptions. Use the C ABI directly for explicit control
+  of context lifetime.
 
 ## Layout
 
@@ -43,71 +44,41 @@ ctest --test-dir build/cmake -C Release --output-on-failure
 build/cmake/wkp_cpp_benchmark 10000 2 5 1000   # build/cmake/Release/ on Windows
 ```
 
-## Float encode / decode
-
-`wkp_encode_f64` and `wkp_decode_f64` work on flat interleaved coordinate values: `[x0, y0, x1, y1, ...]` for 2D, `[x0, y0, z0, x1, y1, z1, ...]` for 3D, and so on.
-
-The per-column `precisions` array has one entry per dimension. Example: `[5, 5]` for 2D with 5 decimal places on both axes; `[6, 6, 0]` for 3D where the Z axis is encoded as an integer.
-
-`wkp_decode_f64` writes decoded values into the context's internal `f64` buffer and returns a pointer and count. The returned pointer is valid until the next call that reuses the context. Copy into your own storage if the lifetime must extend beyond the next call.
-
-## Context-first example
+## API
 
 ```cpp
-#include <cstdint>
-#include <string>
-#include <vector>
-#include <wkp/core.h>
+namespace wkp::core {
+std::string encode_f64(const double* values, std::size_t value_count, std::size_t dimensions,
+                       const std::vector<int>& precisions);
+std::vector<double> decode_f64(std::string_view encoded, std::size_t dimensions,
+                               const std::vector<int>& precisions);
+GeometryHeader decode_geometry_header(std::string_view encoded);  // version, precision, dimensions, geometry_type
+}
+```
 
-std::vector<double> line = {
-	174.776, -41.289,
-	174.777, -41.290,
-	174.778, -41.291,
+Values are flat and interleaved: `[x0, y0, x1, y1, ...]` for 2D, `[x0, y0, z0, x1, y1, z1, ...]`
+for 3D, and so on. `precisions` is either one value for every dimension (`{5}`) or one per
+dimension (`{6, 6, 0}`: 6 decimal places for X and Y, whole numbers for Z).
+
+Errors throw: `std::invalid_argument` for invalid arguments and malformed input,
+`std::runtime_error` otherwise. For geometries (with polygon and multi-part structure), use the C
+ABI's `wkp_encode_geometry_frame` / `wkp_decode_geometry_frame` (see `bindings/c/README.md`).
+
+Limits: precision 0-63, with every `|value| × 10^precision` below 2^58; 1-16 dimensions; values
+must be finite.
+
+## Example
+
+```cpp
+#include <vector>
+#include <wkp/core.hpp>
+
+const std::vector<double> line = {
+    174.776, -41.289,
+    174.777, -41.290,
+    174.778, -41.291,
 };
 
-wkp_context ctx = {};
-if (wkp_context_init(&ctx) != WKP_STATUS_OK) {
-	throw std::runtime_error("Failed to initialize WKP context");
-}
-
-const int precisions[2] = {6, 6};
-const uint8_t* encoded_data = nullptr;
-size_t encoded_size = 0;
-
-const wkp_status enc = wkp_encode_f64(
-	&ctx,
-	line.data(),
-	line.size(),
-	2,
-	precisions,
-	2,
-	&encoded_data,
-	&encoded_size);
-
-if (enc != WKP_STATUS_OK) {
-	wkp_context_free(&ctx);
-	throw std::runtime_error("encode failed");
-}
-
-std::string encoded(reinterpret_cast<const char*>(encoded_data), encoded_size);
-
-const double* decoded_values = nullptr;
-size_t decoded_count = 0;
-const wkp_status dec = wkp_decode_f64(
-	&ctx,
-	reinterpret_cast<const uint8_t*>(encoded.data()),
-	encoded.size(),
-	2,
-	precisions,
-	2,
-	&decoded_values,
-	&decoded_count);
-
-if (dec != WKP_STATUS_OK) {
-	wkp_context_free(&ctx);
-	throw std::runtime_error("decode failed");
-}
-
-std::vector<double> decoded(decoded_values, decoded_values + decoded_count);
-wkp_context_free(&ctx);
+const std::string encoded = wkp::core::encode_f64(line.data(), line.size(), 2, {6});
+const std::vector<double> decoded = wkp::core::decode_f64(encoded, 2, {6});
 ```
