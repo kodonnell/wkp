@@ -12,7 +12,7 @@ jobs:
     name: Lint and repository checks
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
@@ -43,7 +43,7 @@ jobs:
         checks: [advisories, bans licenses sources]
     continue-on-error: ${{ matrix.checks == 'advisories' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: EmbarkStudios/cargo-deny-action@v2
         with:
@@ -53,10 +53,10 @@ jobs:
     name: Minimum supported Rust (core and C ABI)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up Rust
-        uses: dtolnay/rust-toolchain@1.85
+        uses: dtolnay/rust-toolchain@1.120
 
       - name: Test
         run: cargo test --locked -p wkp -p wkp-capi
@@ -69,7 +69,7 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
@@ -93,7 +93,7 @@ jobs:
         # "tapi error: malformed file ... unknown architecture arm64e.x1" (an image fault).
         os: [ubuntu-latest, windows-latest, macos-15]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
