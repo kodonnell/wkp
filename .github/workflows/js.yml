@@ -111,9 +111,36 @@ jobs:
           node scripts/sync-version.mjs --check
           npm run check:runtime-compatibility
 
+  # The musl (Alpine) addons, in Alpine itself. The glibc addons cannot load there, so a pass also
+  # shows the loader picked the musl build.
+  js-test-alpine:
+    name: Node tests (Alpine, ${{ matrix.arch }})
+    needs: node-addons
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, arch: x64 }
+          - { os: ubuntu-24.04-arm, arch: arm64 }
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download Node addons
+        uses: actions/download-artifact@v4
+        with:
+          pattern: native-node-*
+          path: bindings/javascript/packages/node/prebuilds
+          merge-multiple: true
+
+      - name: Test in node:24-alpine
+        run: |
+          docker run --rm -v "$PWD:/repo" -w /repo/bindings/javascript node:24-alpine \
+            sh -c 'npm ci --ignore-scripts && npm run test:node'
+
   pack:
     name: Pack npm tarballs
-    needs: js-test
+    needs: [js-test, js-test-alpine]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -162,6 +189,7 @@ jobs:
           check 'wkpjs-web-*.tgz' src/index.js src/version.generated.js dist/wkp_core.wasm
           check 'wkpjs-node-*.tgz' index.js \
             prebuilds/linux-x64/wkp.node prebuilds/linux-arm64/wkp.node \
+            prebuilds/linux-x64-musl/wkp.node prebuilds/linux-arm64-musl/wkp.node \
             prebuilds/darwin-x64/wkp.node prebuilds/darwin-arm64/wkp.node \
             prebuilds/win32-x64/wkp.node prebuilds/win32-arm64/wkp.node
 

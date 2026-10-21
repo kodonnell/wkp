@@ -11,8 +11,8 @@ the native library for each supported platform under `runtimes/<rid>/native/`.
 dotnet add package Wkp
 ```
 
-Targets `net8.0`. Native binaries are included for `linux-x64`, `linux-arm64`, `osx-x64`,
-`osx-arm64`, `win-x64` and `win-arm64`.
+Targets `net8.0`. Native binaries are included for `linux-x64`, `linux-arm64`,
+`linux-musl-x64`, `linux-musl-arm64` (Alpine), `osx-x64`, `osx-arm64`, `win-x64` and `win-arm64`.
 
 ## Usage
 

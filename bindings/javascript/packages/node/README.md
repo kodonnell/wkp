@@ -5,9 +5,9 @@ Node-API native bindings for the WKP Rust core.
 ## Requirements
 
 - Node.js >= 18
-- Published packages include prebuilt binaries for linux-x64, linux-arm64 (glibc 2.17+),
-  darwin-x64, darwin-arm64, win32-x64 and win32-arm64, so installing needs no compiler. On other
-  platforms (for example musl/Alpine), use `@wkpjs/web`, or build from source.
+- Published packages include prebuilt binaries for linux-x64 and linux-arm64 (both glibc 2.17+
+  and musl, e.g. Alpine), darwin-x64, darwin-arm64, win32-x64 and win32-arm64, so installing
+  needs no compiler. On other platforms, use `@wkpjs/web`, or build from source.
 - Building from source: Rust (stable)
 
 ## Build

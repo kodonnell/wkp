@@ -1,7 +1,8 @@
 name: Build native libraries (reusable)
 
 # Cross-platform builds of the Rust native libraries that ship inside the npm and NuGet
-# packages. Linux builds use cargo-zigbuild to target glibc 2.17, so they load on old distros.
+# packages. Linux builds use cargo-zigbuild: glibc builds target glibc 2.17, so they load on old
+# distros, and musl builds (Alpine) link the musl C runtime dynamically.
 #
 # kind: node -> artifacts `native-node-<platform>-<arch>` containing <platform>-<arch>/wkp.node
 #                (lay out under bindings/javascript/packages/node/prebuilds/)
@@ -26,6 +27,8 @@ jobs:
         include:
           - { os: ubuntu-latest, target: x86_64-unknown-linux-gnu, rid: linux-x64, node: linux-x64, lib: libwkp.so, zig: true }
           - { os: ubuntu-latest, target: aarch64-unknown-linux-gnu, rid: linux-arm64, node: linux-arm64, lib: libwkp.so, zig: true }
+          - { os: ubuntu-latest, target: x86_64-unknown-linux-musl, rid: linux-musl-x64, node: linux-x64-musl, lib: libwkp.so, zig: true }
+          - { os: ubuntu-latest, target: aarch64-unknown-linux-musl, rid: linux-musl-arm64, node: linux-arm64-musl, lib: libwkp.so, zig: true }
           - { os: macos-latest, target: x86_64-apple-darwin, rid: osx-x64, node: darwin-x64, lib: libwkp.dylib, zig: false }
           - { os: macos-latest, target: aarch64-apple-darwin, rid: osx-arm64, node: darwin-arm64, lib: libwkp.dylib, zig: false }
           - { os: windows-latest, target: x86_64-pc-windows-msvc, rid: win-x64, node: win32-x64, lib: wkp.dll, zig: false }
@@ -66,7 +69,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if [[ "${{ matrix.zig }}" == "true" ]]; then
+          if [[ "${{ matrix.target }}" == *-musl ]]; then
+            # Dynamic C runtime: musl targets default to static, which rules out a shared library.
+            RUSTFLAGS="-C target-feature=-crt-static" cargo zigbuild --release -p wkp-capi --target ${{ matrix.target }}
+          elif [[ "${{ matrix.zig }}" == "true" ]]; then
             cargo zigbuild --release -p wkp-capi --target ${{ matrix.target }}.2.17
           else
             cargo build --release -p wkp-capi --target ${{ matrix.target }}

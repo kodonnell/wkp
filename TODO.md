@@ -1,6 +1,5 @@
 - javascript:
   - add some more expected tests, like python.
-  - musl (Alpine) prebuilt binaries for @wkpjs/node (currently falls back to an error suggesting @wkpjs/web).
 - benchmarks:
   - port the north island file so that can be used in C++/JS tests too.
 - csharp:

@@ -4,8 +4,9 @@
 //   --target    cross-compile for a Rust target triple (e.g. aarch64-apple-darwin)
 //   --prebuild  write to prebuilds/<platform>-<arch>/wkp.node (as published) instead of
 //               build/Release/wkp.node; platform/arch come from --target when given
-//   --zig       link with `cargo zigbuild` against glibc 2.17 (Linux gnu targets), so the
-//               addon loads on older distros; needs `pip install ziglang cargo-zigbuild`
+//   --zig       link with `cargo zigbuild`: against glibc 2.17 for Linux gnu targets (so the
+//               addon loads on older distros), and against musl for Linux musl targets (Alpine);
+//               needs `pip install ziglang cargo-zigbuild`
 import { spawnSync } from 'node:child_process';
 import { copyFileSync, mkdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
@@ -39,7 +40,13 @@ if (target) {
     // zigbuild takes the minimum glibc as a suffix; artifacts still land under the plain triple.
     cargoArgs.push('--target', zig && target.endsWith('-linux-gnu') ? `${target}.2.17` : target);
 }
-const result = spawnSync('cargo', cargoArgs, { cwd: repoRoot, stdio: 'inherit', shell: process.platform === 'win32' });
+// Rust's musl targets link the C runtime statically by default, which rules out a shared library
+// such as a .node addon; link it dynamically, as Node itself is on Alpine.
+const env = { ...process.env };
+if (target?.includes('-musl')) {
+    env.RUSTFLAGS = [env.RUSTFLAGS, '-C target-feature=-crt-static'].filter(Boolean).join(' ');
+}
+const result = spawnSync('cargo', cargoArgs, { cwd: repoRoot, stdio: 'inherit', shell: process.platform === 'win32', env });
 if (result.status !== 0) {
     process.exit(result.status ?? 1);
 }
