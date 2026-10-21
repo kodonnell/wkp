@@ -127,6 +127,8 @@ cd bindings/javascript && npm install && npm run build && npm test
 dotnet test bindings/csharp/tests/Wkp.Tests
 ```
 
+The decoders and encoders are also fuzzed against a naive SPEC.md decoder: see `fuzz/README.md`.
+
 ## Release model
 
 - `pypi-vX.Y.Z`: publish the Python package, create a Python GitHub release.

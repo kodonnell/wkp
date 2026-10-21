@@ -10,6 +10,8 @@ members = [
 # Plain `cargo build` / `cargo test` cover the core and C ABI only; the binding crates need
 # their host toolchains (Python, Node) and are built by their own packaging tools.
 default-members = ["core", "bindings/c"]
+# Fuzz targets need nightly and cargo-fuzz, so they are their own workspace (see fuzz/README.md).
+exclude = ["fuzz"]
 
 [workspace.package]
 version = "0.6.0"
