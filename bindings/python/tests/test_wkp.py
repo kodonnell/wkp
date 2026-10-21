@@ -1,3 +1,4 @@
+import numpy as np
 import pytest
 import wkp
 from shapely.geometry import GeometryCollection, LineString, MultiLineString, MultiPoint, MultiPolygon, Point, Polygon
@@ -127,3 +128,40 @@ def test_bad_inputs_and_inconsistent_frames():
     )
     with pytest.raises(ValueError, match="Expected 1 point segment in MULTIPOINT, got 2"):
         two_point_parts.to_geometry()
+
+
+@pytest.mark.parametrize("wkt", ["POINT ZM (1 2 3 4)", "LINESTRING ZM (0 0 0 0, 1 1 1 1)", "POINT M (1 2 4)"])
+def test_m_values_are_rejected_not_dropped(wkt):
+    import shapely
+
+    if not hasattr(shapely, "has_m"):
+        pytest.skip("this Shapely reads M values as absent")
+    geom = shapely.from_wkt(wkt)
+    with pytest.raises(ValueError, match="M values are not supported"):
+        wkp.encode(geom, precision=5)
+
+
+def test_nan_z_still_reports_the_core_error():
+    import shapely
+
+    with pytest.raises(ValueError, match="WKP core error"):
+        wkp.encode(shapely.points([1.0, 2.0, float("nan")]), precision=5)
+
+
+def test_decoding_more_than_3_dimensions_to_shapely_is_a_clear_error():
+    frame = wkp.GeometryFrame(1, 5, 4, wkp.EncodedGeometryType.POINT, np.array([[1.0, 2.0, 3.0, 4.0]]), np.array([1]), np.array([1]))
+    encoded = wkp.encode_frame(frame)
+    assert wkp.decode_frame(encoded) == frame
+    with pytest.raises(ValueError, match="at most 3"):
+        wkp.decode(encoded)
+    with pytest.raises(ValueError, match="at most 3"):
+        frame.to_geometry()
+
+
+def test_public_names():
+    assert "EncodedGeometryType" in wkp.__all__
+    # The documented parameter name works as a keyword.
+    encoded = wkp.encode(Point(1, 2), 5)
+    assert wkp.decode(encoded=encoded).geometry.equals(Point(1, 2))
+    assert wkp.decode_frame(encoded=encoded).dimensions == 2
+    assert wkp.decode_header(encoded=encoded) == (1, 5, 2, 1)

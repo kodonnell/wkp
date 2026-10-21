@@ -180,3 +180,25 @@ def test_cross_language_buffer_format():
     assert recovered.dimensions == 2
     geom_recovered = recovered.to_geometry()
     assert geom_recovered.equals_exact(geom, tolerance=1e-9)
+
+
+def test_frames_compare_by_value():
+    frame = wkp.decode_frame(wkp.encode(LineString([(0, 0), (1, 1), (2, 2)]), precision=5))
+    same = wkp.GeometryFrame.from_buffer(frame.to_buffer())
+    assert frame == same
+    assert not (frame != same)
+    same.coords = same.coords + 1
+    assert frame != same
+    assert frame != "not a frame"
+
+
+def test_to_buffer_accepts_list_coords():
+    frame = wkp.GeometryFrame(1, 5, 2, wkp.EncodedGeometryType.LINESTRING, [[0.0, 0.0], [1.0, 1.0]], [2], [1])
+    back = wkp.GeometryFrame.from_buffer(frame.to_buffer())
+    np.testing.assert_array_equal(back.coords, [[0.0, 0.0], [1.0, 1.0]])
+
+
+def test_to_buffer_rejects_counts_over_uint32():
+    frame = wkp.GeometryFrame(1, 5, 2, 1, np.zeros((1, 2)), np.array([2**32], dtype=np.uint64), np.array([1]))
+    with pytest.raises(ValueError, match="uint32"):
+        frame.to_buffer()

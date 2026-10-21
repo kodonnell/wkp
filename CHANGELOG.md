@@ -23,6 +23,16 @@ Release tags:
   of `TypeError`.
 - @wkpjs/node: `import { coreVersion, runSelfTest, EncodedGeometryType } from '@wkpjs/node'`
   failed in ES modules; only the exports before those were visible to `import`.
+- Python: encoding a geometry with M values silently dropped them (and Z too, for XYZM), or
+  failed with an unhelpful "invalid argument" (XYM). Shapely cannot build such geometries when
+  decoding, so this is now a clear `ValueError`. Decoding a 4+ dimensional geometry to Shapely
+  also explains itself and points to `decode_frame`.
+- Python: `GeometryFrame == GeometryFrame` raised a numpy "truth value is ambiguous" error; frames
+  now compare field by field. `GeometryFrame.to_buffer()` failed for list coordinates, and
+  silently wrapped counts above 2³²-1 (the buffer stores them as uint32); it now raises
+  `ValueError` for those.
+- Python: `EncodedGeometryType` is in `__all__`, and the decoders' first parameter is named
+  `encoded` (it was `bites`), as documented. Code passing it by keyword as `bites=` must change.
 
 ---
 

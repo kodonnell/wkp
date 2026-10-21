@@ -19,6 +19,7 @@ __core_compatibility__ = "0.6.x"
 __all__ = [
     "Context",
     "DecodedGeometry",
+    "EncodedGeometryType",
     "GeometryFrame",
     "decode",
     "decode_frame",
@@ -110,19 +111,19 @@ def _as_f64_c(values) -> np.ndarray:
     return np.require(values, dtype=np.float64, requirements=("C", "A"))
 
 
-def _as_encoded_bytes(bites) -> bytes | str:
+def _as_encoded_bytes(encoded) -> bytes | str:
     """`str` and `bytes` go to the native module as they are; other bytes-like objects
     (bytearray, memoryview, ...) are converted to `bytes`."""
-    if type(bites) is bytes or type(bites) is str:
-        return bites
-    if isinstance(bites, str):
-        return str(bites)
+    if type(encoded) is bytes or type(encoded) is str:
+        return encoded
+    if isinstance(encoded, str):
+        return str(encoded)
     try:
         # Via memoryview, so only real bytes-like objects are accepted (`bytes(5)` would be five
         # zero bytes).
-        return bytes(memoryview(bites))
+        return bytes(memoryview(encoded))
     except TypeError as exc:
-        raise TypeError("bites must be str or bytes-like") from exc
+        raise TypeError("encoded must be str or bytes-like") from exc
 
 
 def _normalize_precisions(precisions) -> list[int]:
@@ -144,7 +145,10 @@ _FRAME_HEADER_FMT = "<iiii QQQ"
 _FRAME_HEADER_SIZE = struct.calcsize(_FRAME_HEADER_FMT)  # 40 bytes
 
 
-@dataclass
+_UINT32_MAX = 0xFFFFFFFF
+
+
+@dataclass(eq=False)
 class GeometryFrame:
     """
     A flat representation of a decoded WKP geometry with explicit structure metadata.
@@ -168,8 +172,24 @@ class GeometryFrame:
     segment_point_counts: np.ndarray # shape (segment_count,), uint64
     group_segment_counts: np.ndarray # shape (group_count,), uint64
 
+    # Field by field, comparing the arrays by value (the generated __eq__ would compare them
+    # with ==, which raises for numpy arrays).
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, GeometryFrame):
+            return NotImplemented
+        return (
+            (self.version, self.precision, self.dimensions, self.geometry_type)
+            == (other.version, other.precision, other.dimensions, other.geometry_type)
+            and np.array_equal(self.coords, other.coords)
+            and np.array_equal(self.segment_point_counts, other.segment_point_counts)
+            and np.array_equal(self.group_segment_counts, other.group_segment_counts)
+        )
+
+    __hash__ = None  # mutable, like a dataclass with eq=True
+
     def to_geometry(self) -> shapely.geometry.base.BaseGeometry:
         """Convert to a Shapely geometry object."""
+        _check_shapely_dimensions(self.dimensions)
         coords = _as_f64_c(self.coords).reshape(-1, self.dimensions)
         seg = np.asarray(self.segment_point_counts, dtype=np.int64)
         grp = np.asarray(self.group_segment_counts, dtype=np.int64)
@@ -193,10 +213,17 @@ class GeometryFrame:
           float64[coord_value_count]  flat coordinates
           uint32[segment_count]       segment_point_counts
           uint32[group_count]         group_segment_counts
+
+        Raises ``ValueError`` if a count does not fit in uint32.
         """
-        coords_flat = _as_f64_c(self.coords.ravel())
-        seg = np.asarray(self.segment_point_counts, dtype=np.uint32)
-        grp = np.asarray(self.group_segment_counts, dtype=np.uint32)
+        coords_flat = _as_f64_c(self.coords).ravel()
+        seg = np.asarray(self.segment_point_counts, dtype=np.uint64)
+        grp = np.asarray(self.group_segment_counts, dtype=np.uint64)
+        # The buffer format stores counts as uint32; a plain cast would silently wrap.
+        if (seg.size and seg.max() > _UINT32_MAX) or (grp.size and grp.max() > _UINT32_MAX):
+            raise ValueError("a segment or group count is too large for the buffer format (uint32)")
+        seg = seg.astype(np.uint32)
+        grp = grp.astype(np.uint32)
         header = struct.pack(
             _FRAME_HEADER_FMT,
             self.version,
@@ -238,9 +265,10 @@ class GeometryFrame:
 # Header
 # ---------------------------------------------------------------------------
 
-def decode_header(bites):
-    encoded = _as_encoded_bytes(bites)
-    return _core.decode_geometry_header(encoded)
+def decode_header(encoded) -> tuple[int, int, int, int]:
+    """``(version, precision, dimensions, geometry_type)`` from the header of a WKP geometry,
+    without decoding the rest of it."""
+    return _core.decode_geometry_header(_as_encoded_bytes(encoded))
 
 
 # ---------------------------------------------------------------------------
@@ -319,6 +347,19 @@ def _geometry_from_frame(geom_type: int, coords: np.ndarray, segment_point_count
 _GEOMETRY_TYPE_ERROR = (
     "geom must be a Shapely Point, LineString, Polygon, MultiPoint, MultiLineString, or MultiPolygon"
 )
+_M_ERROR = (
+    "geometries with M values are not supported (Shapely cannot rebuild them when decoding); "
+    "drop M first, e.g. with shapely.force_2d or shapely.force_3d"
+)
+_has_m = getattr(shapely, "has_m", None)  # Shapely >= 2.1; older versions drop M when reading
+
+
+def _check_shapely_dimensions(dimensions: int) -> None:
+    if dimensions > 3:
+        raise ValueError(
+            f"cannot make a Shapely geometry with {dimensions} dimensions (at most 3: XYZ); "
+            "use decode_frame to get the coordinates"
+        )
 
 
 def _geometry_to_frame(geom):
@@ -332,6 +373,8 @@ def _geometry_to_frame(geom):
     if not isinstance(geom, (Point, LineString, Polygon, MultiPoint, MultiLineString, MultiPolygon)):
         raise TypeError(_GEOMETRY_TYPE_ERROR)
     dims = shapely.get_coordinate_dimension(geom)
+    if dims == 4:  # XYZM; XYM is 3 and caught in encode, where it fails
+        raise ValueError(_M_ERROR)
     if dims <= 0 or dims > 16:
         raise ValueError(f"Unsupported geometry dimensions: {dims}")
     # A new C-contiguous float64 array.
@@ -374,15 +417,14 @@ def _geometry_to_frame(geom):
 # Public API
 # ---------------------------------------------------------------------------
 
-def decode_frame(bites, *, ctx=None) -> GeometryFrame:
+def decode_frame(encoded, *, ctx=None) -> GeometryFrame:
     """
     Decode a WKP-encoded geometry into a :class:`GeometryFrame` without converting
     to a Shapely object. Useful for bulk coordinate processing or buffer transfer.
     """
     ctx = _resolve_context(ctx)
-    encoded = _as_encoded_bytes(bites)
     version, precision, dimensions, geom_type, coords, seg_counts, grp_counts = (
-        _core.decode_geometry_frame_flat(ctx, encoded)
+        _core.decode_geometry_frame_flat(ctx, _as_encoded_bytes(encoded))
     )
     return GeometryFrame(
         version=version,
@@ -395,13 +437,13 @@ def decode_frame(bites, *, ctx=None) -> GeometryFrame:
     )
 
 
-def decode(bites, *, ctx=None) -> DecodedGeometry:
+def decode(encoded, *, ctx=None) -> DecodedGeometry:
     """Decode a WKP-encoded geometry to a Shapely geometry."""
     ctx = _resolve_context(ctx)
-    encoded = _as_encoded_bytes(bites)
     version, precision, dimensions, geom_type, coords, seg_counts, grp_counts = (
-        _core.decode_geometry_frame_flat(ctx, encoded)
+        _core.decode_geometry_frame_flat(ctx, _as_encoded_bytes(encoded))
     )
+    _check_shapely_dimensions(dimensions)
     return DecodedGeometry(
         version=version,
         precision=precision,
@@ -432,7 +474,16 @@ def encode(geom, precision: int, *, ctx=None) -> bytes:
 
     geom_type, coords, group_segment_counts, segment_point_counts = _geometry_to_frame(geom)
 
-    return _core.encode_geometry_frame(ctx, geom_type, coords, precision, group_segment_counts, segment_point_counts)
+    try:
+        return _core.encode_geometry_frame(
+            ctx, geom_type, coords, precision, group_segment_counts, segment_point_counts
+        )
+    except ValueError:
+        # An XYM geometry reads as XYZ with NaN Z values, which the core rejects. Checked only
+        # after a failure, so valid 3D input pays nothing for it.
+        if coords.shape[1] == 3 and _has_m is not None and _has_m(geom):
+            raise ValueError(_M_ERROR) from None
+        raise
 
 
 def encode_floats(floats, precisions, *, ctx=None) -> bytes:
@@ -461,8 +512,7 @@ def decode_floats_array(encoded, precisions, *, ctx=None) -> np.ndarray:
     ctx = _resolve_context(ctx)
     p = _normalize_precisions(precisions)
     dimensions = len(p)
-    bites = _as_encoded_bytes(encoded)
-    return np.asarray(_core.decode_f64(ctx, bites, dimensions, p), dtype=np.float64)
+    return np.asarray(_core.decode_f64(ctx, _as_encoded_bytes(encoded), dimensions, p), dtype=np.float64)
 
 
 def decode_floats(encoded, precisions, *, ctx=None) -> np.ndarray:

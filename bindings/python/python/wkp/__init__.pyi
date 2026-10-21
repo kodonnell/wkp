@@ -4,12 +4,11 @@ from __future__ import annotations
 
 import enum
 from dataclasses import dataclass
-from typing import Sequence, Union
+from typing import ClassVar, Sequence, Union, final
 
 import numpy as np
 from numpy.typing import NDArray
 import shapely.geometry.base
-from typing_extensions import final
 
 __version__: str
 __core_version__: str
@@ -18,6 +17,7 @@ __core_compatibility__: str
 __all__ = [
     "Context",
     "DecodedGeometry",
+    "EncodedGeometryType",
     "GeometryFrame",
     "decode",
     "decode_frame",
@@ -63,7 +63,7 @@ class DecodedGeometry:
     geometry: shapely.geometry.base.BaseGeometry
 
 
-@dataclass
+@dataclass(eq=False)
 class GeometryFrame:
     """
     Low-level flat representation of a decoded WKP geometry.
@@ -71,7 +71,7 @@ class GeometryFrame:
     ``coords`` shape is ``(total_points, dimensions)``, ``dtype=float64``,
     C-contiguous.  ``segment_point_counts[i]`` is the number of points in
     segment *i*.  ``group_segment_counts[g]`` is the number of segments in
-    group *g*.
+    group *g*.  Frames compare equal when all fields (arrays by value) are equal.
     """
 
     version: int
@@ -81,6 +81,9 @@ class GeometryFrame:
     coords: NDArray[np.float64]
     segment_point_counts: NDArray[np.uint64]
     group_segment_counts: NDArray[np.uint64]
+
+    def __eq__(self, other: object) -> bool: ...
+    __hash__: ClassVar[None]  # type: ignore[assignment]
 
     def to_geometry(self) -> shapely.geometry.base.BaseGeometry:
         """Convert to a Shapely geometry object."""
@@ -114,7 +117,7 @@ def encode(
 
 
 def decode(
-    bites: Union[str, bytes, bytearray, memoryview],
+    encoded: Union[str, bytes, bytearray, memoryview],
     *,
     ctx: Context | None = None,
 ) -> DecodedGeometry:
@@ -123,7 +126,7 @@ def decode(
 
 
 def decode_frame(
-    bites: Union[str, bytes, bytearray, memoryview],
+    encoded: Union[str, bytes, bytearray, memoryview],
     *,
     ctx: Context | None = None,
 ) -> GeometryFrame:
@@ -146,7 +149,7 @@ def encode_frame(
 
 
 def decode_header(
-    bites: Union[str, bytes, bytearray, memoryview],
+    encoded: Union[str, bytes, bytearray, memoryview],
 ) -> tuple[int, int, int, int]:
     """
     Decode only the WKP header without decoding coordinates.
