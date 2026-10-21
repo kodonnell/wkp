@@ -158,25 +158,26 @@ python bindings/python/benchmark/bench_flat_api.py
 python bindings/python/benchmark/bench_flat_api.py --points=50000 --iterations=200
 ```
 
-Example results (wkp 0.6.0, Python 3.10, WSL2 on an i7-12700H, one core):
+Example results (wkp 0.6.0, Python 3.10, WSL2 on an i7-12700H, one core; x86-64, so the SIMD
+paths are used):
 
 | Method          | Source   | kb    | Encode (ms) | Decode (ms) | Total (ms)  | Iters |
 | --------------- | -------- | ----- | ----------- | ----------- | ----------- | ----- |
-| shapely_wkb     | nz-coast | 156.3 | 0.24 ± 0.05 | 0.07 ± 0.03 | 0.30 ± 0.06 | 2000  |
-| shapely_wkt     | nz-coast | 379.7 | 1.40 ± 0.29 | 4.62 ± 0.40 | 6.08 ± 0.62 | 931   |
-| shapely_wkt_5dp | nz-coast | 202.8 | 1.47 ± 0.33 | 2.89 ± 0.34 | 4.33 ± 0.43 | 1028  |
-| wkp-5p-bytes    | nz-coast | 42.9  | 0.12 ± 0.05 | 0.07 ± 0.01 | 0.20 ± 0.06 | 2000  |
-| wkp-5p-str      | nz-coast | 42.9  | 0.10 ± 0.02 | 0.08 ± 0.02 | 0.18 ± 0.03 | 2000  |
-| wkp-frame-5p    | nz-coast | 42.9  | 0.13 ± 0.14 | 0.06 ± 0.02 | 0.19 ± 0.14 | 2000  |
-| shapely_wkb     | random   | 156.3 | 0.26 ± 0.15 | 0.07 ± 0.02 | 0.32 ± 0.15 | 2000  |
-| shapely_wkt     | random   | 378.4 | 1.40 ± 0.19 | 4.42 ± 0.48 | 5.82 ± 0.51 | 938   |
-| shapely_wkt_5dp | random   | 163.9 | 1.56 ± 0.29 | 2.73 ± 0.37 | 4.26 ± 0.42 | 1008  |
-| wkp-5p-bytes    | random   | 72.2  | 0.12 ± 0.14 | 0.09 ± 0.03 | 0.21 ± 0.15 | 2000  |
-| wkp-5p-str      | random   | 72.2  | 0.11 ± 0.02 | 0.09 ± 0.02 | 0.19 ± 0.03 | 2000  |
-| wkp-frame-5p    | random   | 72.2  | 0.11 ± 0.04 | 0.07 ± 0.02 | 0.18 ± 0.04 | 2000  |
+| shapely_wkb     | nz-coast | 156.3 | 0.23 ± 0.03 | 0.06 ± 0.02 | 0.29 ± 0.04 | 2000  |
+| shapely_wkt     | nz-coast | 379.7 | 1.32 ± 0.15 | 4.37 ± 0.33 | 5.70 ± 0.35 | 988   |
+| shapely_wkt_5dp | nz-coast | 202.8 | 1.38 ± 0.12 | 2.76 ± 0.20 | 4.15 ± 0.24 | 1088  |
+| wkp-5p-bytes    | nz-coast | 42.9  | 0.06 ± 0.02 | 0.05 ± 0.01 | 0.11 ± 0.02 | 2000  |
+| wkp-5p-str      | nz-coast | 42.9  | 0.06 ± 0.01 | 0.05 ± 0.01 | 0.11 ± 0.02 | 2000  |
+| wkp-frame-5p    | nz-coast | 42.9  | 0.07 ± 0.03 | 0.03 ± 0.01 | 0.10 ± 0.04 | 2000  |
+| shapely_wkb     | random   | 156.3 | 0.22 ± 0.03 | 0.06 ± 0.06 | 0.29 ± 0.07 | 2000  |
+| shapely_wkt     | random   | 378.4 | 1.35 ± 0.35 | 4.13 ± 0.27 | 5.53 ± 0.62 | 983   |
+| shapely_wkt_5dp | random   | 163.9 | 1.49 ± 0.19 | 2.57 ± 0.25 | 4.06 ± 0.31 | 1058  |
+| wkp-5p-bytes    | random   | 72.2  | 0.06 ± 0.02 | 0.07 ± 0.01 | 0.13 ± 0.02 | 2000  |
+| wkp-5p-str      | random   | 72.2  | 0.06 ± 0.02 | 0.07 ± 0.03 | 0.13 ± 0.04 | 2000  |
+| wkp-frame-5p    | random   | 72.2  | 0.06 ± 0.01 | 0.05 ± 0.01 | 0.11 ± 0.02 | 2000  |
 
 On the same machine, the 0.5.0 (nanobind + C core) build took 0.17 ms to encode and 0.18 ms to
-decode `nz-coast` (`wkp-5p-str`).
+decode `nz-coast` (`wkp-5p-str`): 0.6.0 is about 2.8x / 3.6x faster.
 
 ## Packaging / release
 

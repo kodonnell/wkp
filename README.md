@@ -12,9 +12,9 @@ WKP is a compact string-based geometry encoding format inspired by Google Polyli
 - arbitrary dimensions (for example XYZ)
 - polygon and multi-geometry support
 
-Compared to WKT, WKP is typically 9x smaller and encodes/decodes 14x/50x faster. Compared to WKB, WKP is typically 3.5x smaller, encodes 2x faster and decodes at about the same speed. See here[^1].
+Compared to WKT, WKP is typically 9x smaller and encodes/decodes ~20x/~85x faster. Compared to WKB, WKP is typically 3.6x smaller, encodes ~4x faster and decodes at least as fast. See here[^1].
 
-[^1]: In python run `python bindings/python/benchmark/benchmark.py --linestring-points=10000 --precisions=5 --max-iterations=1000 --max-duration=1`. Use 5dp as that's Google Polyline standard. Compare with WKT full precision (as that's usual behaviour as it's uncommon for users to round all coordinates to 5dp before encoding as wkt). Use a realistic example of NZ coastline vs a random example. Encode: WKP=0.10ms, WKB=0.24ms, WKT=1.40ms. Decode: WKP=0.08ms, WKB=0.07ms, WKT=4.62ms. Size: WKP=43kb, WKB=156kb, WKT=380kb. (Measured with wkp 0.6.0, Python 3.10, WSL2 on an i7-12700H, one core.)
+[^1]: In python run `python bindings/python/benchmark/benchmark.py --linestring-points=10000 --precisions=5 --max-iterations=1000 --max-duration=1`. Use 5dp as that's Google Polyline standard. Compare with WKT full precision (as that's usual behaviour as it's uncommon for users to round all coordinates to 5dp before encoding as wkt). Use a realistic example of NZ coastline vs a random example. Encode: WKP=0.06ms, WKB=0.23ms, WKT=1.32ms. Decode: WKP=0.05ms, WKB=0.06ms, WKT=4.37ms. Size: WKP=43kb, WKB=156kb, WKT=380kb. (Measured with wkp 0.6.0, Python 3.10, WSL2 on an i7-12700H, one core, x86-64 so the SIMD paths are used. The table is in `bindings/python/README.md`.)
 
 ## Demo
 
@@ -45,7 +45,7 @@ core/ (crate `wkp`, Rust)
 
 The core moved from C to Rust in 0.6.0:
 
-- **Faster.** The Rust core is 1.7–2.2x faster than the C core at encoding and 1.5–1.9x faster at decoding, with identical output (measured in one process on the same data, gcc -O3 vs rustc). The gains are algorithmic: values are encoded and decoded 8 bytes at a time instead of one char at a time, and rounding no longer calls into libm. In Python, end-to-end encode/decode of a 10k-point linestring is about 1.7x/2.2x faster. In Node, `decode` to GeoJSON is about 12x faster, because the GeoJSON is now built in JavaScript instead of through per-element Node-API calls.
+- **Faster.** The Rust core is 1.7–2.2x faster than the C core at encoding and 1.5–1.9x faster at decoding, with identical output (measured in one process on the same data, gcc -O3 vs rustc). The gains are algorithmic: values are encoded and decoded 8 bytes at a time instead of one char at a time, and rounding no longer calls into libm. On x86-64, SIMD paths (chosen at runtime) add about 2x on encoding and 1.3–1.8x on decoding path-like data. In Python, end-to-end encode/decode of a 10k-point linestring is about 2.8x/3.6x faster than 0.5.0 (0.17/0.18 ms → 0.06/0.05 ms). In Node, `decode` to GeoJSON is about 12x faster, because the GeoJSON is now built in JavaScript instead of through per-element Node-API calls.
 - **Simpler builds.** Python uses maturin with abi3 wheels: one wheel per platform covers every CPython from 3.10 up, including 3.14. Node prebuilt binaries come from cargo, so there is no node-gyp or compiler at install time. The web build is `cargo build --target wasm32-unknown-unknown`, with no Emscripten. C# packs the same C ABI library.
 - **Safer.** The decoder is memory-safe on untrusted input. The C core could be crashed by a crafted header (division by zero, stack buffer overrun).
 
