@@ -148,20 +148,24 @@ function flattenFloatRows(values, dimensions) {
         throw new TypeError('floats must be a non-empty 2D number array');
     }
 
-    const flat = [];
-    for (const row of values) {
+    const flat = new Float64Array(values.length * dimensions);
+    let k = 0;
+    for (let r = 0; r < values.length; r += 1) {
+        const row = values[r];
         if (!Array.isArray(row) || row.length !== dimensions) {
             throw new TypeError(`floats rows must each have exactly ${dimensions} values`);
         }
-        for (const value of row) {
-            if (typeof value !== 'number' || !Number.isFinite(value)) {
+        for (let d = 0; d < dimensions; d += 1) {
+            const value = row[d];
+            // `value - value` is NaN for NaN and +-Infinity.
+            if (typeof value !== 'number' || value - value !== 0) {
                 throw new TypeError('floats must contain only finite numbers');
             }
-            flat.push(value);
+            flat[k] = value;
+            k += 1;
         }
     }
-
-    return Float64Array.from(flat);
+    return flat;
 }
 
 // Strings are staged straight into wasm memory as UTF-8 (see `stage`), so a non-ASCII char
@@ -171,18 +175,6 @@ function normalizeEncoded(encoded) {
         return encoded;
     }
     throw new TypeError('encoded must be string or Uint8Array');
-}
-
-function normalizeCoord(coord, dimensions, label) {
-    if (!Array.isArray(coord) || coord.length !== dimensions) {
-        throw new TypeError(`${label} must be an array of ${dimensions} numbers`);
-    }
-    for (const value of coord) {
-        if (typeof value !== 'number' || !Number.isFinite(value)) {
-            throw new TypeError(`${label} contains non-finite coordinate values`);
-        }
-    }
-    return coord;
 }
 
 function inferDimensionsFromPosition(position, label) {
@@ -234,17 +226,29 @@ function geometryDimensions(geometry) {
     throw new TypeError(`Unsupported geometry type: ${geometry.type}`);
 }
 
-function pushRows(rows, dimensions, label, flatCoords, segmentPointCounts) {
-    if (!Array.isArray(rows) || rows.length === 0) {
-        throw new TypeError(`${label} must contain at least one coordinate`);
-    }
-    for (const row of rows) {
-        const coord = normalizeCoord(row, dimensions, label);
-        for (let dim = 0; dim < dimensions; dim += 1) {
-            flatCoords.push(coord[dim]);
+// Copies the positions of `segments` (arrays of positions) into the preallocated `coords`,
+// validating each one. One indexed pass into a Float64Array is much faster than pushing to an
+// array and converting that.
+function copyPositions(segments, dimensions, label, coords) {
+    let k = 0;
+    for (let s = 0; s < segments.length; s += 1) {
+        const rows = segments[s];
+        for (let r = 0; r < rows.length; r += 1) {
+            const row = rows[r];
+            if (!Array.isArray(row) || row.length !== dimensions) {
+                throw new TypeError(`${label} must be an array of ${dimensions} numbers`);
+            }
+            for (let d = 0; d < dimensions; d += 1) {
+                const value = row[d];
+                // `value - value` is NaN for NaN and +-Infinity.
+                if (typeof value !== 'number' || value - value !== 0) {
+                    throw new TypeError(`${label} contains non-finite coordinate values`);
+                }
+                coords[k] = value;
+                k += 1;
+            }
         }
     }
-    segmentPointCounts.push(rows.length);
 }
 
 function buildGeometryFrame(geometry, dimensions, EncodedGeometryType) {
@@ -252,70 +256,113 @@ function buildGeometryFrame(geometry, dimensions, EncodedGeometryType) {
         throw new TypeError('geometry must be an object with GeoJSON-like type and coordinates');
     }
 
-    const flatCoords = [];
-    const segmentPointCounts = [];
-    const groupSegmentCounts = [];
-    let geometryType = 0;
+    // The geometry's segments (each an array of positions) and the number of segments per group.
+    let segments;
+    let groupSegmentCounts;
+    let geometryType;
+    let label;
+    const parts = geometry.coordinates;
 
     if (geometry.type === 'Point') {
         geometryType = EncodedGeometryType.POINT;
-        pushRows([geometry.coordinates], dimensions, 'point coordinate', flatCoords, segmentPointCounts);
-        groupSegmentCounts.push(1);
+        label = 'point coordinate';
+        segments = [[parts]];
+        groupSegmentCounts = [1];
     } else if (geometry.type === 'LineString') {
         geometryType = EncodedGeometryType.LINESTRING;
-        pushRows(geometry.coordinates, dimensions, 'linestring coordinates', flatCoords, segmentPointCounts);
-        groupSegmentCounts.push(1);
+        label = 'linestring coordinates';
+        segments = [parts];
+        groupSegmentCounts = [1];
     } else if (geometry.type === 'Polygon') {
         geometryType = EncodedGeometryType.POLYGON;
-        if (!Array.isArray(geometry.coordinates) || geometry.coordinates.length === 0) {
+        label = 'polygon ring';
+        if (!Array.isArray(parts) || parts.length === 0) {
             throw new TypeError('polygon coordinates must contain at least one ring');
         }
-        for (const ring of geometry.coordinates) {
-            pushRows(ring, dimensions, 'polygon ring', flatCoords, segmentPointCounts);
-        }
-        groupSegmentCounts.push(geometry.coordinates.length);
+        segments = parts;
+        groupSegmentCounts = [parts.length];
     } else if (geometry.type === 'MultiPoint') {
         geometryType = EncodedGeometryType.MULTIPOINT;
-        if (!Array.isArray(geometry.coordinates) || geometry.coordinates.length === 0) {
+        label = 'multipoint point';
+        if (!Array.isArray(parts) || parts.length === 0) {
             throw new TypeError('multipoint coordinates must contain at least one point');
         }
-        for (const point of geometry.coordinates) {
-            pushRows([point], dimensions, 'multipoint point', flatCoords, segmentPointCounts);
-            groupSegmentCounts.push(1);
-        }
+        segments = parts.map((point) => [point]);
+        groupSegmentCounts = new Array(parts.length).fill(1);
     } else if (geometry.type === 'MultiLineString') {
         geometryType = EncodedGeometryType.MULTILINESTRING;
-        if (!Array.isArray(geometry.coordinates) || geometry.coordinates.length === 0) {
+        label = 'multilinestring line';
+        if (!Array.isArray(parts) || parts.length === 0) {
             throw new TypeError('multilinestring coordinates must contain at least one line');
         }
-        for (const line of geometry.coordinates) {
-            pushRows(line, dimensions, 'multilinestring line', flatCoords, segmentPointCounts);
-            groupSegmentCounts.push(1);
-        }
+        segments = parts;
+        groupSegmentCounts = new Array(parts.length).fill(1);
     } else if (geometry.type === 'MultiPolygon') {
         geometryType = EncodedGeometryType.MULTIPOLYGON;
-        if (!Array.isArray(geometry.coordinates) || geometry.coordinates.length === 0) {
+        label = 'multipolygon ring';
+        if (!Array.isArray(parts) || parts.length === 0) {
             throw new TypeError('multipolygon coordinates must contain at least one polygon');
         }
-        for (const polygon of geometry.coordinates) {
+        segments = [];
+        groupSegmentCounts = [];
+        for (const polygon of parts) {
             if (!Array.isArray(polygon) || polygon.length === 0) {
                 throw new TypeError('each multipolygon part must contain at least one ring');
             }
             groupSegmentCounts.push(polygon.length);
             for (const ring of polygon) {
-                pushRows(ring, dimensions, 'multipolygon ring', flatCoords, segmentPointCounts);
+                segments.push(ring);
             }
         }
     } else {
         throw new TypeError(`Unsupported geometry type: ${geometry.type}`);
     }
 
+    const segmentPointCounts = new Uint32Array(segments.length);
+    let points = 0;
+    for (let s = 0; s < segments.length; s += 1) {
+        const rows = segments[s];
+        if (!Array.isArray(rows) || rows.length === 0) {
+            throw new TypeError(`${label} must contain at least one coordinate`);
+        }
+        segmentPointCounts[s] = rows.length;
+        points += rows.length;
+    }
+    const coords = new Float64Array(points * dimensions);
+    copyPositions(segments, dimensions, label, coords);
+
     return {
         geometryType,
-        coords: Float64Array.from(flatCoords),
-        segmentPointCounts: Uint32Array.from(segmentPointCounts),
+        coords,
+        segmentPointCounts,
         groupSegmentCounts: Uint32Array.from(groupSegmentCounts)
     };
+}
+
+// `count` rows of `dimensions` values from flat `coords`, starting at `start`. Rows are array
+// literals for 2D and 3D, which V8 stores as packed doubles (filling `new Array(n)` makes slower
+// holey arrays).
+function toRows(coords, start, count, dimensions) {
+    const rows = new Array(count);
+    let i = start;
+    if (dimensions === 2) {
+        for (let r = 0; r < count; r += 1, i += 2) {
+            rows[r] = [coords[i], coords[i + 1]];
+        }
+    } else if (dimensions === 3) {
+        for (let r = 0; r < count; r += 1, i += 3) {
+            rows[r] = [coords[i], coords[i + 1], coords[i + 2]];
+        }
+    } else {
+        for (let r = 0; r < count; r += 1) {
+            const row = [];
+            for (let d = 0; d < dimensions; d += 1, i += 1) {
+                row.push(coords[i]);
+            }
+            rows[r] = row;
+        }
+    }
+    return rows;
 }
 
 function frameToGeometry(geometryType, dimensions, coords, segmentPointCounts, groupSegmentCounts, EncodedGeometryType) {
@@ -334,14 +381,7 @@ function frameToGeometry(geometryType, dimensions, coords, segmentPointCounts, g
             throw new TypeError('Decoded geometry frame has invalid coordinate metadata');
         }
 
-        const rows = new Array(pointCount);
-        for (let rowIndex = 0; rowIndex < pointCount; rowIndex += 1) {
-            const row = new Array(dimensions);
-            for (let dim = 0; dim < dimensions; dim += 1) {
-                row[dim] = coords[coordIndex + (rowIndex * dimensions) + dim];
-            }
-            rows[rowIndex] = row;
-        }
+        const rows = toRows(coords, coordIndex, pointCount, dimensions);
         coordIndex += neededValues;
         return rows;
     };
@@ -761,15 +801,7 @@ export async function createWkp(options) {
         const precisionList = normalizePrecisionList(precisions);
         const dimensions = precisionList.length;
         const decoded = asContext(ctx).decodeF64(encoded, dimensions, precisionList);
-        const rows = new Array(decoded.length / dimensions);
-        for (let r = 0, i = 0; i < decoded.length; r += 1) {
-            const row = new Array(dimensions);
-            for (let d = 0; d < dimensions; d += 1, i += 1) {
-                row[d] = decoded[i];
-            }
-            rows[r] = row;
-        }
-        return rows;
+        return toRows(decoded, 0, decoded.length / dimensions, dimensions);
     }
 
     return {

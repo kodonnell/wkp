@@ -65,3 +65,54 @@ test('roundtrip with explicit context (web wasm)', async () => {
     assertGeometryClose(decoded.geometry, geometry);
     ctx.dispose();
 });
+
+// Validation and round trips of the GeoJSON <-> flat-array conversion, for every geometry type
+// and dimension count. (Messages are part of the contract: they match earlier releases.)
+const BAD_GEOMETRIES = [
+    [{ type: 'LineString', coordinates: [[0, 0], [NaN, 1]] }, /^linestring coordinates contains non-finite coordinate values$/],
+    [{ type: 'LineString', coordinates: [[0, 0], [1, Infinity]] }, /non-finite/],
+    [{ type: 'LineString', coordinates: [[0, 0], [-Infinity, 1]] }, /non-finite/],
+    [{ type: 'LineString', coordinates: [[0, 0], ['1', 1]] }, /non-finite/],
+    [{ type: 'LineString', coordinates: [[0, 0], [null, 1]] }, /non-finite/],
+    [{ type: 'LineString', coordinates: [[0, 0], [1]] }, /^linestring coordinates must be an array of 2 numbers$/],
+    [{ type: 'LineString', coordinates: [[0, 0], 5] }, /must be an array of 2 numbers/],
+    [{ type: 'Polygon', coordinates: [[[0, 0], [1, 0], [0, 1], [0, 0]], []] }, /^polygon ring must contain at least one coordinate$/],
+    [{ type: 'Polygon', coordinates: [] }, /^Polygon coordinates must contain at least one part with one position$/],
+    [{ type: 'MultiPoint', coordinates: [[0, 0], [1, 'x']] }, /^multipoint point contains non-finite coordinate values$/],
+    [{ type: 'MultiLineString', coordinates: [[[0, 0]], []] }, /^multilinestring line must contain at least one coordinate$/],
+    [{ type: 'MultiPolygon', coordinates: [[[[0, 0]]], []] }, /^each multipolygon part must contain at least one ring$/],
+    [{ type: 'MultiPolygon', coordinates: [[[[0, 0, 1]], [[0, 0]]]] }, /^multipolygon ring must be an array of 3 numbers$/],
+    [{ type: 'Point', coordinates: [0, NaN] }, /^point coordinate contains non-finite coordinate values$/]
+];
+
+test('encode rejects malformed coordinates with TypeError (web)', async () => {
+    const wkp = await createWkp();
+    for (const [geometry, message] of BAD_GEOMETRIES) {
+        assert.throws(() => wkp.encode(geometry, 6), (e) => e instanceof TypeError && message.test(e.message), JSON.stringify(geometry));
+    }
+    assert.throws(() => wkp.encodeFloats([[0, 0], [NaN, 0]], [5, 5]), /^TypeError: floats must contain only finite numbers$/);
+    assert.throws(() => wkp.encodeFloats([[0, 0], [0]], [5, 5]), /^TypeError: floats rows must each have exactly 2 values$/);
+});
+
+test('every geometry type round-trips in 2D, 3D and 4D (web)', async () => {
+    const wkp = await createWkp();
+    const pos = (d, i) => Array.from({ length: d }, (_, k) => i + k / 10);
+    for (const d of [2, 3, 4]) {
+        const ring = [pos(d, 0), pos(d, 1), pos(d, 2), pos(d, 0)];
+        const geometries = [
+            { type: 'Point', coordinates: pos(d, 5) },
+            { type: 'LineString', coordinates: ring.slice(0, 3) },
+            { type: 'Polygon', coordinates: [ring, ring] },
+            { type: 'MultiPoint', coordinates: ring.slice(0, 2) },
+            { type: 'MultiLineString', coordinates: [ring.slice(0, 2), ring] },
+            { type: 'MultiPolygon', coordinates: [[ring], [ring, ring]] }
+        ];
+        for (const geometry of geometries) {
+            assert.deepEqual(wkp.decode(wkp.encode(geometry, 6)).geometry, geometry, `${geometry.type} ${d}D`);
+        }
+    }
+    for (const d of [1, 2, 3, 4]) {
+        const rows = [pos(d, 1), pos(d, -2), pos(d, 3)];
+        assert.deepEqual(wkp.decodeFloats(wkp.encodeFloats(rows, new Array(d).fill(3)), new Array(d).fill(3)), rows, `${d}D floats`);
+    }
+});
