@@ -626,6 +626,10 @@ function decodeFloats(encodedValue, precisions, ctx = _defaultCtx) {
     return toRows(decoded, 0, decoded.length / dimensions, dimensions);
 }
 
+const { runSelfTest, coreVersion } = core;
+
+// Keep every entry `name` or `name: identifier`: Node's ESM loader finds the named exports of a
+// CommonJS module by scanning this literal, and stops at anything else (e.g. `x: core.x`).
 module.exports = {
     bindingVersion: BINDING_VERSION,
     coreCompatibility: CORE_COMPATIBILITY,
@@ -639,7 +643,7 @@ module.exports = {
     encodeFloats,
     decodeFloats,
     decodeFloatsArray,
-    runSelfTest: core.runSelfTest,
-    coreVersion: core.coreVersion,
+    runSelfTest,
+    coreVersion,
     EncodedGeometryType
 };

@@ -21,6 +21,8 @@ Release tags:
   was reported as an invalid argument instead of malformed input. In C# that is now
   `FormatException` instead of `ArgumentException`; in JavaScript (Node) a plain `Error` instead
   of `TypeError`.
+- @wkpjs/node: `import { coreVersion, runSelfTest, EncodedGeometryType } from '@wkpjs/node'`
+  failed in ES modules; only the exports before those were visible to `import`.
 
 ---
 
