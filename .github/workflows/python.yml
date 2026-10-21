@@ -48,6 +48,11 @@ jobs:
       - name: Run tests
         run: pytest bindings/python/tests -ra -v
 
+      # The type stubs (__init__.pyi) must match the module as installed.
+      - name: Check type stubs
+        working-directory: ${{ runner.temp }}
+        run: python -m mypy.stubtest wkp
+
   build_sdist:
     name: Build source distribution
     needs: validate-tag

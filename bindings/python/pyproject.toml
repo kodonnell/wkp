@@ -45,6 +45,9 @@ dev = [
     "maturin>=1.8,<2",
     "pytest",
     "polyline",
+    # `python -m mypy.stubtest wkp` checks __init__.pyi against the module (run in CI).
+    "mypy",
+    "types-shapely",
 ]
 
 [tool.maturin]

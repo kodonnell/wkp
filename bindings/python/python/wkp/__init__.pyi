@@ -3,20 +3,34 @@
 from __future__ import annotations
 
 import enum
+from dataclasses import dataclass
 from typing import Sequence, Union
 
 import numpy as np
 from numpy.typing import NDArray
 import shapely.geometry.base
+from typing_extensions import final
 
 __version__: str
 __core_version__: str
 __core_compatibility__: str
 
-__all__: list[str]
+__all__ = [
+    "Context",
+    "DecodedGeometry",
+    "GeometryFrame",
+    "decode",
+    "decode_frame",
+    "decode_header",
+    "encode",
+    "encode_frame",
+    "encode_floats",
+    "decode_floats",
+    "decode_floats_array",
+]
 
 
-class EncodedGeometryType(enum.Enum):
+class EncodedGeometryType(enum.IntEnum):
     POINT = 1
     LINESTRING = 2
     POLYGON = 3
@@ -25,6 +39,8 @@ class EncodedGeometryType(enum.Enum):
     MULTIPOLYGON = 6
 
 
+# A native (pyo3) class: it cannot be subclassed.
+@final
 class Context:
     """
     A native buffer pool.  Buffers grow to fit the largest geometry processed,
@@ -37,6 +53,7 @@ class Context:
     def __init__(self) -> None: ...
 
 
+@dataclass
 class DecodedGeometry:
     """Result of :func:`decode`."""
 
@@ -45,15 +62,8 @@ class DecodedGeometry:
     dimensions: int
     geometry: shapely.geometry.base.BaseGeometry
 
-    def __init__(
-        self,
-        version: int,
-        precision: int,
-        dimensions: int,
-        geometry: shapely.geometry.base.BaseGeometry,
-    ) -> None: ...
 
-
+@dataclass
 class GeometryFrame:
     """
     Low-level flat representation of a decoded WKP geometry.
@@ -72,17 +82,6 @@ class GeometryFrame:
     segment_point_counts: NDArray[np.uint64]
     group_segment_counts: NDArray[np.uint64]
 
-    def __init__(
-        self,
-        version: int,
-        precision: int,
-        dimensions: int,
-        geometry_type: int,
-        coords: NDArray[np.float64],
-        segment_point_counts: NDArray[np.uint64],
-        group_segment_counts: NDArray[np.uint64],
-    ) -> None: ...
-
     def to_geometry(self) -> shapely.geometry.base.BaseGeometry:
         """Convert to a Shapely geometry object."""
         ...
@@ -98,7 +97,7 @@ class GeometryFrame:
 
     @classmethod
     def from_buffer(
-        cls, buffer: Union[str, bytes, bytearray, memoryview]
+        cls, buffer: Union[bytes, bytearray, memoryview]
     ) -> GeometryFrame:
         """Deserialize from a binary buffer produced by :meth:`to_buffer`."""
         ...

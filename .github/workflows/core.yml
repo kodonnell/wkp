@@ -32,6 +32,23 @@ jobs:
       - name: Check fixture manifest
         run: python3 scripts/check_fixture_manifest.py
 
+  # Licences, banned/duplicate crates and sources must pass. New RustSec advisories are reported
+  # but don't block unrelated changes (they arrive independently of the code).
+  deny:
+    name: cargo deny (${{ matrix.checks }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        checks: [advisories, bans licenses sources]
+    continue-on-error: ${{ matrix.checks == 'advisories' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check ${{ matrix.checks }}
+
   msrv:
     name: Minimum supported Rust (core and C ABI)
     runs-on: ubuntu-latest
