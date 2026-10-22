@@ -11,6 +11,7 @@ const {
     encode,
     encodeFloats,
     encodeFrame,
+    GeometryType,
     EncodedGeometryType
 } = require('..');
 
@@ -71,11 +72,13 @@ test('decodeHeader and generic encode/decode path', () => {
     const geometry = { type: 'LineString', coordinates: [[0.1, 0.2], [1.1, 1.2], [2.1, 2.2]] };
 
     const encoded = encode(geometry, 6);
-    const [version, precision, dimensions, geometryType] = decodeHeader(encoded);
+    const { version, precision, dimensions, geometryType } = decodeHeader(encoded);
     assert.equal(version, 1);
     assert.equal(precision, 6);
     assert.equal(dimensions, 2);
-    assert.equal(geometryType, EncodedGeometryType.LINESTRING);
+    assert.equal(geometryType, GeometryType.LINESTRING);
+    // The pre-0.7 name still works.
+    assert.equal(EncodedGeometryType, GeometryType);
 
     const decoded = decode(encoded);
     assertGeometryClose(decoded.geometry, geometry);

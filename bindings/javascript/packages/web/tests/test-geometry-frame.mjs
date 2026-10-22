@@ -177,7 +177,7 @@ test('decode accepts strings and byte arrays alike, and rejects non-ASCII string
     host.set(bytes, 5);
     for (const input of [encoded, bytes, host.subarray(5)]) {
         assertGeometryClose(wkp.decode(input).geometry, geometry);
-        assert.deepEqual(wkp.decodeHeader(input), [1, 6, 3, 2]);
+        assert.deepEqual(wkp.decodeHeader(input), { version: 1, precision: 6, dimensions: 3, geometryType: 2 });
     }
     // Non-ASCII takes the UTF-8 restaging path and must still be rejected, not misread.
     assert.throws(() => wkp.decode(encoded + 'Ŀ'));

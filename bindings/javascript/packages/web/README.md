@@ -81,7 +81,7 @@ Use `createWkp()` to load the WASM module. All functions are returned on the `wk
 ```js
 wkp.encode(geometry, precision, ctx?)    // → string
 wkp.decode(encoded, ctx?)               // → { geometry, version, precision, dimensions }
-wkp.decodeHeader(encoded)               // → [version, precision, dimensions, geometryType]
+wkp.decodeHeader(encoded)               // → { version, precision, dimensions, geometryType }
 ```
 
 ### GeometryFrame — low-level flat representation

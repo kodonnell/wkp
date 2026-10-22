@@ -101,7 +101,7 @@ if (typeof core.runSelfTest !== 'function') {
 }
 core.runSelfTest();
 
-const EncodedGeometryType = Object.freeze({ ...core.geometryTypes() });
+const GeometryType = Object.freeze({ ...core.geometryTypes() });
 
 class Context { }
 
@@ -256,17 +256,17 @@ function buildGeometryFrame(geometry, dimensions) {
     const parts = geometry.coordinates;
 
     if (geometry.type === 'Point') {
-        geometryType = EncodedGeometryType.POINT;
+        geometryType = GeometryType.POINT;
         label = 'point coordinate';
         segments = [[parts]];
         groupSegmentCounts = [1];
     } else if (geometry.type === 'LineString') {
-        geometryType = EncodedGeometryType.LINESTRING;
+        geometryType = GeometryType.LINESTRING;
         label = 'linestring coordinates';
         segments = [parts];
         groupSegmentCounts = [1];
     } else if (geometry.type === 'Polygon') {
-        geometryType = EncodedGeometryType.POLYGON;
+        geometryType = GeometryType.POLYGON;
         label = 'polygon ring';
         if (!Array.isArray(parts) || parts.length === 0) {
             throw new TypeError('polygon coordinates must contain at least one ring');
@@ -274,7 +274,7 @@ function buildGeometryFrame(geometry, dimensions) {
         segments = parts;
         groupSegmentCounts = [parts.length];
     } else if (geometry.type === 'MultiPoint') {
-        geometryType = EncodedGeometryType.MULTIPOINT;
+        geometryType = GeometryType.MULTIPOINT;
         label = 'multipoint point';
         if (!Array.isArray(parts) || parts.length === 0) {
             throw new TypeError('multipoint coordinates must contain at least one point');
@@ -282,7 +282,7 @@ function buildGeometryFrame(geometry, dimensions) {
         segments = parts.map((point) => [point]);
         groupSegmentCounts = new Array(parts.length).fill(1);
     } else if (geometry.type === 'MultiLineString') {
-        geometryType = EncodedGeometryType.MULTILINESTRING;
+        geometryType = GeometryType.MULTILINESTRING;
         label = 'multilinestring line';
         if (!Array.isArray(parts) || parts.length === 0) {
             throw new TypeError('multilinestring coordinates must contain at least one line');
@@ -290,7 +290,7 @@ function buildGeometryFrame(geometry, dimensions) {
         segments = parts;
         groupSegmentCounts = new Array(parts.length).fill(1);
     } else if (geometry.type === 'MultiPolygon') {
-        geometryType = EncodedGeometryType.MULTIPOLYGON;
+        geometryType = GeometryType.MULTIPOLYGON;
         label = 'multipolygon ring';
         if (!Array.isArray(parts) || parts.length === 0) {
             throw new TypeError('multipolygon coordinates must contain at least one polygon');
@@ -378,7 +378,7 @@ function frameToGeometry(geometryType, dimensions, coords, segmentPointCounts, g
         return rows;
     };
 
-    if (geometryType === EncodedGeometryType.POINT) {
+    if (geometryType === GeometryType.POINT) {
         const point = readSegment();
         if (point.length !== 1) {
             throw new TypeError('Decoded POINT frame must contain exactly one coordinate');
@@ -386,11 +386,11 @@ function frameToGeometry(geometryType, dimensions, coords, segmentPointCounts, g
         return { type: 'Point', coordinates: point[0] };
     }
 
-    if (geometryType === EncodedGeometryType.LINESTRING) {
+    if (geometryType === GeometryType.LINESTRING) {
         return { type: 'LineString', coordinates: readSegment() };
     }
 
-    if (geometryType === EncodedGeometryType.POLYGON) {
+    if (geometryType === GeometryType.POLYGON) {
         const rings = [];
         const ringCount = groupSegmentCounts[0] ?? 0;
         for (let i = 0; i < ringCount; i += 1) {
@@ -399,7 +399,7 @@ function frameToGeometry(geometryType, dimensions, coords, segmentPointCounts, g
         return { type: 'Polygon', coordinates: rings };
     }
 
-    if (geometryType === EncodedGeometryType.MULTIPOINT) {
+    if (geometryType === GeometryType.MULTIPOINT) {
         const points = [];
         for (let i = 0; i < groupSegmentCounts.length; i += 1) {
             const point = readSegment();
@@ -411,7 +411,7 @@ function frameToGeometry(geometryType, dimensions, coords, segmentPointCounts, g
         return { type: 'MultiPoint', coordinates: points };
     }
 
-    if (geometryType === EncodedGeometryType.MULTILINESTRING) {
+    if (geometryType === GeometryType.MULTILINESTRING) {
         const lines = [];
         for (let i = 0; i < groupSegmentCounts.length; i += 1) {
             lines.push(readSegment());
@@ -419,7 +419,7 @@ function frameToGeometry(geometryType, dimensions, coords, segmentPointCounts, g
         return { type: 'MultiLineString', coordinates: lines };
     }
 
-    if (geometryType === EncodedGeometryType.MULTIPOLYGON) {
+    if (geometryType === GeometryType.MULTIPOLYGON) {
         const polygons = [];
         for (let groupIndex = 0; groupIndex < groupSegmentCounts.length; groupIndex += 1) {
             const ringCount = groupSegmentCounts[groupIndex];
@@ -452,7 +452,7 @@ class GeometryFrame {
      * @param {number} opts.version
      * @param {number} opts.precision
      * @param {number} opts.dimensions
-     * @param {number} opts.geometryType  - EncodedGeometryType value
+     * @param {number} opts.geometryType  - GeometryType value
      * @param {Float64Array} opts.coords  - flat coordinates [x0,y0,x1,y1,...]
      * @param {Uint32Array}  opts.segmentPointCounts
      * @param {Uint32Array}  opts.groupSegmentCounts
@@ -545,8 +545,8 @@ class GeometryFrame {
 
 function decodeHeader(encodedValue) {
     const encoded = normalizeEncodedBytes(encodedValue);
-    const header = core.decodeGeometryHeader(encoded);
-    return [header[0], header[1], header[2], header[3]];
+    const [version, precision, dimensions, geometryType] = core.decodeGeometryHeader(encoded);
+    return { version, precision, dimensions, geometryType };
 }
 
 function decodeFrameRaw(encodedValue) {
@@ -648,5 +648,7 @@ module.exports = {
     decodeFloatsArray,
     runSelfTest,
     coreVersion,
-    EncodedGeometryType
+    GeometryType,
+    /** @deprecated Renamed GeometryType in 0.7. */
+    EncodedGeometryType: GeometryType
 };

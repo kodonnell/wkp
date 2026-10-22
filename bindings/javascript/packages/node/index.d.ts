@@ -47,7 +47,7 @@ export interface DecodedGeometry {
 
 export declare class Context { }
 
-export declare const EncodedGeometryType: {
+export declare const GeometryType: {
     readonly POINT: 1;
     readonly LINESTRING: 2;
     readonly POLYGON: 3;
@@ -56,7 +56,11 @@ export declare const EncodedGeometryType: {
     readonly MULTIPOLYGON: 6;
 };
 
+/** @deprecated Renamed GeometryType in 0.7. */
+export declare const EncodedGeometryType: typeof GeometryType;
+
 /** Encoded WKP: an ASCII string or its bytes (a Uint8Array, including a Node Buffer). */
+export type Encoded = string | Uint8Array;
 
 export interface GeometryFrameInit {
     version: number;
@@ -87,7 +91,15 @@ export declare class GeometryFrame {
 /** Encoded output is an ASCII string. */
 export function encode(geometry: Geometry, precision: number, ctx?: Context): string;
 export function decode(encoded: Encoded, ctx?: Context): DecodedGeometry;
-export function decodeHeader(encoded: Encoded): [number, number, number, number];
+/** The four header fields of an encoded geometry. */
+export interface Header {
+    version: number;
+    precision: number;
+    dimensions: number;
+    geometryType: number;
+}
+
+export function decodeHeader(encoded: Encoded): Header;
 export function decodeFrame(encoded: Encoded, ctx?: Context): GeometryFrame;
 export function encodeFrame(frame: GeometryFrame, ctx?: Context): string;
 export function encodeFloats(floats: number[][], precisions: number | number[], ctx?: Context): string;

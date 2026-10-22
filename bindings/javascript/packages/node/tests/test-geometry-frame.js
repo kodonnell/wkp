@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { GeometryFrame, decode, decodeFrame, encode, encodeFrame, EncodedGeometryType } = require('..');
+const { GeometryFrame, decode, decodeFrame, encode, encodeFrame, GeometryType } = require('..');
 
 function assertClose(a, b, epsilon = 1e-6) {
     assert.ok(Math.abs(a - b) <= epsilon, `expected ${a} ≈ ${b} (epsilon ${epsilon})`);

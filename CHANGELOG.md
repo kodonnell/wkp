@@ -27,6 +27,17 @@ not change: anything 0.6 encoded decodes the same in 0.7.
   - Python: drop `.decode("ascii")` on results; use `.encode("ascii")` where you need `bytes`.
   - Node: `.toString()` on the result still works; Buffer-only methods do not. Use
     `Buffer.from(s, 'latin1')` where you need bytes.
+- **The geometry type enum is `GeometryType` everywhere** (Python and JavaScript called it
+  `EncodedGeometryType`; that name still works in 0.7 as a deprecated alias, and warns in
+  Python).
+- **Headers have named fields everywhere.** Python's `decode_header` returns a `Header`
+  NamedTuple (so tuple unpacking still works) whose `geometry_type` is a `GeometryType`;
+  `decode_frame` also sets `GeometryFrame.geometry_type` to a `GeometryType` (an `IntEnum`, so it
+  still compares equal to ints). JavaScript's `decodeHeader` returns
+  `{ version, precision, dimensions, geometryType }` instead of an array: replace
+  `const [v, p, d, t] = decodeHeader(s)` with `const { version, precision, dimensions,
+  geometryType } = decodeHeader(s)`. .NET's `Header` is no longer a positional record (it keeps
+  its constructor, properties and value equality, but has no `Deconstruct`).
 - Encoding enforces the structure `SPEC.md` requires of each geometry type: one point for a
   Point, at least two points per linestring, one group for a Polygon, one point per MultiPoint
   part, one linestring per MultiLineString part. Anything else is an invalid argument; before, it

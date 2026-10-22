@@ -41,7 +41,7 @@ def test_decode_header_basic():
     assert version == 1
     assert precision == 5
     assert dimensions == 2
-    assert geom_type == wkp.EncodedGeometryType.LINESTRING.value
+    assert geom_type == wkp.GeometryType.LINESTRING.value
 
 
 def test_invalid_precision_and_malformed_input():
@@ -149,7 +149,7 @@ def test_nan_z_still_reports_the_core_error():
 
 
 def test_decoding_more_than_3_dimensions_to_shapely_is_a_clear_error():
-    frame = wkp.GeometryFrame(1, 5, 4, wkp.EncodedGeometryType.POINT, np.array([[1.0, 2.0, 3.0, 4.0]]), np.array([1]), np.array([1]))
+    frame = wkp.GeometryFrame(1, 5, 4, wkp.GeometryType.POINT, np.array([[1.0, 2.0, 3.0, 4.0]]), np.array([1]), np.array([1]))
     encoded = wkp.encode_frame(frame)
     assert wkp.decode_frame(encoded) == frame
     with pytest.raises(ValueError, match="at most 3"):
@@ -159,9 +159,25 @@ def test_decoding_more_than_3_dimensions_to_shapely_is_a_clear_error():
 
 
 def test_public_names():
-    assert "EncodedGeometryType" in wkp.__all__
+    assert {"GeometryType", "Header"} <= set(wkp.__all__)
     # The documented parameter name works as a keyword.
     encoded = wkp.encode(Point(1, 2), 5)
     assert wkp.decode(encoded=encoded).geometry.equals(Point(1, 2))
     assert wkp.decode_frame(encoded=encoded).dimensions == 2
     assert wkp.decode_header(encoded=encoded) == (1, 5, 2, 1)
+
+
+def test_header_is_a_named_tuple_with_a_geometry_type():
+    header = wkp.decode_header(wkp.encode(LineString([(0, 0), (1, 1)]), 6))
+    assert header == wkp.Header(version=1, precision=6, dimensions=2, geometry_type=wkp.GeometryType.LINESTRING)
+    assert header.geometry_type is wkp.GeometryType.LINESTRING
+    version, precision, dimensions, geometry_type = header
+    assert (version, precision, dimensions, geometry_type) == (1, 6, 2, 2)
+    assert wkp.decode_frame(wkp.encode(Point(1, 2), 5)).geometry_type is wkp.GeometryType.POINT
+
+
+def test_encoded_geometry_type_is_a_deprecated_alias():
+    with pytest.warns(DeprecationWarning, match="GeometryType"):
+        assert wkp.EncodedGeometryType is wkp.GeometryType
+    with pytest.raises(AttributeError):
+        wkp.NoSuchThing

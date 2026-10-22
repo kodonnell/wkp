@@ -193,7 +193,7 @@ def test_frames_compare_by_value():
 
 
 def test_to_buffer_accepts_list_coords():
-    frame = wkp.GeometryFrame(1, 5, 2, wkp.EncodedGeometryType.LINESTRING, [[0.0, 0.0], [1.0, 1.0]], [2], [1])
+    frame = wkp.GeometryFrame(1, 5, 2, wkp.GeometryType.LINESTRING, [[0.0, 0.0], [1.0, 1.0]], [2], [1])
     back = wkp.GeometryFrame.from_buffer(frame.to_buffer())
     np.testing.assert_array_equal(back.coords, [[0.0, 0.0], [1.0, 1.0]])
 

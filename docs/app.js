@@ -378,13 +378,16 @@ async function loadWebBindingVersion() {
 }
 
 function geometryTypeName(typeId) {
+    // GeometryType since @wkpjs/web 0.7 (EncodedGeometryType before): the page is deployed from
+    // the repo but loads the published package, so it may run against either.
+    const types = wkp.GeometryType ?? wkp.EncodedGeometryType;
     const mapping = {
-        [wkp.EncodedGeometryType.POINT]: 'POINT',
-        [wkp.EncodedGeometryType.LINESTRING]: 'LINESTRING',
-        [wkp.EncodedGeometryType.POLYGON]: 'POLYGON',
-        [wkp.EncodedGeometryType.MULTIPOINT]: 'MULTIPOINT',
-        [wkp.EncodedGeometryType.MULTILINESTRING]: 'MULTILINESTRING',
-        [wkp.EncodedGeometryType.MULTIPOLYGON]: 'MULTIPOLYGON'
+        [types.POINT]: 'POINT',
+        [types.LINESTRING]: 'LINESTRING',
+        [types.POLYGON]: 'POLYGON',
+        [types.MULTIPOINT]: 'MULTIPOINT',
+        [types.MULTILINESTRING]: 'MULTILINESTRING',
+        [types.MULTIPOLYGON]: 'MULTIPOLYGON'
     };
     return mapping[typeId] || `UNKNOWN (${typeId})`;
 }
@@ -394,7 +397,11 @@ function encodeGeometry(geometry, precision) {
 }
 
 function updateHeader(encoded) {
-    const [version, precision, dimensions, geometryType] = wkp.decodeHeader(encoded);
+    // An object since @wkpjs/web 0.7, an array before (see geometryTypeName).
+    const header = wkp.decodeHeader(encoded);
+    const { version, precision, dimensions, geometryType } = Array.isArray(header)
+        ? { version: header[0], precision: header[1], dimensions: header[2], geometryType: header[3] }
+        : header;
     renderInfoInline(ui.decodeHeaderMetrics, [
         { k: 'Version', v: String(version) },
         { k: 'Precision', v: String(precision) },

@@ -3,9 +3,11 @@ from __future__ import annotations
 import re
 import struct
 import threading
+import warnings
 from dataclasses import dataclass
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as dist_version
+from typing import NamedTuple
 
 import numpy as np
 import shapely
@@ -19,7 +21,8 @@ __core_compatibility__ = "0.6.x"
 __all__ = [
     "Context",
     "DecodedGeometry",
-    "EncodedGeometryType",
+    "GeometryType",
+    "Header",
     "GeometryFrame",
     "decode",
     "decode_frame",
@@ -32,7 +35,25 @@ __all__ = [
 ]
 
 
-EncodedGeometryType = _core.EncodedGeometryType
+GeometryType = _core.GeometryType
+_GEOMETRY_TYPE_BY_CODE = {t.value: t for t in GeometryType}
+
+
+class Header(NamedTuple):
+    """The four header fields of an encoded geometry (a tuple, so it also unpacks)."""
+
+    version: int
+    precision: int
+    dimensions: int
+    geometry_type: GeometryType
+
+
+def __getattr__(name: str):
+    # EncodedGeometryType was renamed GeometryType in 0.7.
+    if name == "EncodedGeometryType":
+        warnings.warn("wkp.EncodedGeometryType is deprecated; use wkp.GeometryType", DeprecationWarning, stacklevel=2)
+        return GeometryType
+    raise AttributeError(f"module 'wkp' has no attribute {name!r}")
 Context = _core.Context
 
 
@@ -265,22 +286,22 @@ class GeometryFrame:
 # Header
 # ---------------------------------------------------------------------------
 
-def decode_header(encoded) -> tuple[int, int, int, int]:
-    """``(version, precision, dimensions, geometry_type)`` from the header of a WKP geometry,
-    without decoding the rest of it."""
-    return _core.decode_geometry_header(_as_encoded_bytes(encoded))
+def decode_header(encoded) -> Header:
+    """The :class:`Header` of a WKP geometry, without decoding the rest of it."""
+    version, precision, dimensions, geometry_type = _core.decode_geometry_header(_as_encoded_bytes(encoded))
+    return Header(version, precision, dimensions, _GEOMETRY_TYPE_BY_CODE[geometry_type])
 
 
 # ---------------------------------------------------------------------------
 # Geometry ↔ frame conversion helpers
 # ---------------------------------------------------------------------------
 
-_POINT = EncodedGeometryType.POINT.value
-_LINESTRING = EncodedGeometryType.LINESTRING.value
-_POLYGON = EncodedGeometryType.POLYGON.value
-_MULTIPOINT = EncodedGeometryType.MULTIPOINT.value
-_MULTILINESTRING = EncodedGeometryType.MULTILINESTRING.value
-_MULTIPOLYGON = EncodedGeometryType.MULTIPOLYGON.value
+_POINT = GeometryType.POINT.value
+_LINESTRING = GeometryType.LINESTRING.value
+_POLYGON = GeometryType.POLYGON.value
+_MULTIPOINT = GeometryType.MULTIPOINT.value
+_MULTILINESTRING = GeometryType.MULTILINESTRING.value
+_MULTIPOLYGON = GeometryType.MULTIPOLYGON.value
 
 
 def _geometry_from_frame(geom_type: int, coords: np.ndarray, segment_point_counts, group_segment_counts):
@@ -430,7 +451,7 @@ def decode_frame(encoded, *, ctx=None) -> GeometryFrame:
         version=version,
         precision=precision,
         dimensions=dimensions,
-        geometry_type=geom_type,
+        geometry_type=_GEOMETRY_TYPE_BY_CODE[geom_type],
         coords=_as_f64_c(coords),
         segment_point_counts=np.asarray(seg_counts, dtype=np.uint64),
         group_segment_counts=np.asarray(grp_counts, dtype=np.uint64),

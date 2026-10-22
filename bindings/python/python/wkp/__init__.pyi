@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import enum
 from dataclasses import dataclass
-from typing import ClassVar, Sequence, Union, final
+from typing import ClassVar, NamedTuple, Sequence, Union, final
 
 import numpy as np
 from numpy.typing import NDArray
 import shapely.geometry.base
+from typing_extensions import deprecated
 
 __version__: str
 __core_version__: str
@@ -17,8 +18,9 @@ __core_compatibility__: str
 __all__ = [
     "Context",
     "DecodedGeometry",
-    "EncodedGeometryType",
     "GeometryFrame",
+    "GeometryType",
+    "Header",
     "decode",
     "decode_frame",
     "decode_header",
@@ -30,6 +32,16 @@ __all__ = [
 ]
 
 
+class GeometryType(enum.IntEnum):
+    POINT = 1
+    LINESTRING = 2
+    POLYGON = 3
+    MULTIPOINT = 4
+    MULTILINESTRING = 5
+    MULTIPOLYGON = 6
+
+
+@deprecated("EncodedGeometryType was renamed GeometryType in 0.7")
 class EncodedGeometryType(enum.IntEnum):
     POINT = 1
     LINESTRING = 2
@@ -37,6 +49,15 @@ class EncodedGeometryType(enum.IntEnum):
     MULTIPOINT = 4
     MULTILINESTRING = 5
     MULTIPOLYGON = 6
+
+
+class Header(NamedTuple):
+    """The four header fields of an encoded geometry (a tuple, so it also unpacks)."""
+
+    version: int
+    precision: int
+    dimensions: int
+    geometry_type: GeometryType
 
 
 # A native (pyo3) class: it cannot be subclassed.
@@ -150,11 +171,11 @@ def encode_frame(
 
 def decode_header(
     encoded: Union[str, bytes, bytearray, memoryview],
-) -> tuple[int, int, int, int]:
+) -> Header:
     """
     Decode only the WKP header without decoding coordinates.
 
-    Returns ``(version, precision, dimensions, geometry_type)``.
+    Returns a :class:`Header`, ``(version, precision, dimensions, geometry_type)``.
     """
     ...
 

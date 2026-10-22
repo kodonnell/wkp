@@ -17,8 +17,31 @@ public enum GeometryType
     MultiPolygon = 6,
 }
 
+// Not a positional record, so that a field added later does not change a Deconstruct signature.
 /// <summary>The four header fields of an encoded geometry.</summary>
-public readonly record struct Header(int Version, int Precision, int Dimensions, GeometryType GeometryType);
+public readonly record struct Header
+{
+    /// <summary>Creates a header.</summary>
+    public Header(int version, int precision, int dimensions, GeometryType geometryType)
+    {
+        Version = version;
+        Precision = precision;
+        Dimensions = dimensions;
+        GeometryType = geometryType;
+    }
+
+    /// <summary>Format version.</summary>
+    public int Version { get; init; }
+
+    /// <summary>Decimal places kept.</summary>
+    public int Precision { get; init; }
+
+    /// <summary>Values per point.</summary>
+    public int Dimensions { get; init; }
+
+    /// <summary>The kind of geometry.</summary>
+    public GeometryType GeometryType { get; init; }
+}
 
 /// <summary>
 /// Flat form of a geometry: interleaved coordinates plus topology. Groups are polygons/parts and

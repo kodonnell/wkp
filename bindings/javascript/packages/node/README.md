@@ -54,7 +54,7 @@ node bindings/javascript/packages/node/benchmark/bench_flat_api.mjs --points=500
 ```js
 encode(geometry, precision, ctx?)     // → string
 decode(encoded, ctx?)                 // → { geometry, version, precision, dimensions }
-decodeHeader(encoded)                 // → [version, precision, dimensions, geometryType]
+decodeHeader(encoded)                 // → { version, precision, dimensions, geometryType }
 ```
 
 ### GeometryFrame — low-level flat representation

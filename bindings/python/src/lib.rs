@@ -241,12 +241,12 @@ fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
         members.set_item(name, code)?;
     }
     let kwargs = PyDict::new(py);
-    kwargs.set_item("module", "wkp._core")?;
+    // Public as wkp.GeometryType, which is also where pickle finds it.
     let enum_cls = py
         .import("enum")?
         .getattr("IntEnum")?
-        .call(("EncodedGeometryType", members), Some(&kwargs))?;
-    m.add("EncodedGeometryType", enum_cls)?;
+        .call(("GeometryType", members), Some(&kwargs))?;
+    m.add("GeometryType", enum_cls)?;
 
     m.add_function(wrap_pyfunction!(core_version, m)?)?;
     m.add_function(wrap_pyfunction!(run_self_test, m)?)?;

@@ -55,11 +55,12 @@ test('roundtrip with explicit context (web wasm)', async () => {
     const geometry = { type: 'LineString', coordinates: [[0.1, 0.2], [1.1, 1.2], [2.1, 2.2]] };
 
     const encoded = wkp.encode(geometry, 6, ctx);
-    const [version, precision, dimensions, geometryType] = wkp.decodeHeader(encoded);
+    const { version, precision, dimensions, geometryType } = wkp.decodeHeader(encoded);
     assert.equal(version, 1);
     assert.equal(precision, 6);
     assert.equal(dimensions, 2);
-    assert.equal(geometryType, wkp.EncodedGeometryType.LINESTRING);
+    assert.equal(geometryType, wkp.GeometryType.LINESTRING);
+    assert.equal(wkp.EncodedGeometryType, wkp.GeometryType);
 
     const decoded = wkp.decode(encoded, ctx);
     assertGeometryClose(decoded.geometry, geometry);
