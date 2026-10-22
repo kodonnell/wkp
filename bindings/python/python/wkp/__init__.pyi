@@ -21,6 +21,7 @@ __all__ = [
     "GeometryFrame",
     "GeometryType",
     "Header",
+    "WkpError",
     "decode",
     "decode_frame",
     "decode_header",
@@ -30,6 +31,19 @@ __all__ = [
     "decode_floats",
     "decode_floats_array",
 ]
+
+
+class WkpError(ValueError):
+    """
+    An input wkp cannot encode or decode. ``code`` is ``"INVALID_ARGUMENT"`` (an argument is
+    out of range or inconsistent) or ``"MALFORMED_INPUT"`` (the encoded data is not valid WKP).
+    A ``ValueError``, so existing ``except ValueError`` handlers still catch it. Arguments of the
+    wrong type raise ``TypeError`` instead.
+    """
+
+    code: str
+
+    def __init__(self, message: str, code: str = "INVALID_ARGUMENT") -> None: ...
 
 
 class GeometryType(enum.IntEnum):

@@ -12,7 +12,8 @@ const {
     encodeFloats,
     encodeFrame,
     GeometryType,
-    EncodedGeometryType
+    EncodedGeometryType,
+    WkpError
 } = require('..');
 
 function assertGeometryClose(actual, expected, epsilon = 1e-6) {
@@ -84,9 +85,13 @@ test('decodeHeader and generic encode/decode path', () => {
     assertGeometryClose(decoded.geometry, geometry);
 });
 
-test('invalid precision and malformed input surface clear errors', () => {
-    assert.throws(() => encode({ type: 'Point', coordinates: [0, 0] }, 9999));
-    assert.throws(() => decode('@@'));
+test('the core rejects inputs with a WkpError and a code', () => {
+    const isWkpError = (code) => (e) => e instanceof WkpError && e.code === code && e.name === 'WkpError';
+    assert.throws(() => encode({ type: 'Point', coordinates: [0, 0] }, 9999), isWkpError('INVALID_ARGUMENT'));
+    assert.throws(() => decode('@@'), isWkpError('MALFORMED_INPUT'));
+    assert.throws(() => decodeHeader('@DAF??'), isWkpError('MALFORMED_INPUT'));
+    // A one-point LineString breaks SPEC.md's structure rules.
+    assert.throws(() => encode({ type: 'LineString', coordinates: [[0, 0]] }, 5), isWkpError('INVALID_ARGUMENT'));
 });
 
 test('a fractional precision is rejected, not truncated', () => {

@@ -21,6 +21,7 @@ __core_compatibility__ = "0.6.x"
 __all__ = [
     "Context",
     "DecodedGeometry",
+    "WkpError",
     "GeometryType",
     "Header",
     "GeometryFrame",
@@ -33,6 +34,17 @@ __all__ = [
     "decode_floats",
     "decode_floats_array",
 ]
+
+
+class WkpError(ValueError):
+    """An input wkp cannot encode or decode. ``code`` is ``"INVALID_ARGUMENT"`` (an argument is
+    out of range or inconsistent) or ``"MALFORMED_INPUT"`` (the encoded data is not valid WKP). A
+    ``ValueError``, so existing ``except ValueError`` handlers still catch it. Arguments of the
+    wrong type raise ``TypeError`` instead."""
+
+    def __init__(self, message: str, code: str = "INVALID_ARGUMENT"):
+        super().__init__(message)
+        self.code = code
 
 
 GeometryType = _core.GeometryType
@@ -152,7 +164,7 @@ def _normalize_precisions(precisions) -> list[int]:
         return [int(precisions)]
     values = [int(p) for p in list(precisions)]
     if len(values) == 0:
-        raise ValueError("precisions cannot be empty")
+        raise WkpError("precisions cannot be empty")
     return values
 
 
@@ -216,7 +228,7 @@ class GeometryFrame:
         grp = np.asarray(self.group_segment_counts, dtype=np.int64)
         # A frame built by hand may be inconsistent; one from the decoder never is.
         if len(seg) == 0 or seg.sum() != len(coords) or grp.sum() != len(seg):
-            raise ValueError("Frame segment/group counts do not match its coordinates")
+            raise WkpError("Frame segment/group counts do not match its coordinates")
         return _geometry_from_frame(self.geometry_type, coords, seg, grp)
 
     def to_buffer(self) -> bytes:
@@ -235,14 +247,14 @@ class GeometryFrame:
           uint32[segment_count]       segment_point_counts
           uint32[group_count]         group_segment_counts
 
-        Raises ``ValueError`` if a count does not fit in uint32.
+        Raises :class:`WkpError` if a count does not fit in uint32.
         """
         coords_flat = _as_f64_c(self.coords).ravel()
         seg = np.asarray(self.segment_point_counts, dtype=np.uint64)
         grp = np.asarray(self.group_segment_counts, dtype=np.uint64)
         # The buffer format stores counts as uint32; a plain cast would silently wrap.
         if (seg.size and seg.max() > _UINT32_MAX) or (grp.size and grp.max() > _UINT32_MAX):
-            raise ValueError("a segment or group count is too large for the buffer format (uint32)")
+            raise WkpError("a segment or group count is too large for the buffer format (uint32)")
         seg = seg.astype(np.uint32)
         grp = grp.astype(np.uint32)
         header = struct.pack(
@@ -314,16 +326,16 @@ def _geometry_from_frame(geom_type: int, coords: np.ndarray, segment_point_count
     # Points and lines first, without numpy work: they are the common case and small calls.
     if geom_type == _POINT:
         if len(grp) != 1 or grp[0] != 1:
-            raise ValueError("Expected 1 segment for POINT geometry")
+            raise WkpError("Expected 1 segment for POINT geometry")
         if seg[0] != 1:
-            raise ValueError(f"Expected 1 point for POINT geometry, got {seg[0]}")
+            raise WkpError(f"Expected 1 point for POINT geometry, got {seg[0]}")
         return shapely.points(coords[0])
 
     if geom_type == _LINESTRING:
         if len(grp) != 1 or grp[0] != 1:
-            raise ValueError("Expected 1 segment for LINESTRING geometry")
+            raise WkpError("Expected 1 segment for LINESTRING geometry")
         if seg[0] < 2:
-            raise ValueError(f"Expected at least 2 points for LINESTRING geometry, got {seg[0]}")
+            raise WkpError(f"Expected at least 2 points for LINESTRING geometry, got {seg[0]}")
         return shapely.linestrings(coords)
 
     if geom_type == _POLYGON and len(grp) == 1 and grp[0] == 1:
@@ -338,31 +350,31 @@ def _geometry_from_frame(geom_type: int, coords: np.ndarray, segment_point_count
 
     if geom_type == _POLYGON:
         if len(grp) != 1:
-            raise ValueError("Expected 1 polygon group")
+            raise WkpError("Expected 1 polygon group")
         if grp[0] == 0:
-            raise ValueError("Expected at least 1 ring for POLYGON")
+            raise WkpError("Expected at least 1 ring for POLYGON")
         rings = shapely.linearrings(coords, indices=segment_of_coord)
         return shapely.polygons(rings[0], holes=rings[1:] if len(rings) > 1 else None)
 
     if geom_type == _MULTIPOINT:
         if (grp != 1).any():
-            raise ValueError("Expected exactly one segment per MULTIPOINT part")
+            raise WkpError("Expected exactly one segment per MULTIPOINT part")
         if (seg != 1).any():
-            raise ValueError(f"Expected 1 point segment in MULTIPOINT, got {seg[seg != 1][0]}")
+            raise WkpError(f"Expected 1 point segment in MULTIPOINT, got {seg[seg != 1][0]}")
         return shapely.multipoints(coords)
 
     if geom_type == _MULTILINESTRING:
         if (grp != 1).any():
-            raise ValueError("Expected exactly one segment per MULTILINESTRING part")
+            raise WkpError("Expected exactly one segment per MULTILINESTRING part")
         return shapely.multilinestrings(shapely.linestrings(coords, indices=segment_of_coord))
 
     if geom_type == _MULTIPOLYGON:
         if (grp == 0).any():
-            raise ValueError("Expected at least 1 ring in MULTIPOLYGON polygon")
+            raise WkpError("Expected at least 1 ring in MULTIPOLYGON polygon")
         rings = shapely.linearrings(coords, indices=segment_of_coord)
         return shapely.multipolygons(shapely.polygons(rings, indices=group_of_segment))
 
-    raise ValueError(f"Unsupported geometry type in header: {geom_type}")
+    raise WkpError(f"Unsupported geometry type in header: {geom_type}")
 
 
 _GEOMETRY_TYPE_ERROR = (
@@ -377,7 +389,7 @@ _has_m = getattr(shapely, "has_m", None)  # Shapely >= 2.1; older versions drop 
 
 def _check_shapely_dimensions(dimensions: int) -> None:
     if dimensions > 3:
-        raise ValueError(
+        raise WkpError(
             f"cannot make a Shapely geometry with {dimensions} dimensions (at most 3: XYZ); "
             "use decode_frame to get the coordinates"
         )
@@ -390,14 +402,14 @@ def _geometry_to_frame(geom):
     does not grow with the number of parts and rings."""
     # isinstance checks: much cheaper than comparing shapely.get_type_id with GeometryType.
     if isinstance(geom, GeometryCollection):
-        raise ValueError("GeometryCollection is not supported by the current WKP core geometry frame ABI")
+        raise WkpError("GeometryCollection is not supported by the current WKP core geometry frame ABI")
     if not isinstance(geom, (Point, LineString, Polygon, MultiPoint, MultiLineString, MultiPolygon)):
         raise TypeError(_GEOMETRY_TYPE_ERROR)
     dims = shapely.get_coordinate_dimension(geom)
     if dims == 4:  # XYZM; XYM is 3 and caught in encode, where it fails
-        raise ValueError(_M_ERROR)
+        raise WkpError(_M_ERROR)
     if dims <= 0 or dims > 16:
-        raise ValueError(f"Unsupported geometry dimensions: {dims}")
+        raise WkpError(f"Unsupported geometry dimensions: {dims}")
     # A new C-contiguous float64 array.
     coords = shapely.get_coordinates(geom, include_z=dims == 3)
 
@@ -478,7 +490,7 @@ def encode_frame(frame: GeometryFrame, *, ctx=None) -> str:
     ctx = _resolve_context(ctx)
     coords = _as_f64_c(frame.coords)
     if coords.ndim != 2:
-        raise ValueError("frame.coords must be a 2D array")
+        raise WkpError("frame.coords must be a 2D array")
     grp = np.asarray(frame.group_segment_counts, dtype=np.uint64)
     seg = np.asarray(frame.segment_point_counts, dtype=np.uint64)
     return _core.encode_geometry_frame(ctx, frame.geometry_type, coords, frame.precision, seg, grp)
@@ -491,7 +503,7 @@ def encode(geom, precision: int, *, ctx=None) -> str:
         raise TypeError("precision must be an int")
 
     if getattr(geom, "is_empty", False):
-        raise ValueError("empty geometries are unsupported")
+        raise WkpError("empty geometries are unsupported")
 
     geom_type, coords, group_segment_counts, segment_point_counts = _geometry_to_frame(geom)
 
@@ -503,7 +515,7 @@ def encode(geom, precision: int, *, ctx=None) -> str:
         # An XYM geometry reads as XYZ with NaN Z values, which the core rejects. Checked only
         # after a failure, so valid 3D input pays nothing for it.
         if coords.shape[1] == 3 and _has_m is not None and _has_m(geom):
-            raise ValueError(_M_ERROR) from None
+            raise WkpError(_M_ERROR) from None
         raise
 
 
@@ -515,9 +527,9 @@ def encode_floats(floats, precisions, *, ctx=None) -> str:
     dimensions = len(p)
     values = np.asarray(floats, dtype=np.float64)
     if values.ndim != 2:
-        raise ValueError("floats must be a 2D array-like")
+        raise WkpError("floats must be a 2D array-like")
     if values.shape[1] != dimensions:
-        raise ValueError(f"floats must have {dimensions} columns")
+        raise WkpError(f"floats must have {dimensions} columns")
     values = _as_f64_c(values)
 
     return _core.encode_f64(ctx, values, dimensions, p)

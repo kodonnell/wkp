@@ -83,22 +83,28 @@ function assertCoreCompatibility(runtimeCoreVersion, bindingVersion, coreCompati
     }
 }
 
-function statusMessage(status, STATUS) {
+/**
+ * An input the WKP core rejects. `code` is `'INVALID_ARGUMENT'` (an argument is out of range or
+ * inconsistent) or `'MALFORMED_INPUT'` (the encoded data is not valid WKP). Arguments of the wrong
+ * type throw `TypeError` instead. One class for every `createWkp()` instance.
+ */
+export class WkpError extends Error {
+    constructor(message, code) {
+        super(message);
+        this.name = 'WkpError';
+        this.code = code;
+    }
+}
+
+// Status codes returned by the module (native/src/lib.rs).
+function coreError(status) {
     switch (status) {
-        case STATUS.INVALID_ARGUMENT:
-            return 'Invalid argument';
-        case STATUS.MALFORMED_INPUT:
-            return 'Malformed input';
-        case STATUS.ALLOCATION_FAILED:
-            return 'Allocation failed';
-        case STATUS.BUFFER_TOO_SMALL:
-            return 'Buffer too small';
-        case STATUS.LIMIT_EXCEEDED:
-            return 'Limit exceeded';
-        case STATUS.INTERNAL_ERROR:
-            return 'Internal error';
+        case 1:
+            return new WkpError('WKP core error: invalid argument', 'INVALID_ARGUMENT');
+        case 2:
+            return new WkpError('WKP core error: malformed input', 'MALFORMED_INPUT');
         default:
-            return `WKP error (status ${status})`;
+            return new Error(`WKP core error (status ${status})`);
     }
 }
 
@@ -448,16 +454,6 @@ export async function createWkp(options) {
     const native = await instantiateCore(options);
     const memory = native.memory;
 
-    const STATUS = Object.freeze({
-        OK: 0,
-        INVALID_ARGUMENT: 1,
-        MALFORMED_INPUT: 2,
-        ALLOCATION_FAILED: 3,
-        BUFFER_TOO_SMALL: 4,
-        LIMIT_EXCEEDED: 5,
-        INTERNAL_ERROR: 255
-    });
-
     const GeometryType = Object.freeze({
         POINT: 1,
         LINESTRING: 2,
@@ -468,8 +464,8 @@ export async function createWkp(options) {
     });
 
     const checkStatus = (status) => {
-        if (status !== STATUS.OK) {
-            throw new Error(statusMessage(status, STATUS));
+        if (status !== 0) {
+            throw coreError(status);
         }
     };
 
@@ -639,7 +635,7 @@ export async function createWkp(options) {
     }
 
     function runSelfTest() {
-        if (native.wkp_self_test() !== STATUS.OK) {
+        if (native.wkp_self_test() !== 0) {
             throw new Error('WKP core self-test failed');
         }
         return true;
@@ -823,6 +819,7 @@ export async function createWkp(options) {
         runSelfTest,
         coreVersion,
         GeometryType,
+        WkpError,
         /** @deprecated Renamed GeometryType in 0.7. */
         EncodedGeometryType: GeometryType
     };

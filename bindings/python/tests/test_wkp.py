@@ -181,3 +181,18 @@ def test_encoded_geometry_type_is_a_deprecated_alias():
         assert wkp.EncodedGeometryType is wkp.GeometryType
     with pytest.raises(AttributeError):
         wkp.NoSuchThing
+
+
+def test_errors_are_wkp_errors_with_a_code():
+    with pytest.raises(wkp.WkpError) as e:
+        wkp.decode("@@")
+    assert e.value.code == "MALFORMED_INPUT"
+    assert isinstance(e.value, ValueError)
+    with pytest.raises(wkp.WkpError) as e:
+        wkp.encode(Point(1, 2), 99)
+    assert e.value.code == "INVALID_ARGUMENT"
+    # Checks made by the package itself are WkpErrors too; wrong types stay TypeErrors.
+    with pytest.raises(wkp.WkpError):
+        wkp.encode_floats([[1.0, 2.0]], [5, 5, 5])
+    with pytest.raises(TypeError):
+        wkp.encode(Point(1, 2), "5")

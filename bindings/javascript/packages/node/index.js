@@ -43,13 +43,32 @@ function loadNative() {
 
 const native = loadNative();
 
-// Invalid arguments surface from the native layer with code "InvalidArg"; keep the historical
-// contract of throwing TypeError for those.
+/**
+ * An input the WKP core rejects. `code` is `'INVALID_ARGUMENT'` (an argument is out of range or
+ * inconsistent) or `'MALFORMED_INPUT'` (the encoded data is not valid WKP). Arguments of the wrong
+ * type throw `TypeError` instead.
+ */
+class WkpError extends Error {
+    constructor(message, code) {
+        super(message);
+        this.name = 'WkpError';
+        this.code = code;
+    }
+}
+
+const CORE_ERROR = 'WKP core error: ';
+
+// The addon reports core errors as `"WKP core error: <Display of wkp::Error>"` (native/src/lib.rs,
+// core_err). Anything else it throws (a value napi could not convert) is a TypeError.
 function wrapNative(fn) {
     return (...args) => {
         try {
             return fn(...args);
         } catch (error) {
+            if (error && typeof error.message === 'string' && error.message.startsWith(CORE_ERROR)) {
+                const code = error.message.endsWith('malformed input') ? 'MALFORMED_INPUT' : 'INVALID_ARGUMENT';
+                throw new WkpError(error.message, code);
+            }
             if (error && error.code === 'InvalidArg') {
                 throw new TypeError(error.message);
             }
@@ -649,6 +668,7 @@ module.exports = {
     runSelfTest,
     coreVersion,
     GeometryType,
+    WkpError,
     /** @deprecated Renamed GeometryType in 0.7. */
     EncodedGeometryType: GeometryType
 };

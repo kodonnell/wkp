@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { createWkp } from '../src/index.js';
+import { createWkp, WkpError } from '../src/index.js';
 
 function assertGeometryClose(actual, expected, epsilon = 1e-6) {
     assert.equal(actual.type, expected.type);
@@ -93,6 +93,16 @@ test('encode rejects malformed coordinates with TypeError (web)', async () => {
     }
     assert.throws(() => wkp.encodeFloats([[0, 0], [NaN, 0]], [5, 5]), /^TypeError: floats must contain only finite numbers$/);
     assert.throws(() => wkp.encodeFloats([[0, 0], [0]], [5, 5]), /^TypeError: floats rows must each have exactly 2 values$/);
+});
+
+test('the core rejects inputs with a WkpError and a code (web)', async () => {
+    const wkp = await createWkp();
+    const other = await createWkp();
+    const isWkpError = (code) => (e) => e instanceof WkpError && e instanceof other.WkpError && e.code === code;
+    assert.throws(() => wkp.encode({ type: 'Point', coordinates: [0, 0] }, 9999), isWkpError('INVALID_ARGUMENT'));
+    assert.throws(() => wkp.decode('@@'), isWkpError('MALFORMED_INPUT'));
+    assert.throws(() => wkp.decodeHeader('@DAF??'), isWkpError('MALFORMED_INPUT'));
+    assert.throws(() => wkp.encode({ type: 'LineString', coordinates: [[0, 0]] }, 5), isWkpError('INVALID_ARGUMENT'));
 });
 
 test('a fractional precision is rejected, not truncated (web)', async () => {

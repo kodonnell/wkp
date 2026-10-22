@@ -59,6 +59,16 @@ export declare const GeometryType: {
 /** @deprecated Renamed GeometryType in 0.7. */
 export declare const EncodedGeometryType: typeof GeometryType;
 
+/**
+ * An input the WKP core rejects. `code` is `'INVALID_ARGUMENT'` (an argument is out of range or
+ * inconsistent) or `'MALFORMED_INPUT'` (the encoded data is not valid WKP). Arguments of the
+ * wrong type throw `TypeError` instead.
+ */
+export declare class WkpError extends Error {
+    constructor(message: string, code: 'INVALID_ARGUMENT' | 'MALFORMED_INPUT');
+    code: 'INVALID_ARGUMENT' | 'MALFORMED_INPUT';
+}
+
 /** Encoded WKP: an ASCII string or its bytes (a Uint8Array, including a Node Buffer). */
 export type Encoded = string | Uint8Array;
 

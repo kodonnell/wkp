@@ -3,7 +3,8 @@
 use numpy::{PyArray1, PyArray2, PyArrayMethods, PyReadonlyArray2, PyUntypedArrayMethods};
 use pyo3::exceptions::{PyRuntimeError, PyTypeError, PyValueError};
 use pyo3::prelude::*;
-use pyo3::types::{PyBytes, PyDict, PyString, PyTuple};
+use pyo3::sync::PyOnceLock;
+use pyo3::types::{PyBytes, PyDict, PyString, PyTuple, PyType};
 use wkp::{Frame, GeometryType};
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -31,8 +32,28 @@ impl Context {
     }
 }
 
+/// `wkp.WkpError`, defined in Python (`python/wkp`); looked up on first use, after the package
+/// has finished importing.
+static WKP_ERROR: PyOnceLock<Py<PyType>> = PyOnceLock::new();
+
+/// A `wkp.WkpError` (a `ValueError`) with `code` `INVALID_ARGUMENT` or `MALFORMED_INPUT`.
 fn core_err(e: wkp::Error) -> PyErr {
-    PyValueError::new_err(format!("WKP core error: {e}"))
+    let code = match e {
+        wkp::Error::InvalidArgument => "INVALID_ARGUMENT",
+        wkp::Error::MalformedInput => "MALFORMED_INPUT",
+        _ => "INTERNAL_ERROR",
+    };
+    let message = format!("WKP core error: {e}");
+    Python::attach(|py| {
+        let cls = WKP_ERROR.get_or_try_init(py, || -> PyResult<_> {
+            Ok(py.import("wkp")?.getattr("WkpError")?.cast_into::<PyType>()?.unbind())
+        });
+        match cls {
+            Ok(cls) => PyErr::from_type(cls.bind(py).clone(), (message, code)),
+            // Only if the package itself is broken.
+            Err(_) => PyValueError::new_err(message),
+        }
+    })
 }
 
 fn run<T: Send>(py: Python<'_>, values: usize, f: impl Send + FnOnce() -> T) -> T {

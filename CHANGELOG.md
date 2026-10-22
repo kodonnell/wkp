@@ -38,6 +38,15 @@ not change: anything 0.6 encoded decodes the same in 0.7.
   `const [v, p, d, t] = decodeHeader(s)` with `const { version, precision, dimensions,
   geometryType } = decodeHeader(s)`. .NET's `Header` is no longer a positional record (it keeps
   its constructor, properties and value equality, but has no `Deconstruct`).
+- **Errors: `WkpError` with a `code`** (`INVALID_ARGUMENT` or `MALFORMED_INPUT`, the C ABI's
+  status names) in Python and JavaScript.
+  - Python: `wkp.WkpError` subclasses `ValueError`, so `except ValueError` still works. The
+    package's own checks (array shapes, frame structure, M values, ...) raise it too; wrong
+    argument types still raise `TypeError`.
+  - JavaScript: `WkpError` (exported by both packages; one class across `createWkp()`
+    instances in `@wkpjs/web`). Core errors were `TypeError` (invalid arguments) or `Error` in
+    `@wkpjs/node` and plain `Error`s in `@wkpjs/web`; argument-type checks still throw
+    `TypeError`.
 - Encoding enforces the structure `SPEC.md` requires of each geometry type: one point for a
   Point, at least two points per linestring, one group for a Polygon, one point per MultiPoint
   part, one linestring per MultiLineString part. Anything else is an invalid argument; before, it

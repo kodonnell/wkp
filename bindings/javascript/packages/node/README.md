@@ -85,7 +85,14 @@ dimension; a single number means one dimension.
 
 Precision is an integer from 0 to 63, and every `|value| × 10^precision` must be below 2^58
 (e.g. ±2.8 × 10^12 at precision 5). Geometries and float streams have 1 to 16 dimensions, and
-values must be finite. Anything else throws.
+values must be finite. Geometries must have the structure their type requires: one point for a Point, at
+least two per linestring, no empty parts.
+
+### Errors
+
+Inputs the core rejects throw `WkpError` (exported by the package) with `code` `'INVALID_ARGUMENT'` or
+`'MALFORMED_INPUT'` (the encoded data is not valid WKP). Arguments of the wrong type throw
+`TypeError`.
 
 ### Context
 
