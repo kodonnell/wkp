@@ -38,6 +38,30 @@ not change: anything 0.6 encoded decodes the same in 0.7.
 - Added `encode_frame` (the inverse of `decode_geometry`), `VERSION`, `MAX_PRECISION`, and
   `std::error::Error` for `Error`. Every public item is documented.
 
+### C ABI (`core.h`) — breaking
+- `wkp_context` is opaque: create it with `wkp_context_new()` (was a caller-allocated struct
+  passed to `wkp_context_init`) and free it with `wkp_context_free`. Its internals can now change
+  without breaking the ABI.
+- `wkp_encode_geometry_frame` takes `segment_point_counts, segment_count` before
+  `group_segment_counts, group_count`, matching `wkp_geometry_frame_f64`.
+- `wkp_status` is an `int32_t` with `#define`d values (an enum's size is compiler-dependent).
+  The never-returned `WKP_STATUS_ALLOCATION_FAILED`, `BUFFER_TOO_SMALL` and `LIMIT_EXCEEDED` are
+  gone.
+- Removed `wkp_basic_self_test` and the unused `wkp_size_buffer`.
+- `core.h` includes `_version.h` (`WKP_CORE_VERSION`). The header documents that results stay
+  valid until the next call on the context even if it fails, and that out-of-memory aborts.
+
+### C++ (`core.hpp`) — breaking
+- `throw_for_status` and `thread_ctx` moved to `wkp::core::detail`; `ensure_basic_self_test`
+  and `normalize_precisions` are gone (the core validates precisions). Exceptions say what went
+  wrong ("WKP: invalid argument" / "WKP: malformed input").
+
+### .NET — breaking
+- `Encode(...)` takes `segmentPointCounts` before `groupSegmentCounts`, matching
+  `GeometryFrame`.
+- `WkpContext` holds the native context in a `SafeHandle`, so it is freed exactly once even if
+  `Dispose` races a finalizer.
+
 ---
 
 ## [0.6.1] — 2026-10-22

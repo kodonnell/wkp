@@ -31,14 +31,14 @@ namespace
             1677818754.0,
         };
         const int precisions[] = {6, 6, 0};
-        wkp_context ctx{};
-        auto s = wkp_context_init(&ctx);
-        REQUIRE(s == WKP_STATUS_OK);
+        wkp_context *ctx = wkp_context_new();
+        REQUIRE(ctx != nullptr);
+        wkp_status s = WKP_STATUS_OK;
 
         const uint8_t *encoded = nullptr;
         size_t encoded_size = 0;
         s = wkp_encode_f64(
-            &ctx,
+            ctx,
             values.data(), values.size(), 3,
             precisions, 3,
             &encoded, &encoded_size);
@@ -47,7 +47,7 @@ namespace
         const double *decoded = nullptr;
         size_t decoded_size = 0;
         s = wkp_decode_f64(
-            &ctx,
+            ctx,
             encoded, encoded_size,
             3,
             precisions, 3,
@@ -60,29 +60,48 @@ namespace
             CHECK(almost_equal(decoded[i], values[i], 1e-9));
         }
 
-        wkp_context_free(&ctx);
+        wkp_context_free(ctx);
     }
 
-    TEST_CASE("c api run self-tests")
+    TEST_CASE("c api version, unknown geometry types and structure rules")
     {
-        int failed_check = 0;
-        const auto s = wkp_basic_self_test(&failed_check);
-        CHECK(s == WKP_STATUS_OK);
-        CHECK(failed_check == 0);
+        CHECK(std::string(wkp_version()) == WKP_CORE_VERSION);
+
+        wkp_context *ctx = wkp_context_new();
+        REQUIRE(ctx != nullptr);
+        const double coords[] = {1.0, 2.0};
+        const size_t one[] = {1};
+        const uint8_t *encoded = nullptr;
+        size_t encoded_size = 0;
+        // Geometry type 7 does not exist.
+        CHECK(wkp_encode_geometry_frame(ctx, 7, coords, 2, 2, 5, one, 1, one, 1, &encoded, &encoded_size) ==
+              WKP_STATUS_INVALID_ARGUMENT);
+        // A one-point linestring breaks SPEC.md's structure rules.
+        CHECK(wkp_encode_geometry_frame(ctx, WKP_GEOMETRY_LINESTRING, coords, 2, 2, 5, one, 1, one, 1, &encoded,
+                                        &encoded_size) == WKP_STATUS_INVALID_ARGUMENT);
+        CHECK(wkp_encode_geometry_frame(ctx, WKP_GEOMETRY_POINT, coords, 2, 2, 5, one, 1, one, 1, &encoded,
+                                        &encoded_size) == WKP_STATUS_OK);
+
+        int version = 0, precision = 0, dimensions = 0, geometry_type = 0;
+        const uint8_t unknown_type[] = {'@', 'D', 'A', 'F', '?', '?'};
+        CHECK(wkp_decode_geometry_header(unknown_type, sizeof(unknown_type), &version, &precision, &dimensions,
+                                         &geometry_type) == WKP_STATUS_MALFORMED_INPUT);
+        wkp_context_free(ctx);
+        wkp_context_free(nullptr);
     }
 
     TEST_CASE("c api f64 auto wrappers")
     {
         const std::vector<double> values = {38.5, -120.2, 40.7, -120.95, 43.252, -126.453};
         const int precisions[] = {5};
-        wkp_context ctx{};
-        auto s = wkp_context_init(&ctx);
-        REQUIRE(s == WKP_STATUS_OK);
+        wkp_context *ctx = wkp_context_new();
+        REQUIRE(ctx != nullptr);
+        wkp_status s = WKP_STATUS_OK;
 
         const uint8_t *encoded = nullptr;
         size_t encoded_size = 0;
         s = wkp_encode_f64(
-            &ctx,
+            ctx,
             values.data(), values.size(), 2,
             precisions, 1,
             &encoded, &encoded_size);
@@ -92,7 +111,7 @@ namespace
         const double *decoded = nullptr;
         size_t decoded_size = 0;
         s = wkp_decode_f64(
-            &ctx,
+            ctx,
             encoded, encoded_size,
             2,
             precisions, 1,
@@ -101,7 +120,7 @@ namespace
         REQUIRE(decoded != nullptr);
         REQUIRE(decoded_size == values.size());
 
-        wkp_context_free(&ctx);
+        wkp_context_free(ctx);
     }
 
     TEST_CASE("c api geometry frame encode/decode")
@@ -116,19 +135,19 @@ namespace
         };
         const size_t group_segment_counts[] = {1};
         const size_t segment_point_counts[] = {3};
-        wkp_context ctx{};
-        auto s = wkp_context_init(&ctx);
-        REQUIRE(s == WKP_STATUS_OK);
+        wkp_context *ctx = wkp_context_new();
+        REQUIRE(ctx != nullptr);
+        wkp_status s = WKP_STATUS_OK;
 
         const uint8_t *encoded = nullptr;
         size_t encoded_size = 0;
         s = wkp_encode_geometry_frame(
-            &ctx,
+            ctx,
             WKP_GEOMETRY_LINESTRING,
             coords.data(), coords.size(),
             2, 5,
-            group_segment_counts, 1,
             segment_point_counts, 1,
+            group_segment_counts, 1,
             &encoded, &encoded_size);
         REQUIRE(s == WKP_STATUS_OK);
 
@@ -139,7 +158,7 @@ namespace
         CHECK(parse_header_field(encoded_string, 3) == WKP_GEOMETRY_LINESTRING);
 
         const wkp_geometry_frame_f64 *frame = nullptr;
-        s = wkp_decode_geometry_frame(&ctx, encoded, encoded_size, &frame);
+        s = wkp_decode_geometry_frame(ctx, encoded, encoded_size, &frame);
         REQUIRE(s == WKP_STATUS_OK);
         REQUIRE(frame != nullptr);
         REQUIRE(frame->version == 1);
@@ -148,7 +167,7 @@ namespace
         REQUIRE(frame->geometry_type == WKP_GEOMETRY_LINESTRING);
         REQUIRE(frame->coord_value_count == coords.size());
 
-        wkp_context_free(&ctx);
+        wkp_context_free(ctx);
     }
 
     TEST_CASE("c api geometry frame auto wrapper")
@@ -163,25 +182,25 @@ namespace
         };
         const size_t group_segment_counts[] = {1};
         const size_t segment_point_counts[] = {3};
-        wkp_context ctx{};
-        auto s = wkp_context_init(&ctx);
-        REQUIRE(s == WKP_STATUS_OK);
+        wkp_context *ctx = wkp_context_new();
+        REQUIRE(ctx != nullptr);
+        wkp_status s = WKP_STATUS_OK;
 
         const uint8_t *encoded = nullptr;
         size_t encoded_size = 0;
         s = wkp_encode_geometry_frame(
-            &ctx,
+            ctx,
             WKP_GEOMETRY_LINESTRING,
             coords.data(), coords.size(),
             2, 5,
-            group_segment_counts, 1,
             segment_point_counts, 1,
+            group_segment_counts, 1,
             &encoded, &encoded_size);
         REQUIRE(s == WKP_STATUS_OK);
 
         const wkp_geometry_frame_f64 *frame = nullptr;
         s = wkp_decode_geometry_frame(
-            &ctx,
+            ctx,
             encoded, encoded_size,
             &frame);
         REQUIRE(s == WKP_STATUS_OK);
@@ -192,7 +211,7 @@ namespace
         CHECK(frame->geometry_type == WKP_GEOMETRY_LINESTRING);
         CHECK(frame->coord_value_count == coords.size());
 
-        wkp_context_free(&ctx);
+        wkp_context_free(ctx);
     }
 
 } // namespace

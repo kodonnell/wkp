@@ -31,7 +31,7 @@ public class WkpTests
     [Fact]
     public void GoogleReferenceLineString()
     {
-        var encoded = WkpCodec.Encode(GeometryType.LineString, Reference, 2, 5, new[] { 1 }, new[] { 3 });
+        var encoded = WkpCodec.Encode(GeometryType.LineString, Reference, 2, 5, new[] { 3 }, new[] { 1 });
         Assert.Equal("@DAA_p~iF~ps|U_ulLnnqC_mqNvxq`@", encoded);
         Assert.Equal(new Header(1, 5, 2, GeometryType.LineString), WkpCodec.DecodeHeader(encoded));
         var frame = WkpCodec.Decode(encoded);
@@ -88,7 +88,7 @@ public class WkpTests
         Assert.Throws<FormatException>(() => WkpCodec.Decode("@DAA_p~iF~ps|U_ulLnnqC_mqNvxq`é"));
         Assert.Throws<FormatException>(() => WkpCodec.DecodeHeader("@@"));
         // A part with no points would encode to something no decoder accepts.
-        Assert.Throws<ArgumentException>(() => WkpCodec.Encode(GeometryType.MultiPoint, Array.Empty<double>(), 2, 5, new[] { 1 }, new[] { 0 }));
+        Assert.Throws<ArgumentException>(() => WkpCodec.Encode(GeometryType.MultiPoint, Array.Empty<double>(), 2, 5, new[] { 0 }, new[] { 1 }));
         // Only version 1 exists; a frame claiming another must not silently encode as version 1.
         Assert.Throws<ArgumentException>(() => WkpCodec.EncodeFrame(new GeometryFrame(GeometryType.Point, 2, new[] { 1.0, 2.0 }, new[] { 1 }, new[] { 1 }, 5, version: 2)));
         var ctx = new WkpContext();

@@ -76,15 +76,17 @@ BenchResult run_bench_case(
     int warmup,
     int iterations)
 {
-    wkp_context ctx{};
-    throw_for_status(wkp_context_init(&ctx));
+    wkp_context *ctx = wkp_context_new();
+
+    // The last encode's output, which stays valid (in the context) until the next call.
+    const uint8_t *last_encoded = nullptr;
 
     auto encode_once = [&]() -> std::size_t
     {
         const uint8_t *encoded = nullptr;
         std::size_t out_size = 0;
         const auto status = wkp_encode_f64(
-            &ctx,
+            ctx,
             values.data(),
             values.size(),
             dimensions,
@@ -93,6 +95,7 @@ BenchResult run_bench_case(
             &encoded,
             &out_size);
         throw_for_status(status);
+        last_encoded = encoded;
         return out_size;
     };
 
@@ -101,8 +104,8 @@ BenchResult run_bench_case(
         const double *decoded = nullptr;
         std::size_t out_size = 0;
         const auto status = wkp_decode_f64(
-            &ctx,
-            ctx.u8,
+            ctx,
+            last_encoded,
             encoded_size,
             dimensions,
             precisions.data(),
@@ -148,7 +151,7 @@ BenchResult run_bench_case(
     result.encoded_size_bytes = encoded_size;
     result.encode_ms = encode_ms_total / static_cast<double>(iterations);
     result.decode_ms = decode_ms_total / static_cast<double>(iterations);
-    wkp_context_free(&ctx);
+    wkp_context_free(ctx);
     return result;
 }
 
@@ -195,35 +198,37 @@ BenchResult run_geometry_linestring_bench_case(
         }
     };
 
-    wkp_context ctx{};
-    throw_for_status(wkp_context_init(&ctx));
+    wkp_context *ctx = wkp_context_new();
+
+    // The last encode's output, which stays valid (in the context) until the next call.
+    const uint8_t *last_encoded = nullptr;
 
     auto encode_once = [&]() -> std::size_t
     {
         const uint8_t *encoded = nullptr;
         std::size_t out_size = 0;
         const auto status = wkp_encode_geometry_frame(
-            &ctx,
+            ctx,
             WKP_GEOMETRY_LINESTRING,
             values.data(),
             values.size(),
             dimensions,
             precision,
-            group_segment_counts.data(),
-            group_segment_counts.size(),
             segment_point_counts.data(),
             segment_point_counts.size(),
+            group_segment_counts.data(),
+            group_segment_counts.size(),
             &encoded,
             &out_size);
         throw_for_status(status);
-        (void)encoded;
+        last_encoded = encoded;
         return out_size;
     };
 
     auto decode_once = [&](std::size_t encoded_size, bool do_validate) -> std::size_t
     {
         const wkp_geometry_frame_f64 *frame = nullptr;
-        const auto status = wkp_decode_geometry_frame(&ctx, ctx.u8, encoded_size, &frame);
+        const auto status = wkp_decode_geometry_frame(ctx, last_encoded, encoded_size, &frame);
         throw_for_status(status);
         if (frame == nullptr)
             throw std::runtime_error("Decoded geometry frame missing");
@@ -283,7 +288,7 @@ BenchResult run_geometry_linestring_bench_case(
     result.encoded_size_bytes = encoded_size;
     result.encode_ms = encode_ms_total / static_cast<double>(iterations);
     result.decode_ms = decode_ms_total / static_cast<double>(iterations);
-    wkp_context_free(&ctx);
+    wkp_context_free(ctx);
     return result;
 }
 

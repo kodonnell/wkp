@@ -27,9 +27,9 @@ namespace
 
     TEST_CASE("geometry header point and linestring")
     {
-        wkp_context ctx{};
-        auto s = wkp_context_init(&ctx);
-        REQUIRE(s == WKP_STATUS_OK);
+        wkp_context *ctx = wkp_context_new();
+        REQUIRE(ctx != nullptr);
+        wkp_status s = WKP_STATUS_OK;
 
         const std::vector<double> point = {38.5, -120.2};
         const size_t point_groups[] = {1};
@@ -38,15 +38,15 @@ namespace
         const uint8_t *point_data = nullptr;
         size_t point_size = 0;
         s = wkp_encode_geometry_frame(
-            &ctx,
+            ctx,
             WKP_GEOMETRY_POINT,
             point.data(),
             point.size(),
             2,
             5,
-            point_groups,
-            1,
             point_segments,
+            1,
+            point_groups,
             1,
             &point_data,
             &point_size);
@@ -62,15 +62,15 @@ namespace
         const uint8_t *line_data = nullptr;
         size_t line_size = 0;
         s = wkp_encode_geometry_frame(
-            &ctx,
+            ctx,
             WKP_GEOMETRY_LINESTRING,
             line.data(),
             line.size(),
             2,
             5,
-            line_groups,
-            1,
             line_segments,
+            1,
+            line_groups,
             1,
             &line_data,
             &line_size);
@@ -79,14 +79,14 @@ namespace
         std::string line_encoded(reinterpret_cast<const char *>(line_data), line_size);
         CHECK(line_encoded == expect_header(1, 5, 2, 2) + "_p~iF~ps|U_ulLnnqC_mqNvxq`@");
 
-        wkp_context_free(&ctx);
+        wkp_context_free(ctx);
     }
 
     TEST_CASE("geometry frame decode linestring")
     {
-        wkp_context ctx{};
-        auto s = wkp_context_init(&ctx);
-        REQUIRE(s == WKP_STATUS_OK);
+        wkp_context *ctx = wkp_context_new();
+        REQUIRE(ctx != nullptr);
+        wkp_status s = WKP_STATUS_OK;
         const std::vector<double> line = {174.776, -41.289, 174.777, -41.290, 174.778, -41.291};
         const size_t groups[] = {1};
         const size_t segments[] = {3};
@@ -94,22 +94,22 @@ namespace
         const uint8_t *encoded_data = nullptr;
         size_t encoded_size = 0;
         s = wkp_encode_geometry_frame(
-            &ctx,
+            ctx,
             WKP_GEOMETRY_LINESTRING,
             line.data(),
             line.size(),
             2,
             6,
-            groups,
-            1,
             segments,
+            1,
+            groups,
             1,
             &encoded_data,
             &encoded_size);
         REQUIRE(s == WKP_STATUS_OK);
 
         const wkp_geometry_frame_f64 *frame = nullptr;
-        s = wkp_decode_geometry_frame(&ctx, encoded_data, encoded_size, &frame);
+        s = wkp_decode_geometry_frame(ctx, encoded_data, encoded_size, &frame);
         REQUIRE(s == WKP_STATUS_OK);
         REQUIRE(frame != nullptr);
         REQUIRE(frame->group_count == 1);
@@ -121,7 +121,7 @@ namespace
             CHECK(almost_equal(frame->coords[i], line[i], 1e-6));
         }
 
-        wkp_context_free(&ctx);
+        wkp_context_free(ctx);
     }
 
     TEST_CASE("geometry frame invalid args")
@@ -130,22 +130,22 @@ namespace
         const size_t groups[] = {1};
         const size_t segments[] = {3};
 
-        wkp_context ctx{};
-        auto s = wkp_context_init(&ctx);
-        REQUIRE(s == WKP_STATUS_OK);
+        wkp_context *ctx = wkp_context_new();
+        REQUIRE(ctx != nullptr);
+        wkp_status s = WKP_STATUS_OK;
 
         const uint8_t *encoded_data = nullptr;
         size_t encoded_size = 0;
         s = wkp_encode_geometry_frame(
-            &ctx,
+            ctx,
             WKP_GEOMETRY_LINESTRING,
             line.data(),
             line.size(),
             2,
             6,
-            groups,
-            1,
             segments,
+            1,
+            groups,
             1,
             &encoded_data,
             &encoded_size);
@@ -154,7 +154,7 @@ namespace
         CHECK(encoded_data != nullptr);
         CHECK(encoded_size > 0);
 
-        wkp_context_free(&ctx);
+        wkp_context_free(ctx);
     }
 
 } // namespace

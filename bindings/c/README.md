@@ -30,28 +30,39 @@ The C ABI tests are in `tests/` (doctest); `cargo test -p wkp-capi` runs the Rus
 
 ## Contract
 
-- Call `wkp_context_init` before any encode/decode call, reuse the context across calls on one
-  thread, and call `wkp_context_free` when finished. Use one context per concurrent thread.
-- Every function returns a `wkp_status`; outputs are only written on `WKP_STATUS_OK`.
+- A `wkp_context` is opaque: create one with `wkp_context_new`, reuse it across calls on one
+  thread, and free it with `wkp_context_free`. Use one context per concurrent thread.
+- Every function that can fail returns a `wkp_status` (an `int32_t`: `WKP_STATUS_OK`,
+  `WKP_STATUS_INVALID_ARGUMENT`, `WKP_STATUS_MALFORMED_INPUT`, or `WKP_STATUS_INTERNAL_ERROR`);
+  outputs are only written on `WKP_STATUS_OK`.
 - Encode/decode results point into buffers owned by the context. They stay valid until the next
-  call on the same context; copy them if you need them longer.
+  call on the same context, **whether or not that call succeeds**; copy them if you need them
+  longer.
 - Input pointers may be NULL when their count is 0.
-- `wkp_version()` returns the library version string.
+- `wkp_version()` returns the library version string; `WKP_CORE_VERSION` is the version of the
+  header.
 - Limits: precision 0-63, with every `|value| × 10^precision` below 2^58 (e.g. ±2.8 × 10^12 at
-  precision 5); 1-16 dimensions; values must be finite. Anything else is
-  `WKP_STATUS_INVALID_ARGUMENT` when encoding.
+  precision 5); 1-16 dimensions; values must be finite; geometries must have the structure
+  their type requires (see below). Anything else is `WKP_STATUS_INVALID_ARGUMENT` when encoding.
+- Running out of memory aborts the process.
 
 ```c
 #include <wkp/core.h>
 
-wkp_context ctx;
-if (wkp_context_init(&ctx) != WKP_STATUS_OK) {
-    /* handle error */
+wkp_context *ctx = wkp_context_new();
+
+const double line[] = {38.5, -120.2, 40.7, -120.95, 43.252, -126.453};
+const size_t segment_point_counts[] = {3};
+const size_t group_segment_counts[] = {1};
+const uint8_t *encoded;
+size_t encoded_size;
+if (wkp_encode_geometry_frame(ctx, WKP_GEOMETRY_LINESTRING, line, 6, 2, 5,
+                              segment_point_counts, 1, group_segment_counts, 1,
+                              &encoded, &encoded_size) == WKP_STATUS_OK) {
+    /* encoded[0..encoded_size) is "@DAA_p~iF~ps|U_ulLnnqC_mqNvxq`@" */
 }
 
-/* ... call wkp_encode_* / wkp_decode_* using &ctx ... */
-
-wkp_context_free(&ctx);
+wkp_context_free(ctx);
 ```
 
 ## Float encode / decode API
@@ -79,23 +90,25 @@ All geometry encoding/decoding is based on a single frame shape:
 
 When encoded as text, `,` separates segments within a group (rings) and `;` separates groups.
 
-| Type | Groups | `group_segment_counts` | `segment_point_counts` |
+| Type | Groups | `segment_point_counts` | `group_segment_counts` |
 |---|---|---|---|
 | `POINT` | 1 | `[1]` | `[1]` |
-| `LINESTRING` | 1 | `[1]` | `[N]` |
-| `POLYGON` | 1 | `[ring_count]` | `[shell_points, hole0_points, ...]` |
+| `LINESTRING` | 1 | `[N]`, N ≥ 2 | `[1]` |
+| `POLYGON` | 1 | `[shell_points, hole0_points, ...]` | `[ring_count]` |
 | `MULTIPOINT` | one per point | `[1, 1, ...]` | `[1, 1, ...]` |
-| `MULTILINESTRING` | one per line | `[1, 1, ...]` | `[line0_points, line1_points, ...]` |
-| `MULTIPOLYGON` | one per polygon | ring count per polygon | point count of every ring, in order |
+| `MULTILINESTRING` | one per line | `[line0_points, line1_points, ...]`, each ≥ 2 | `[1, 1, ...]` |
+| `MULTIPOLYGON` | one per polygon | point count of every ring, in order | ring count per polygon |
 
-The sum of all segment point counts, multiplied by `dimensions`, must equal `coord_value_count`,
-and the sum of `group_segment_counts` must equal `segment_count`.
+The encoder enforces this table (and that no count is 0). The sum of all segment point counts,
+multiplied by `dimensions`, must equal `coord_value_count`, and the sum of
+`group_segment_counts` must equal `segment_count`. The decoder only checks the syntax, so data
+written by older, laxer encoders still decodes.
 
 Binder recipe:
 
 1. Flatten coordinates into one contiguous `coords` array.
-2. Build `group_segment_counts` and `segment_point_counts`.
-3. Call `wkp_encode_geometry_frame` with a caller-owned context.
+2. Build `segment_point_counts` and `group_segment_counts`.
+3. Call `wkp_encode_geometry_frame` with a context.
 4. Use the returned pointer and size immediately, or copy into binder-managed storage.
 
 ## Version

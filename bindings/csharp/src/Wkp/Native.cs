@@ -32,48 +32,49 @@ internal static unsafe class Native
         public nuint GroupCount;
     }
 
-    /// <summary>Mirror of <c>wkp_context</c>; only its size and layout matter here.</summary>
-    [StructLayout(LayoutKind.Sequential)]
-    internal struct Context
+    /// <summary>Owns an opaque <c>wkp_context*</c> and frees it once nothing is using it.</summary>
+    internal sealed class ContextHandle : SafeHandle
     {
-        public byte* U8;
-        public nuint U8Cap;
-        public double* F64;
-        public nuint F64Cap;
-        public nuint* SizesA;
-        public nuint SizesACap;
-        public nuint* SizesB;
-        public nuint SizesBCap;
-        public Frame Frame;
+        public ContextHandle() : base(IntPtr.Zero, ownsHandle: true)
+        {
+        }
+
+        public override bool IsInvalid => handle == IntPtr.Zero;
+
+        protected override bool ReleaseHandle()
+        {
+            ContextFree(handle);
+            return true;
+        }
     }
 
     [DllImport(Library, EntryPoint = "wkp_version")]
     internal static extern byte* Version();
 
-    [DllImport(Library, EntryPoint = "wkp_context_init")]
-    internal static extern int ContextInit(Context* ctx);
+    [DllImport(Library, EntryPoint = "wkp_context_new")]
+    internal static extern ContextHandle ContextNew();
 
     [DllImport(Library, EntryPoint = "wkp_context_free")]
-    internal static extern void ContextFree(Context* ctx);
+    private static extern void ContextFree(IntPtr ctx);
 
     [DllImport(Library, EntryPoint = "wkp_encode_f64")]
     internal static extern int EncodeF64(
-        Context* ctx, double* values, nuint valueCount, nuint dimensions, int* precisions, nuint precisionCount,
+        ContextHandle ctx, double* values, nuint valueCount, nuint dimensions, int* precisions, nuint precisionCount,
         byte** outData, nuint* outSize);
 
     [DllImport(Library, EntryPoint = "wkp_decode_f64")]
     internal static extern int DecodeF64(
-        Context* ctx, byte* encoded, nuint encodedSize, nuint dimensions, int* precisions, nuint precisionCount,
+        ContextHandle ctx, byte* encoded, nuint encodedSize, nuint dimensions, int* precisions, nuint precisionCount,
         double** outValues, nuint* outSize);
 
     [DllImport(Library, EntryPoint = "wkp_encode_geometry_frame")]
     internal static extern int EncodeGeometryFrame(
-        Context* ctx, int geometryType, double* coords, nuint coordValueCount, nuint dimensions, int precision,
-        nuint* groupSegmentCounts, nuint groupCount, nuint* segmentPointCounts, nuint segmentCount,
+        ContextHandle ctx, int geometryType, double* coords, nuint coordValueCount, nuint dimensions, int precision,
+        nuint* segmentPointCounts, nuint segmentCount, nuint* groupSegmentCounts, nuint groupCount,
         byte** outData, nuint* outSize);
 
     [DllImport(Library, EntryPoint = "wkp_decode_geometry_frame")]
-    internal static extern int DecodeGeometryFrame(Context* ctx, byte* encoded, nuint encodedSize, Frame** outFrame);
+    internal static extern int DecodeGeometryFrame(ContextHandle ctx, byte* encoded, nuint encodedSize, Frame** outFrame);
 
     [DllImport(Library, EntryPoint = "wkp_decode_geometry_header")]
     internal static extern int DecodeGeometryHeader(

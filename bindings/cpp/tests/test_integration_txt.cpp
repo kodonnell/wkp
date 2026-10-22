@@ -225,14 +225,12 @@ namespace
         std::size_t dimensions,
         const std::vector<int> &precisions)
     {
-        wkp_context ctx{};
-        if (wkp_context_init(&ctx) != WKP_STATUS_OK)
-            throw std::runtime_error("context init failed");
+        wkp_context *ctx = wkp_context_new();
 
         const uint8_t *data = nullptr;
         std::size_t out_size = 0;
         const auto s = wkp_encode_f64(
-            &ctx,
+            ctx,
             values.data(),
             values.size(),
             dimensions,
@@ -242,12 +240,12 @@ namespace
             &out_size);
         if (s != WKP_STATUS_OK)
         {
-            wkp_context_free(&ctx);
+            wkp_context_free(ctx);
             throw std::runtime_error("encode failed");
         }
 
         std::string out(reinterpret_cast<const char *>(data), out_size);
-        wkp_context_free(&ctx);
+        wkp_context_free(ctx);
         return out;
     }
 
@@ -256,14 +254,12 @@ namespace
         std::size_t dimensions,
         const std::vector<int> &precisions)
     {
-        wkp_context ctx{};
-        if (wkp_context_init(&ctx) != WKP_STATUS_OK)
-            throw std::runtime_error("context init failed");
+        wkp_context *ctx = wkp_context_new();
 
         const double *decoded = nullptr;
         std::size_t decoded_size = 0;
         const auto s = wkp_decode_f64(
-            &ctx,
+            ctx,
             reinterpret_cast<const uint8_t *>(encoded.data()),
             encoded.size(),
             dimensions,
@@ -273,12 +269,12 @@ namespace
             &decoded_size);
         if (s != WKP_STATUS_OK)
         {
-            wkp_context_free(&ctx);
+            wkp_context_free(ctx);
             throw std::runtime_error("decode failed");
         }
 
         std::vector<double> out(decoded, decoded + decoded_size);
-        wkp_context_free(&ctx);
+        wkp_context_free(ctx);
         return out;
     }
 
@@ -316,51 +312,47 @@ namespace
             throw std::runtime_error("unsupported geometry type");
         }
 
-        wkp_context ctx{};
-        if (wkp_context_init(&ctx) != WKP_STATUS_OK)
-            throw std::runtime_error("context init failed");
+        wkp_context *ctx = wkp_context_new();
 
         const uint8_t *encoded = nullptr;
         std::size_t encoded_size = 0;
         const auto s = wkp_encode_geometry_frame(
-            &ctx,
+            ctx,
             shape.geometry_type,
             flat.data(),
             flat.size(),
             2,
             precision,
-            group_segment_counts.data(),
-            group_segment_counts.size(),
             segment_point_counts.data(),
             segment_point_counts.size(),
+            group_segment_counts.data(),
+            group_segment_counts.size(),
             &encoded,
             &encoded_size);
         if (s != WKP_STATUS_OK)
         {
-            wkp_context_free(&ctx);
+            wkp_context_free(ctx);
             throw std::runtime_error("geometry encode failed");
         }
 
         std::string out(reinterpret_cast<const char *>(encoded), encoded_size);
-        wkp_context_free(&ctx);
+        wkp_context_free(ctx);
         return out;
     }
 
     GeometryShape decode_geometry_shape(const std::string &encoded)
     {
-        wkp_context ctx{};
-        if (wkp_context_init(&ctx) != WKP_STATUS_OK)
-            throw std::runtime_error("context init failed");
+        wkp_context *ctx = wkp_context_new();
 
         const wkp_geometry_frame_f64 *frame = nullptr;
         const auto s = wkp_decode_geometry_frame(
-            &ctx,
+            ctx,
             reinterpret_cast<const uint8_t *>(encoded.data()),
             encoded.size(),
             &frame);
         if (s != WKP_STATUS_OK || frame == nullptr)
         {
-            wkp_context_free(&ctx);
+            wkp_context_free(ctx);
             throw std::runtime_error("geometry decode failed");
         }
 
@@ -387,7 +379,7 @@ namespace
             }
         }
 
-        wkp_context_free(&ctx);
+        wkp_context_free(ctx);
         return out;
     }
 

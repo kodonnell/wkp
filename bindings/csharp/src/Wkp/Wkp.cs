@@ -149,36 +149,22 @@ public sealed class GeometryFrame
 /// </summary>
 public sealed unsafe class WkpContext : IDisposable
 {
-    private Native.Context* _ctx;
+    // Results point into the native context's buffers until the next call, so each method copies
+    // them out before returning, and keeps this object alive until then (GC.KeepAlive).
+    private readonly Native.ContextHandle _ctx = Native.ContextNew();
 
+    /// <summary>Creates a context with empty buffers.</summary>
     public WkpContext()
     {
-        _ctx = (Native.Context*)NativeMemory.AllocZeroed((nuint)sizeof(Native.Context));
-        Native.Check(Native.ContextInit(_ctx));
     }
 
-    ~WkpContext() => Free();
-
-    /// <summary>Version of the native library, e.g. <c>0.6.0</c>.</summary>
+    /// <summary>Version of the native library, e.g. <c>0.7.0</c>.</summary>
     public static string NativeVersion => Marshal.PtrToStringUTF8((IntPtr)Native.Version()) ?? "";
 
-    public void Dispose()
-    {
-        Free();
-        GC.SuppressFinalize(this);
-    }
+    /// <summary>Frees the native buffers. Later calls throw <see cref="ObjectDisposedException"/>.</summary>
+    public void Dispose() => _ctx.Dispose();
 
-    private void Free()
-    {
-        if (_ctx != null)
-        {
-            Native.ContextFree(_ctx);
-            NativeMemory.Free(_ctx);
-            _ctx = null;
-        }
-    }
-
-    private Native.Context* Ctx => _ctx != null ? _ctx : throw new ObjectDisposedException(nameof(WkpContext));
+    private Native.ContextHandle Ctx => _ctx.IsClosed ? throw new ObjectDisposedException(nameof(WkpContext)) : _ctx;
 
     /// <summary>Encodes a geometry frame at <see cref="GeometryFrame.Precision"/> to ASCII bytes.</summary>
     public byte[] EncodeFrameToBytes(GeometryFrame frame)
@@ -202,7 +188,7 @@ public sealed unsafe class WkpContext : IDisposable
         {
             Native.Check(Native.EncodeGeometryFrame(
                 Ctx, (int)frame.GeometryType, coords, (nuint)frame.Coords.Length, (nuint)frame.Dimensions, frame.Precision,
-                g, (nuint)groups.Length, s, (nuint)segments.Length, &data, &size));
+                s, (nuint)segments.Length, g, (nuint)groups.Length, &data, &size));
         }
         var result = new ReadOnlySpan<byte>(data, checked((int)size)).ToArray();
         GC.KeepAlive(this);
@@ -214,7 +200,7 @@ public sealed unsafe class WkpContext : IDisposable
 
     /// <summary>Encodes a geometry from its flat parts. See <see cref="GeometryFrame"/> for the topology.</summary>
     public string Encode(GeometryType geometryType, ReadOnlySpan<double> coords, int dimensions, int precision,
-        ReadOnlySpan<int> groupSegmentCounts, ReadOnlySpan<int> segmentPointCounts)
+        ReadOnlySpan<int> segmentPointCounts, ReadOnlySpan<int> groupSegmentCounts)
     {
         return EncodeFrame(new GeometryFrame(geometryType, dimensions, coords.ToArray(), segmentPointCounts.ToArray(),
             groupSegmentCounts.ToArray(), precision));
@@ -335,8 +321,8 @@ public static class WkpCodec
 
     /// <inheritdoc cref="WkpContext.Encode"/>
     public static string Encode(GeometryType geometryType, ReadOnlySpan<double> coords, int dimensions, int precision,
-        ReadOnlySpan<int> groupSegmentCounts, ReadOnlySpan<int> segmentPointCounts) =>
-        Context.Value!.Encode(geometryType, coords, dimensions, precision, groupSegmentCounts, segmentPointCounts);
+        ReadOnlySpan<int> segmentPointCounts, ReadOnlySpan<int> groupSegmentCounts) =>
+        Context.Value!.Encode(geometryType, coords, dimensions, precision, segmentPointCounts, groupSegmentCounts);
 
     /// <inheritdoc cref="WkpContext.Decode(ReadOnlySpan{byte})"/>
     public static GeometryFrame Decode(ReadOnlySpan<byte> encoded) => Context.Value!.Decode(encoded);

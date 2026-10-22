@@ -25,7 +25,7 @@ using Wkp;
 // LINESTRING (38.5 -120.2, 40.7 -120.95, 43.252 -126.453) at 5 decimal places.
 var coords = new[] { 38.5, -120.2, 40.7, -120.95, 43.252, -126.453 };
 string encoded = WkpCodec.Encode(GeometryType.LineString, coords, dimensions: 2, precision: 5,
-    groupSegmentCounts: new[] { 1 }, segmentPointCounts: new[] { 3 });
+    segmentPointCounts: new[] { 3 }, groupSegmentCounts: new[] { 1 });
 // "@DAA_p~iF~ps|U_ulLnnqC_mqNvxq`@"
 
 GeometryFrame frame = WkpCodec.Decode(encoded);

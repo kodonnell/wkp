@@ -11,6 +11,7 @@
 
 namespace wkp::core
 {
+    /* The four header fields of an encoded geometry. geometry_type is a wkp_geometry_type. */
     struct GeometryHeader
     {
         int version = 0;
@@ -19,142 +20,94 @@ namespace wkp::core
         int geometry_type = 0;
     };
 
-    inline void throw_for_status(wkp_status status)
-    {
-        if (status == WKP_STATUS_OK)
-            return;
-        const std::string msg = "WKP error";
-        if (status == WKP_STATUS_INVALID_ARGUMENT || status == WKP_STATUS_MALFORMED_INPUT || status == WKP_STATUS_BUFFER_TOO_SMALL)
-        {
-            throw std::invalid_argument(msg);
-        }
-        if (status == WKP_STATUS_LIMIT_EXCEEDED)
-        {
-            throw std::length_error(msg);
-        }
-        throw std::runtime_error(msg);
-    }
-
-    inline void ensure_basic_self_test()
-    {
-        static const bool passed = []()
-        {
-            int failed_check = 0;
-            const auto status = wkp_basic_self_test(&failed_check);
-            if (status != WKP_STATUS_OK)
-            {
-                throw std::runtime_error("WKP core self-test failed (check " + std::to_string(failed_check) + ")");
-            }
-            return true;
-        }();
-        (void)passed;
-    }
-
     namespace detail
     {
-        // Owns one thread's context and frees its buffers when the thread exits.
+        inline void throw_for_status(wkp_status status)
+        {
+            switch (status)
+            {
+            case WKP_STATUS_OK:
+                return;
+            case WKP_STATUS_INVALID_ARGUMENT:
+                throw std::invalid_argument("WKP: invalid argument");
+            case WKP_STATUS_MALFORMED_INPUT:
+                throw std::invalid_argument("WKP: malformed input");
+            default:
+                throw std::runtime_error("WKP: internal error (status " + std::to_string(status) + ")");
+            }
+        }
+
+        // Owns one thread's context and frees it when the thread exits.
         struct thread_context
         {
-            wkp_context ctx{};
+            wkp_context *ctx = wkp_context_new();
 
-            thread_context()
-            {
-                if (wkp_context_init(&ctx) != WKP_STATUS_OK)
-                {
-                    throw std::runtime_error("Failed to initialize WKP context");
-                }
-            }
-            ~thread_context() { wkp_context_free(&ctx); }
+            thread_context() = default;
+            ~thread_context() { wkp_context_free(ctx); }
             thread_context(const thread_context &) = delete;
             thread_context &operator=(const thread_context &) = delete;
         };
+
+        inline wkp_context *thread_ctx()
+        {
+            thread_local thread_context holder;
+            return holder.ctx;
+        }
     } // namespace detail
 
-    inline wkp_context &thread_ctx()
-    {
-        ensure_basic_self_test();
-        thread_local detail::thread_context holder;
-        return holder.ctx;
-    }
-
-    inline std::vector<int> normalize_precisions(std::size_t dimensions, const std::vector<int> &precisions)
-    {
-        if (dimensions == 0 || dimensions > 16)
-        {
-            throw std::invalid_argument("dimensions must be between 1 and 16");
-        }
-        if (precisions.empty())
-        {
-            throw std::invalid_argument("precisions cannot be empty");
-        }
-        if (precisions.size() == 1)
-        {
-            return std::vector<int>(dimensions, precisions[0]);
-        }
-        if (precisions.size() != dimensions)
-        {
-            throw std::invalid_argument("Expected precisions.size() == dimensions or 1");
-        }
-        return precisions;
-    }
-
+    /* Encodes a headerless float stream: `values` are flat and interleaved, `dimensions` per
+       point; `precisions` has one entry (all dimensions) or one per dimension. */
     inline std::string encode_f64(
         const double *values,
         std::size_t value_count,
         std::size_t dimensions,
         const std::vector<int> &precisions)
     {
-        const std::vector<int> p = normalize_precisions(dimensions, precisions);
-        auto &ctx = thread_ctx();
         const uint8_t *data = nullptr;
         size_t size = 0;
-        const auto status = wkp_encode_f64(
-            &ctx,
+        detail::throw_for_status(wkp_encode_f64(
+            detail::thread_ctx(),
             values,
             value_count,
             dimensions,
-            p.data(),
-            p.size(),
+            precisions.data(),
+            precisions.size(),
             &data,
-            &size);
-        throw_for_status(status);
+            &size));
         return std::string(reinterpret_cast<const char *>(data), size);
     }
 
+    /* Decodes a headerless float stream encoded with the same dimensions and precisions. */
     inline std::vector<double> decode_f64(
         std::string_view encoded,
         std::size_t dimensions,
         const std::vector<int> &precisions)
     {
-        const std::vector<int> p = normalize_precisions(dimensions, precisions);
-        auto &ctx = thread_ctx();
         const double *values = nullptr;
         size_t size = 0;
-        const auto status = wkp_decode_f64(
-            &ctx,
+        detail::throw_for_status(wkp_decode_f64(
+            detail::thread_ctx(),
             reinterpret_cast<const uint8_t *>(encoded.data()),
             encoded.size(),
             dimensions,
-            p.data(),
-            p.size(),
+            precisions.data(),
+            precisions.size(),
             &values,
-            &size);
-        throw_for_status(status);
+            &size));
         return std::vector<double>(values, values + size);
     }
 
+    /* Decodes only the header of an encoded geometry. */
     inline GeometryHeader decode_geometry_header(std::string_view encoded)
     {
-        ensure_basic_self_test();
         GeometryHeader h{};
-        const auto status = wkp_decode_geometry_header(
+        detail::throw_for_status(wkp_decode_geometry_header(
             reinterpret_cast<const uint8_t *>(encoded.data()),
             encoded.size(),
             &h.version,
             &h.precision,
             &h.dimensions,
-            &h.geometry_type);
-        throw_for_status(status);
+            &h.geometry_type));
         return h;
     }
 
