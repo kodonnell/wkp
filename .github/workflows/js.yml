@@ -117,8 +117,9 @@ jobs:
           node scripts/sync-version.mjs --check
           npm run check:runtime-compatibility
 
-      # The published type declarations, under the strictest settings.
+      # The published type declarations, under the strictest settings (the same on every OS).
       - name: Type-check .d.ts files
+        if: runner.os == 'Linux'
         working-directory: bindings/javascript/packages
         run: |
           for f in node/index.d.ts web/src/index.d.ts; do
