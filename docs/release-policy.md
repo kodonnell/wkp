@@ -58,7 +58,9 @@ repository.
 1. Bump `version` under `[workspace.package]` in the root `Cargo.toml`.
 2. Run `node bindings/javascript/scripts/sync-version.mjs --write`, then
    `python scripts/check_versions.py`, and update anything else it reports.
-3. Update `CHANGELOG.md`, commit, and push `main`. Wait for CI to pass.
+3. Update `CHANGELOG.md`, and move the entries of
+   `bindings/csharp/src/Wkp/PublicAPI.Unshipped.txt` to `PublicAPI.Shipped.txt` (the .NET public API
+   that is now released). Commit, push `main`, and wait for CI to pass.
 4. Tag and push each package being released, **one tag per push** (GitHub starts no workflows
    when more than three tags are pushed at once):
 

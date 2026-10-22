@@ -1,0 +1,65 @@
+#nullable enable
+override Wkp.Header.GetHashCode() -> int
+static Wkp.GeometryFrame.BufferHeaderSize.get -> int
+static Wkp.GeometryFrame.FromBuffer(System.ReadOnlySpan<byte> buffer) -> Wkp.GeometryFrame!
+static Wkp.Header.operator !=(Wkp.Header left, Wkp.Header right) -> bool
+static Wkp.Header.operator ==(Wkp.Header left, Wkp.Header right) -> bool
+static Wkp.WkpCodec.Decode(string! encoded) -> Wkp.GeometryFrame!
+static Wkp.WkpCodec.Decode(System.ReadOnlySpan<byte> encoded) -> Wkp.GeometryFrame!
+static Wkp.WkpCodec.DecodeFloats(string! encoded, System.ReadOnlySpan<int> precisions) -> double[]!
+static Wkp.WkpCodec.DecodeFloats(System.ReadOnlySpan<byte> encoded, System.ReadOnlySpan<int> precisions) -> double[]!
+static Wkp.WkpCodec.DecodeHeader(string! encoded) -> Wkp.Header
+static Wkp.WkpCodec.DecodeHeader(System.ReadOnlySpan<byte> encoded) -> Wkp.Header
+static Wkp.WkpCodec.Encode(Wkp.GeometryType geometryType, System.ReadOnlySpan<double> coords, int dimensions, int precision, System.ReadOnlySpan<int> segmentPointCounts, System.ReadOnlySpan<int> groupSegmentCounts) -> string!
+static Wkp.WkpCodec.EncodeFloats(System.ReadOnlySpan<double> values, System.ReadOnlySpan<int> precisions) -> string!
+static Wkp.WkpCodec.EncodeFrame(Wkp.GeometryFrame! frame) -> string!
+static Wkp.WkpCodec.EncodeFrameToBytes(Wkp.GeometryFrame! frame) -> byte[]!
+static Wkp.WkpCodec.NativeVersion.get -> string!
+static Wkp.WkpContext.DecodeHeader(string! encoded) -> Wkp.Header
+static Wkp.WkpContext.DecodeHeader(System.ReadOnlySpan<byte> encoded) -> Wkp.Header
+static Wkp.WkpContext.NativeVersion.get -> string!
+Wkp.GeometryFrame
+Wkp.GeometryFrame.Coords.get -> System.ReadOnlyMemory<double>
+Wkp.GeometryFrame.Dimensions.get -> int
+Wkp.GeometryFrame.GeometryFrame(Wkp.GeometryType geometryType, int dimensions, System.ReadOnlyMemory<double> coords, System.ReadOnlyMemory<int> segmentPointCounts, System.ReadOnlyMemory<int> groupSegmentCounts, int precision, int version = 1) -> void
+Wkp.GeometryFrame.GeometryType.get -> Wkp.GeometryType
+Wkp.GeometryFrame.GroupSegmentCounts.get -> System.ReadOnlyMemory<int>
+Wkp.GeometryFrame.PointCount.get -> int
+Wkp.GeometryFrame.Precision.get -> int
+Wkp.GeometryFrame.SegmentPointCounts.get -> System.ReadOnlyMemory<int>
+Wkp.GeometryFrame.ToBuffer() -> byte[]!
+Wkp.GeometryFrame.Version.get -> int
+Wkp.GeometryType
+Wkp.GeometryType.LineString = 2 -> Wkp.GeometryType
+Wkp.GeometryType.MultiLineString = 5 -> Wkp.GeometryType
+Wkp.GeometryType.MultiPoint = 4 -> Wkp.GeometryType
+Wkp.GeometryType.MultiPolygon = 6 -> Wkp.GeometryType
+Wkp.GeometryType.Point = 1 -> Wkp.GeometryType
+Wkp.GeometryType.Polygon = 3 -> Wkp.GeometryType
+Wkp.GeometryType.Unknown = 0 -> Wkp.GeometryType
+Wkp.Header
+Wkp.Header.Dimensions.get -> int
+Wkp.Header.Dimensions.init -> void
+Wkp.Header.Equals(Wkp.Header other) -> bool
+Wkp.Header.GeometryType.get -> Wkp.GeometryType
+Wkp.Header.GeometryType.init -> void
+Wkp.Header.Header() -> void
+Wkp.Header.Header(int version, int precision, int dimensions, Wkp.GeometryType geometryType) -> void
+Wkp.Header.Precision.get -> int
+Wkp.Header.Precision.init -> void
+Wkp.Header.Version.get -> int
+Wkp.Header.Version.init -> void
+Wkp.WkpCodec
+Wkp.WkpContext
+Wkp.WkpContext.Decode(string! encoded) -> Wkp.GeometryFrame!
+Wkp.WkpContext.Decode(System.ReadOnlySpan<byte> encoded) -> Wkp.GeometryFrame!
+Wkp.WkpContext.DecodeFloats(string! encoded, System.ReadOnlySpan<int> precisions) -> double[]!
+Wkp.WkpContext.DecodeFloats(System.ReadOnlySpan<byte> encoded, System.ReadOnlySpan<int> precisions) -> double[]!
+Wkp.WkpContext.Dispose() -> void
+Wkp.WkpContext.Encode(Wkp.GeometryType geometryType, System.ReadOnlySpan<double> coords, int dimensions, int precision, System.ReadOnlySpan<int> segmentPointCounts, System.ReadOnlySpan<int> groupSegmentCounts) -> string!
+Wkp.WkpContext.EncodeFloats(System.ReadOnlySpan<double> values, System.ReadOnlySpan<int> precisions) -> string!
+Wkp.WkpContext.EncodeFrame(Wkp.GeometryFrame! frame) -> string!
+Wkp.WkpContext.EncodeFrameToBytes(Wkp.GeometryFrame! frame) -> byte[]!
+Wkp.WkpContext.WkpContext() -> void
+~override Wkp.Header.Equals(object obj) -> bool
+~override Wkp.Header.ToString() -> string

@@ -29,7 +29,8 @@ string encoded = WkpCodec.Encode(GeometryType.LineString, coords, dimensions: 2,
 // "@DAA_p~iF~ps|U_ulLnnqC_mqNvxq`@"
 
 GeometryFrame frame = WkpCodec.Decode(encoded);
-// frame.Coords, frame.SegmentPointCounts, frame.GroupSegmentCounts, frame.Precision, ...
+// frame.Coords, frame.SegmentPointCounts, frame.GroupSegmentCounts (read-only ReadOnlyMemory<T>;
+// use .Span to read them), frame.Precision, ...
 
 Header header = WkpCodec.DecodeHeader(encoded);
 // Header { Version = 1, Precision = 5, Dimensions = 2, GeometryType = LineString }

@@ -6,8 +6,8 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <RootNamespace>Wkp</RootNamespace>
-    <!-- Self-explanatory members (enum values, simple properties) have no doc comments. -->
-    <NoWarn>$(NoWarn);CS1591</NoWarn>
+    <!-- Public API not listed in PublicAPI.*.txt (see below). -->
+    <WarningsAsErrors>$(WarningsAsErrors);RS0016;RS0017</WarningsAsErrors>
 
     <PackageId>Wkp</PackageId>
     <!-- Kept in sync with the Cargo workspace version by scripts/check_versions.py. -->
@@ -20,6 +20,17 @@
     <RepositoryUrl>https://github.com/kodonnell/wkp</RepositoryUrl>
     <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>
+
+  <!--
+    The public API is listed in PublicAPI.Shipped.txt (released) and PublicAPI.Unshipped.txt (since
+    the last release); a change that is not listed there is a build error (RS0016/RS0017), so API
+    changes are always deliberate. On release, move the Unshipped entries to Shipped.
+  -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" Version="5.6.0" PrivateAssets="all" />
+    <AdditionalFiles Include="PublicAPI.Shipped.txt" />
+    <AdditionalFiles Include="PublicAPI.Unshipped.txt" />
+  </ItemGroup>
 
   <ItemGroup>
     <None Include="../../README.md" Pack="true" PackagePath="/" Link="README.md" />

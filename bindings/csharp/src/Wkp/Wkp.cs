@@ -9,11 +9,25 @@ namespace Wkp;
 /// <summary>Geometry type codes stored in the WKP header.</summary>
 public enum GeometryType
 {
+    /// <summary>Not a geometry type: the default value. Decoding never produces it.</summary>
+    Unknown = 0,
+
+    /// <summary>One point: one group with one segment of one point.</summary>
     Point = 1,
+
+    /// <summary>One group with one segment of two or more points.</summary>
     LineString = 2,
+
+    /// <summary>One group with one segment per ring (shell first).</summary>
     Polygon = 3,
+
+    /// <summary>One group per point, each with one segment of one point.</summary>
     MultiPoint = 4,
+
+    /// <summary>One group per linestring, each with one segment of two or more points.</summary>
     MultiLineString = 5,
+
+    /// <summary>One group per polygon, each with one segment per ring.</summary>
     MultiPolygon = 6,
 }
 
@@ -45,58 +59,68 @@ public readonly record struct Header
 
 /// <summary>
 /// Flat form of a geometry: interleaved coordinates plus topology. Groups are polygons/parts and
-/// segments are rings/linestrings/points:
-/// <list type="bullet">
-/// <item>Point, LineString: 1 group with 1 segment.</item>
-/// <item>Polygon: 1 group with one segment per ring (shell first).</item>
-/// <item>MultiPoint, MultiLineString, MultiPolygon: one group per part.</item>
-/// </list>
+/// segments are rings/linestrings/points (see <see cref="Wkp.GeometryType"/> for each type's
+/// layout). Its arrays are read-only views; a frame built from arrays does not copy them, so do
+/// not change those arrays while the frame is in use.
 /// </summary>
 public sealed class GeometryFrame
 {
     /// <summary>Size of the fixed header written by <see cref="ToBuffer"/>.</summary>
-    public const int BufferHeaderSize = 40;
+    public static int BufferHeaderSize => 40;
 
     /// <summary>
     /// Creates a frame. <paramref name="precision"/> is the number of decimal places kept when it
     /// is encoded; <paramref name="version"/> is the format version, and only 1 can be encoded.
+    /// Arrays convert implicitly to the <see cref="ReadOnlyMemory{T}"/> parameters.
     /// </summary>
     public GeometryFrame(
         GeometryType geometryType,
         int dimensions,
-        double[] coords,
-        int[] segmentPointCounts,
-        int[] groupSegmentCounts,
+        ReadOnlyMemory<double> coords,
+        ReadOnlyMemory<int> segmentPointCounts,
+        ReadOnlyMemory<int> groupSegmentCounts,
         int precision,
         int version = 1)
     {
         GeometryType = geometryType;
         Dimensions = dimensions;
-        Coords = coords ?? throw new ArgumentNullException(nameof(coords));
-        SegmentPointCounts = segmentPointCounts ?? throw new ArgumentNullException(nameof(segmentPointCounts));
-        GroupSegmentCounts = groupSegmentCounts ?? throw new ArgumentNullException(nameof(groupSegmentCounts));
+        Coords = coords;
+        SegmentPointCounts = segmentPointCounts;
+        GroupSegmentCounts = groupSegmentCounts;
         Precision = precision;
         Version = version;
     }
 
     /// <summary>Format version. Decoding sets it; encoding requires 1.</summary>
     public int Version { get; }
+
     /// <summary>Decimal places kept. Used by <see cref="WkpContext.EncodeFrame"/>; set by decoding.</summary>
     public int Precision { get; }
-    public int Dimensions { get; }
-    public GeometryType GeometryType { get; }
-    /// <summary>Point-major, dimension-interleaved coordinates: <c>[x0, y0, x1, y1, ...]</c>.</summary>
-    public double[] Coords { get; }
-    public int[] SegmentPointCounts { get; }
-    public int[] GroupSegmentCounts { get; }
 
+    /// <summary>Values per point.</summary>
+    public int Dimensions { get; }
+
+    /// <summary>The kind of geometry.</summary>
+    public GeometryType GeometryType { get; }
+
+    /// <summary>Point-major, dimension-interleaved coordinates: <c>[x0, y0, x1, y1, ...]</c>.</summary>
+    public ReadOnlyMemory<double> Coords { get; }
+
+    /// <summary>Points in each segment (ring, linestring or point).</summary>
+    public ReadOnlyMemory<int> SegmentPointCounts { get; }
+
+    /// <summary>Segments in each group (polygon or part).</summary>
+    public ReadOnlyMemory<int> GroupSegmentCounts { get; }
+
+    /// <summary>Number of points: <c>Coords.Length / Dimensions</c> (0 when dimensions is 0).</summary>
     public int PointCount => Dimensions == 0 ? 0 : Coords.Length / Dimensions;
 
     /// <summary>
     /// Serializes to the cross-language binary frame format (little-endian; same as Python's
     /// <c>GeometryFrame.to_buffer</c> and JavaScript's <c>toBuffer</c>): int32 version, precision,
     /// dimensions, geometry type; uint64 coord, segment and group counts; then float64 coords,
-    /// uint32 segment point counts and uint32 group segment counts.
+    /// uint32 segment point counts and uint32 group segment counts. Throws
+    /// <see cref="OverflowException"/> for a negative count.
     /// </summary>
     public byte[] ToBuffer()
     {
@@ -110,17 +134,17 @@ public sealed class GeometryFrame
         BinaryPrimitives.WriteUInt64LittleEndian(span[24..], (ulong)SegmentPointCounts.Length);
         BinaryPrimitives.WriteUInt64LittleEndian(span[32..], (ulong)GroupSegmentCounts.Length);
         var o = BufferHeaderSize;
-        foreach (var c in Coords)
+        foreach (var c in Coords.Span)
         {
             BinaryPrimitives.WriteDoubleLittleEndian(span[o..], c);
             o += 8;
         }
-        foreach (var n in SegmentPointCounts)
+        foreach (var n in SegmentPointCounts.Span)
         {
             BinaryPrimitives.WriteUInt32LittleEndian(span[o..], checked((uint)n));
             o += 4;
         }
-        foreach (var n in GroupSegmentCounts)
+        foreach (var n in GroupSegmentCounts.Span)
         {
             BinaryPrimitives.WriteUInt32LittleEndian(span[o..], checked((uint)n));
             o += 4;
@@ -128,7 +152,11 @@ public sealed class GeometryFrame
         return buffer;
     }
 
-    /// <summary>Deserializes a buffer produced by <see cref="ToBuffer"/> (in any binding).</summary>
+    /// <summary>
+    /// Deserializes a buffer produced by <see cref="ToBuffer"/> (in any binding). Throws
+    /// <see cref="FormatException"/> if its length does not match its header, and
+    /// <see cref="OverflowException"/> for counts above <see cref="int.MaxValue"/>.
+    /// </summary>
     public static GeometryFrame FromBuffer(ReadOnlySpan<byte> buffer)
     {
         if (buffer.Length < BufferHeaderSize)
@@ -168,10 +196,15 @@ public sealed class GeometryFrame
 
 /// <summary>
 /// Reusable native buffers for encoding and decoding. Not thread-safe: use one per thread, or the
-/// static <see cref="WkpCodec"/> methods, which keep one per thread for you.
+/// static <see cref="WkpCodec"/> methods, which keep one per thread for you. Invalid arguments
+/// throw <see cref="ArgumentException"/>; malformed encoded input (including a non-ASCII char)
+/// throws <see cref="FormatException"/>.
 /// </summary>
 public sealed unsafe class WkpContext : IDisposable
 {
+    // Count arrays up to this length are converted on the stack.
+    private const int StackCounts = 64;
+
     // Results point into the native context's buffers until the next call, so each method copies
     // them out before returning, and keeps this object alive until then (GC.KeepAlive).
     private readonly Native.ContextHandle _ctx = Native.ContextNew();
@@ -192,41 +225,27 @@ public sealed unsafe class WkpContext : IDisposable
     /// <summary>Encodes a geometry frame at <see cref="GeometryFrame.Precision"/> to ASCII bytes.</summary>
     public byte[] EncodeFrameToBytes(GeometryFrame frame)
     {
-        ArgumentNullException.ThrowIfNull(frame);
-        if (frame.Dimensions <= 0)
-        {
-            throw new ArgumentException("dimensions must be positive", nameof(frame));
-        }
-        if (frame.Version != 1)
-        {
-            throw new ArgumentException($"only format version 1 can be encoded, not {frame.Version}", nameof(frame));
-        }
-        var groups = ToNative(frame.GroupSegmentCounts, nameof(frame.GroupSegmentCounts));
-        var segments = ToNative(frame.SegmentPointCounts, nameof(frame.SegmentPointCounts));
-        byte* data;
-        nuint size;
-        fixed (double* coords = frame.Coords)
-        fixed (nuint* g = groups)
-        fixed (nuint* s = segments)
-        {
-            Native.Check(Native.EncodeGeometryFrame(
-                Ctx, (int)frame.GeometryType, coords, (nuint)frame.Coords.Length, (nuint)frame.Dimensions, frame.Precision,
-                s, (nuint)segments.Length, g, (nuint)groups.Length, &data, &size));
-        }
-        var result = new ReadOnlySpan<byte>(data, checked((int)size)).ToArray();
+        var result = EncodeFrameNative(frame).ToArray();
         GC.KeepAlive(this);
         return result;
     }
 
     /// <summary>Encodes a geometry frame at <see cref="GeometryFrame.Precision"/>.</summary>
-    public string EncodeFrame(GeometryFrame frame) => Encoding.ASCII.GetString(EncodeFrameToBytes(frame));
+    public string EncodeFrame(GeometryFrame frame)
+    {
+        var result = Encoding.ASCII.GetString(EncodeFrameNative(frame));
+        GC.KeepAlive(this);
+        return result;
+    }
 
     /// <summary>Encodes a geometry from its flat parts. See <see cref="GeometryFrame"/> for the topology.</summary>
     public string Encode(GeometryType geometryType, ReadOnlySpan<double> coords, int dimensions, int precision,
         ReadOnlySpan<int> segmentPointCounts, ReadOnlySpan<int> groupSegmentCounts)
     {
-        return EncodeFrame(new GeometryFrame(geometryType, dimensions, coords.ToArray(), segmentPointCounts.ToArray(),
-            groupSegmentCounts.ToArray(), precision));
+        var result = Encoding.ASCII.GetString(
+            EncodeNative(geometryType, coords, dimensions, precision, segmentPointCounts, groupSegmentCounts));
+        GC.KeepAlive(this);
+        return result;
     }
 
     /// <summary>Decodes an encoded geometry to a frame.</summary>
@@ -298,6 +317,47 @@ public sealed unsafe class WkpContext : IDisposable
     /// <inheritdoc cref="DecodeHeader(ReadOnlySpan{byte})"/>
     public static Header DecodeHeader(string encoded) => DecodeHeader(Ascii(encoded));
 
+    // The encoded bytes, in the native buffer: valid until the next call on this context.
+    private ReadOnlySpan<byte> EncodeFrameNative(GeometryFrame frame)
+    {
+        ArgumentNullException.ThrowIfNull(frame);
+        if (frame.Version != 1)
+        {
+            throw new ArgumentException($"only format version 1 can be encoded, not {frame.Version}", nameof(frame));
+        }
+        return EncodeNative(frame.GeometryType, frame.Coords.Span, frame.Dimensions, frame.Precision,
+            frame.SegmentPointCounts.Span, frame.GroupSegmentCounts.Span);
+    }
+
+    // The encoded bytes, in the native buffer: valid until the next call on this context.
+    private ReadOnlySpan<byte> EncodeNative(GeometryType geometryType, ReadOnlySpan<double> coords, int dimensions,
+        int precision, ReadOnlySpan<int> segmentPointCounts, ReadOnlySpan<int> groupSegmentCounts)
+    {
+        if (dimensions <= 0)
+        {
+            throw new ArgumentException("dimensions must be positive", nameof(dimensions));
+        }
+        Span<nuint> segments = segmentPointCounts.Length <= StackCounts
+            ? stackalloc nuint[segmentPointCounts.Length]
+            : new nuint[segmentPointCounts.Length];
+        Span<nuint> groups = groupSegmentCounts.Length <= StackCounts
+            ? stackalloc nuint[groupSegmentCounts.Length]
+            : new nuint[groupSegmentCounts.Length];
+        ToNative(segmentPointCounts, segments, nameof(segmentPointCounts));
+        ToNative(groupSegmentCounts, groups, nameof(groupSegmentCounts));
+        byte* data;
+        nuint size;
+        fixed (double* c = coords)
+        fixed (nuint* s = segments)
+        fixed (nuint* g = groups)
+        {
+            Native.Check(Native.EncodeGeometryFrame(
+                Ctx, (int)geometryType, c, (nuint)coords.Length, (nuint)dimensions, precision,
+                s, (nuint)segments.Length, g, (nuint)groups.Length, &data, &size));
+        }
+        return new ReadOnlySpan<byte>(data, checked((int)size));
+    }
+
     /// <summary>
     /// The string as bytes. Encoded WKP is ASCII; any other char is rejected rather than replaced
     /// (Encoding.ASCII would turn it into <c>?</c>, which is a valid WKP char).
@@ -313,14 +373,12 @@ public sealed unsafe class WkpContext : IDisposable
         return bytes;
     }
 
-    private static nuint[] ToNative(int[] counts, string name)
+    private static void ToNative(ReadOnlySpan<int> counts, Span<nuint> result, string name)
     {
-        var result = new nuint[counts.Length];
         for (var i = 0; i < counts.Length; i++)
         {
             result[i] = counts[i] >= 0 ? (nuint)counts[i] : throw new ArgumentException("counts cannot be negative", name);
         }
-        return result;
     }
 
     private static int[] FromNative(nuint* counts, nuint length)
@@ -334,13 +392,22 @@ public sealed unsafe class WkpContext : IDisposable
     }
 }
 
-/// <summary>Static encode/decode using a per-thread <see cref="WkpContext"/>.</summary>
+/// <summary>
+/// Static encode/decode using a per-thread <see cref="WkpContext"/>. Each thread's native buffers
+/// grow to the largest input it has processed and live as long as the thread.
+/// </summary>
 public static class WkpCodec
 {
     private static readonly ThreadLocal<WkpContext> Context = new(() => new WkpContext());
 
+    /// <inheritdoc cref="WkpContext.NativeVersion"/>
+    public static string NativeVersion => WkpContext.NativeVersion;
+
     /// <inheritdoc cref="WkpContext.EncodeFrame"/>
     public static string EncodeFrame(GeometryFrame frame) => Context.Value!.EncodeFrame(frame);
+
+    /// <inheritdoc cref="WkpContext.EncodeFrameToBytes"/>
+    public static byte[] EncodeFrameToBytes(GeometryFrame frame) => Context.Value!.EncodeFrameToBytes(frame);
 
     /// <inheritdoc cref="WkpContext.Encode"/>
     public static string Encode(GeometryType geometryType, ReadOnlySpan<double> coords, int dimensions, int precision,
@@ -354,11 +421,18 @@ public static class WkpCodec
     public static GeometryFrame Decode(string encoded) => Context.Value!.Decode(encoded);
 
     /// <inheritdoc cref="WkpContext.DecodeHeader(ReadOnlySpan{byte})"/>
+    public static Header DecodeHeader(ReadOnlySpan<byte> encoded) => WkpContext.DecodeHeader(encoded);
+
+    /// <inheritdoc cref="WkpContext.DecodeHeader(ReadOnlySpan{byte})"/>
     public static Header DecodeHeader(string encoded) => WkpContext.DecodeHeader(encoded);
 
     /// <inheritdoc cref="WkpContext.EncodeFloats"/>
     public static string EncodeFloats(ReadOnlySpan<double> values, ReadOnlySpan<int> precisions) =>
         Context.Value!.EncodeFloats(values, precisions);
+
+    /// <inheritdoc cref="WkpContext.DecodeFloats(ReadOnlySpan{byte}, ReadOnlySpan{int})"/>
+    public static double[] DecodeFloats(ReadOnlySpan<byte> encoded, ReadOnlySpan<int> precisions) =>
+        Context.Value!.DecodeFloats(encoded, precisions);
 
     /// <inheritdoc cref="WkpContext.DecodeFloats(ReadOnlySpan{byte}, ReadOnlySpan{int})"/>
     public static double[] DecodeFloats(string encoded, ReadOnlySpan<int> precisions) =>

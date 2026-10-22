@@ -113,6 +113,18 @@ not change: anything 0.6 encoded decodes the same in 0.7.
 ### .NET — breaking
 - `Encode(...)` takes `segmentPointCounts` before `groupSegmentCounts`, matching
   `GeometryFrame`.
+- `GeometryFrame.Coords`, `SegmentPointCounts` and `GroupSegmentCounts` are
+  `ReadOnlyMemory<T>` (were arrays), so a frame cannot be changed through them; read them with
+  `.Span` (or `.ToArray()`). The constructor takes `ReadOnlyMemory<T>`, which arrays convert to
+  implicitly, so frames are built as before.
+- `GeometryType` has `Unknown = 0`, the default value (it had no zero value); it cannot be
+  encoded and decoding never produces it.
+- `GeometryFrame.BufferHeaderSize` is a property (was a `const`, which compiles into callers).
+- `WkpCodec` has the same overloads as `WkpContext` (`EncodeFrameToBytes`, `DecodeHeader` and
+  `DecodeFloats` on bytes, `NativeVersion`). `Encode` and `EncodeFrame` no longer copy the
+  coordinates or the output an extra time.
+- Every public member is documented, and the public API is tracked with PublicApiAnalyzers
+  (`PublicAPI.*.txt`), so changing it is a deliberate, reviewed edit.
 - `WkpContext` holds the native context in a `SafeHandle`, so it is freed exactly once even if
   `Dispose` races a finalizer.
 

@@ -37,9 +37,9 @@ public class WkpTests
         var frame = WkpCodec.Decode(encoded);
         Assert.Equal(GeometryType.LineString, frame.GeometryType);
         Assert.Equal(5, frame.Precision);
-        Assert.Equal(Reference, frame.Coords);
-        Assert.Equal(new[] { 3 }, frame.SegmentPointCounts);
-        Assert.Equal(new[] { 1 }, frame.GroupSegmentCounts);
+        Assert.Equal(Reference, frame.Coords.ToArray());
+        Assert.Equal(new[] { 3 }, frame.SegmentPointCounts.ToArray());
+        Assert.Equal(new[] { 1 }, frame.GroupSegmentCounts.ToArray());
     }
 
     public static IEnumerable<object[]> Geometries() => new[]
@@ -60,9 +60,9 @@ public class WkpTests
         Assert.Equal(frame.GeometryType, decoded.GeometryType);
         Assert.Equal(frame.Dimensions, decoded.Dimensions);
         Assert.Equal(frame.Precision, decoded.Precision);
-        Assert.Equal(frame.Coords, decoded.Coords);
-        Assert.Equal(frame.SegmentPointCounts, decoded.SegmentPointCounts);
-        Assert.Equal(frame.GroupSegmentCounts, decoded.GroupSegmentCounts);
+        Assert.Equal(frame.Coords.ToArray(), decoded.Coords.ToArray());
+        Assert.Equal(frame.SegmentPointCounts.ToArray(), decoded.SegmentPointCounts.ToArray());
+        Assert.Equal(frame.GroupSegmentCounts.ToArray(), decoded.GroupSegmentCounts.ToArray());
         Assert.Equal(ctx.EncodeFrameToBytes(frame), ctx.EncodeFrameToBytes(decoded));
     }
 
@@ -73,9 +73,21 @@ public class WkpTests
         var buffer = frame.ToBuffer();
         Assert.Equal(GeometryFrame.BufferHeaderSize + 6 * 8 + 2 * 4, buffer.Length);
         var back = GeometryFrame.FromBuffer(buffer);
-        Assert.Equal(frame.Coords, back.Coords);
+        Assert.Equal(frame.Coords.ToArray(), back.Coords.ToArray());
         Assert.Equal((frame.Version, frame.Precision, frame.Dimensions, frame.GeometryType), (back.Version, back.Precision, back.Dimensions, back.GeometryType));
         Assert.Throws<FormatException>(() => GeometryFrame.FromBuffer(buffer.AsSpan(0, buffer.Length - 1)));
+    }
+
+    [Fact]
+    public void UnknownGeometryTypeIsTheDefaultAndCannotBeEncoded()
+    {
+        Assert.Equal(GeometryType.Unknown, default(GeometryType));
+        Assert.Throws<ArgumentException>(() => WkpCodec.Encode(GeometryType.Unknown, new[] { 1.0, 2.0 }, 2, 5, new[] { 1 }, new[] { 1 }));
+        // The span overloads give the same results as the string ones.
+        var encoded = WkpCodec.Encode(GeometryType.Point, new[] { 1.0, 2.0 }, 2, 5, new[] { 1 }, new[] { 1 });
+        var bytes = System.Text.Encoding.ASCII.GetBytes(encoded);
+        Assert.Equal(WkpCodec.DecodeHeader(encoded), WkpCodec.DecodeHeader(bytes));
+        Assert.Equal(encoded, System.Text.Encoding.ASCII.GetString(WkpCodec.EncodeFrameToBytes(WkpCodec.Decode(bytes))));
     }
 
     [Fact]
@@ -213,9 +225,9 @@ public class WkpTests
             var frame = WkpCodec.Decode(c[0]);
             Assert.Equal(w.Type, frame.GeometryType);
             Assert.Equal(w.Dimensions, frame.Dimensions);
-            Assert.Equal(w.Segments, frame.SegmentPointCounts);
-            Assert.Equal(w.Groups, frame.GroupSegmentCounts);
-            AssertClose(w.Coords.ToArray(), frame.Coords);
+            Assert.Equal(w.Segments, frame.SegmentPointCounts.ToArray());
+            Assert.Equal(w.Groups, frame.GroupSegmentCounts.ToArray());
+            AssertClose(w.Coords.ToArray(), frame.Coords.ToArray());
         }
     }
 
