@@ -210,6 +210,12 @@ Malformed inputs include (non-exhaustive):
 - decoded scalar count not divisible by `dimensions`
 - empty segment between separators
 - empty body
+- `T` outside `1..6`
+- a structure Section 5 does not allow for `T` (e.g. a `LINESTRING` with one point, a `POINT`
+  with more than one, or a `MULTIPOINT` part with a `,`)
+
+Encoders reject the same structures, so anything an encoder produces decodes, and anything that
+decodes encodes again.
 
 ## 7. Determinism and Compatibility Notes
 
@@ -218,6 +224,9 @@ Malformed inputs include (non-exhaustive):
   every input the C implementation accepted correctly; it only rejects inputs the C
   implementation mishandled (non-finite or oversized values, precisions outside `0..63`, chars
   above `~`, bad `D`).
+- Since 0.7 the Rust implementation also enforces Section 5's structure when encoding and
+  decoding, and rejects unknown `T`. The C implementation accepted, for example, one-point
+  linestrings.
 - Because separator boundaries no longer reset deltas, encoded bytes for multi-part geometry differ from older behavior.
 - This spec intentionally keeps header version value `1` for this change.
 - Implementations must ensure all participating encoders/decoders in the ecosystem are updated together.

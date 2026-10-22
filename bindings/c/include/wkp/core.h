@@ -15,7 +15,8 @@
  *   context are thread-safe.
  * - Limits: precision 0..63, with every |value| x 10^precision below 2^58; 1..16 dimensions;
  *   finite values. Geometries must have the structure SPEC.md requires of their type (one point
- *   for a point, at least two per linestring, no empty segments or groups).
+ *   for a point, at least two per linestring, no empty segments or groups); decoding rejects
+ *   anything else as malformed input.
  * - Running out of memory aborts the process, as Rust's allocator does.
  */
 

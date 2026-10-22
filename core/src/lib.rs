@@ -1130,9 +1130,9 @@ pub fn decode_header(encoded: &[u8]) -> Result<Header> {
     })
 }
 
-/// Decodes a geometry into `frame`, reusing its buffers. Decoding checks the syntax but, unlike
-/// encoding, not each type's structure (e.g. a one-point linestring decodes), so data written
-/// by older, laxer encoders stays readable.
+/// Decodes a geometry into `frame`, reusing its buffers. Like encoding, decoding enforces the
+/// structure SPEC.md requires of the geometry type (e.g. a one-point linestring is
+/// [`Error::MalformedInput`]), so a decoded `Frame` always encodes again.
 pub fn decode_geometry(encoded: &[u8], frame: &mut Frame) -> Result<()> {
     let header = decode_header(encoded)?;
     frame.header = header;
@@ -1191,6 +1191,9 @@ fn decode_geometry_body(src: &[u8], header: Header, frame: &mut Frame) -> Result
             Some(_) => return Err(Error::MalformedInput),
         }
         pos += 1;
+    }
+    if !valid_structure(header.geometry_type, segs, groups) {
+        return Err(Error::MalformedInput);
     }
     unsafe {
         dispatch_dims!(dims, integrate(coords.as_mut_ptr(), n, &factors));
@@ -1305,6 +1308,30 @@ mod tests {
             let n = segments.iter().sum::<usize>() * 2;
             let r = encode_geometry(geometry_type, &coords[..n], 2, 5, segments, groups, &mut out);
             assert_eq!(r.is_ok(), valid, "{geometry_type:?} {segments:?} {groups:?}");
+        }
+    }
+
+    #[test]
+    fn decoding_enforces_each_types_structure() {
+        let mut frame = Frame::default();
+        // "@DA" + the type char (code + 63), then the body; "??" is one 2D point (0, 0), ","
+        // separates segments and ";" groups.
+        for (bad, why) in [
+            (&b"@DAA??"[..], "one-point linestring"),
+            (b"@DA@????", "two-point point"),
+            (b"@DA@??;??", "point with two groups"),
+            (b"@DAB????;????", "polygon with two groups"),
+            (b"@DAC??,??", "multipoint part with two segments"),
+            (b"@DAD????;??", "multilinestring part with one point"),
+        ] {
+            assert_eq!(decode_geometry(bad, &mut frame), Err(Error::MalformedInput), "{why}");
+            assert!(
+                frame.coords.is_empty() && frame.segment_point_counts.is_empty(),
+                "{why}"
+            );
+        }
+        for good in [&b"@DAA????"[..], b"@DAB????,??", b"@DAC??;??", b"@DAE??,??;????"] {
+            assert!(decode_geometry(good, &mut frame).is_ok(), "{good:?}");
         }
     }
 

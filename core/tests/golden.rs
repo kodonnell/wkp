@@ -7,8 +7,16 @@
 //! - `bad  <encoded> <status> <header> <segments> <groups> <coords>`: C decode of corrupted
 //!   input, where status 0 means it decoded, 1 invalid argument (a bad header), 2 malformed
 //!   input.
+//!
+//! The C core accepted geometries whose structure SPEC.md forbids (e.g. one-point linestrings);
+//! since 0.7 encoding and decoding both reject them, and this test checks that instead.
 
 use wkp::{decode_f64, decode_geometry, encode_f64, encode_geometry, Error, Frame, GeometryType};
+
+#[path = "support/spec_decoder.rs"]
+mod spec_decoder;
+
+use spec_decoder::spec_structure;
 
 fn list<T: std::str::FromStr>(s: &str) -> Vec<T>
 where
@@ -28,7 +36,7 @@ fn bits(v: &[f64]) -> Vec<u64> {
 fn matches_c_core_golden_vectors() {
     let data = include_str!("data/c_core_golden.tsv");
     let (mut out, mut values, mut frame) = (Vec::new(), Vec::new(), Frame::default());
-    let mut counts = [0; 4];
+    let mut counts = [0; 5];
     for (i, line) in data.lines().enumerate() {
         let f: Vec<&str> = line.split('\t').collect();
         let ctx = format!("line {}: {line}", i + 1);
@@ -55,14 +63,17 @@ fn matches_c_core_golden_vectors() {
                     &mut out,
                 );
                 // The C core's generator also made geometries SPEC.md forbids (e.g. one-point
-                // linestrings), which the encoder now rejects. Their output must still decode.
-                if spec_structure(geometry_type, &segments, &groups) {
-                    encoded.unwrap();
-                    assert_eq!(out, f[7].as_bytes(), "{ctx}");
-                } else {
+                // linestrings). Since 0.7 they are rejected both ways.
+                if !spec_structure(geometry_type.code(), &segments, &groups) {
                     assert_eq!(encoded, Err(Error::InvalidArgument), "{ctx}");
+                    let decoded = decode_geometry(f[7].as_bytes(), &mut frame);
+                    assert_eq!(decoded, Err(Error::MalformedInput), "{ctx}");
+                    counts[1] += 1;
                     counts[3] += 1;
+                    continue;
                 }
+                encoded.unwrap();
+                assert_eq!(out, f[7].as_bytes(), "{ctx}");
                 decode_geometry(f[7].as_bytes(), &mut frame).unwrap();
                 assert_eq!(bits(&frame.coords), bits(&list(f[8])), "{ctx}");
                 assert_eq!(
@@ -75,6 +86,11 @@ fn matches_c_core_golden_vectors() {
             "bad" => {
                 let got = decode_geometry(f[1].as_bytes(), &mut frame);
                 match f[2] {
+                    // What the C core decoded but SPEC.md forbids is malformed since 0.7.
+                    "0" if !spec_structure(list::<u8>(f[3])[3], &list::<usize>(f[4]), &list::<usize>(f[5])) => {
+                        assert_eq!(got, Err(Error::MalformedInput), "{ctx}");
+                        counts[4] += 1;
+                    }
                     "0" => {
                         assert_eq!(got, Ok(()), "{ctx}");
                         let h = frame.header;
@@ -100,19 +116,7 @@ fn matches_c_core_golden_vectors() {
             kind => panic!("unknown kind {kind} at {ctx}"),
         }
     }
-    // The last count is the geometries the encoder rejects (checked in tests/data).
-    assert_eq!(counts, [200, 200, 200, 18]);
-}
-
-/// SPEC.md section 5's structure rules, written out independently of the encoder.
-fn spec_structure(geometry_type: GeometryType, segments: &[usize], groups: &[usize]) -> bool {
-    let one_segment_each = groups.iter().all(|&g| g == 1);
-    match geometry_type {
-        GeometryType::Point => groups == [1] && segments == [1],
-        GeometryType::LineString => groups == [1] && segments[0] >= 2,
-        GeometryType::Polygon => groups.len() == 1,
-        GeometryType::MultiPoint => one_segment_each && segments.iter().all(|&s| s == 1),
-        GeometryType::MultiLineString => one_segment_each && segments.iter().all(|&s| s >= 2),
-        _ => true,
-    }
+    // The last two counts are the geometries and corrupted inputs that break SPEC.md's structure
+    // rules, which the C core accepted (counted independently from tests/data).
+    assert_eq!(counts, [200, 200, 200, 18, 9]);
 }

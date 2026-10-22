@@ -43,12 +43,27 @@ pub fn ref_decode_f64(src: &[u8], dims: usize, precision: i32) -> Result<Vec<f64
 
 pub type RefFrame = (Vec<u64>, Vec<usize>, Vec<usize>);
 
+/// SPEC.md section 5's structure rules for geometry type code `t` (1..=6), given non-empty
+/// segments and groups whose counts add up.
+pub fn spec_structure(t: u8, segments: &[usize], groups: &[usize]) -> bool {
+    let one_segment_each = groups.iter().all(|&g| g == 1);
+    match t {
+        1 => groups == [1] && segments == [1],
+        2 => groups == [1] && segments[0] >= 2,
+        3 => groups.len() == 1,
+        4 => one_segment_each && segments.iter().all(|&s| s == 1),
+        5 => one_segment_each && segments.iter().all(|&s| s >= 2),
+        6 => true,
+        _ => false,
+    }
+}
+
 pub fn ref_decode_geometry(src: &[u8]) -> Result<RefFrame, Error> {
     if src.len() < 4 || src[..4].iter().any(|&c| !(63..=126).contains(&c)) || src[0] != 64 {
         return Err(Error::MalformedInput);
     }
-    let (precision, dims) = ((src[1] - 63) as i32, (src[2] - 63) as usize);
-    if dims == 0 || dims > 16 || src.len() == 4 {
+    let (precision, dims, t) = ((src[1] - 63) as i32, (src[2] - 63) as usize, src[3] - 63);
+    if dims == 0 || dims > 16 || !(1..=6).contains(&t) || src.len() == 4 {
         return Err(Error::MalformedInput);
     }
     let f = factor(precision);
@@ -74,6 +89,9 @@ pub fn ref_decode_geometry(src: &[u8]) -> Result<RefFrame, Error> {
                 match next {
                     None => {
                         groups.push(group_segs);
+                        if !spec_structure(t, &segs, &groups) {
+                            return Err(Error::MalformedInput);
+                        }
                         return Ok((coords, segs, groups));
                     }
                     Some(b',') => {}

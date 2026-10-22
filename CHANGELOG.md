@@ -47,10 +47,12 @@ not change: anything 0.6 encoded decodes the same in 0.7.
     instances in `@wkpjs/web`). Core errors were `TypeError` (invalid arguments) or `Error` in
     `@wkpjs/node` and plain `Error`s in `@wkpjs/web`; argument-type checks still throw
     `TypeError`.
-- Encoding enforces the structure `SPEC.md` requires of each geometry type: one point for a
-  Point, at least two points per linestring, one group for a Polygon, one point per MultiPoint
-  part, one linestring per MultiLineString part. Anything else is an invalid argument; before, it
-  was encoded (the C core did the same). Decoding still accepts such data.
+- **Encoding and decoding enforce the structure `SPEC.md` requires of each geometry type**: one
+  point for a Point, at least two points per linestring, one group for a Polygon, one point per
+  MultiPoint part, one linestring per MultiLineString part. Anything else is an invalid argument
+  when encoding and malformed input when decoding; before, both accepted it (as the C core
+  did), so a one-point LineString could be stored but not turned into a Shapely or GeoJSON
+  geometry. Anything an encoder produces now decodes, and anything decoded encodes again.
 - Decoding a geometry with an unknown geometry type (outside 1-6) is malformed input; before,
   the type code was passed through. Encoding one is an invalid argument (codes up to 63 were
   accepted).

@@ -99,10 +99,10 @@ When encoded as text, `,` separates segments within a group (rings) and `;` sepa
 | `MULTILINESTRING` | one per line | `[line0_points, line1_points, ...]`, each ≥ 2 | `[1, 1, ...]` |
 | `MULTIPOLYGON` | one per polygon | point count of every ring, in order | ring count per polygon |
 
-The encoder enforces this table (and that no count is 0). The sum of all segment point counts,
-multiplied by `dimensions`, must equal `coord_value_count`, and the sum of
-`group_segment_counts` must equal `segment_count`. The decoder only checks the syntax, so data
-written by older, laxer encoders still decodes.
+Encoding and decoding both enforce this table (and that no count is 0): anything else is
+`WKP_STATUS_INVALID_ARGUMENT` when encoding and `WKP_STATUS_MALFORMED_INPUT` when decoding. The
+sum of all segment point counts, multiplied by `dimensions`, must equal `coord_value_count`, and
+the sum of `group_segment_counts` must equal `segment_count`.
 
 Binder recipe:
 

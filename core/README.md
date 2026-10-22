@@ -37,9 +37,9 @@ decode_f64(&out, 2, &[5], &mut values)?;
 
 Topology is flat: `segment_point_counts` gives the points in each ring/linestring/point, and
 `group_segment_counts` the segments in each polygon/part. `GeometryType`'s docs say how each type
-maps onto it. Encoding enforces the structure `SPEC.md` requires of each type (one point for a
-Point, at least two per linestring, no empty parts); decoding does not, so data from older,
-laxer encoders stays readable.
+maps onto it. Encoding and decoding both enforce the structure `SPEC.md` requires of each type
+(one point for a Point, at least two per linestring, no empty parts), so anything decoded
+encodes again.
 
 Errors are `Error::InvalidArgument` (bad arguments: inconsistent counts or structure, dimensions
 outside 1..=16, precisions outside 0..=63, non-finite values or |value × 10^precision| ≥ 2^58)
@@ -60,8 +60,8 @@ differences are for inputs the C core handled badly:
 - chars above `~` (126) are rejected while decoding
 - a geometry header with 0 or more than 16 dimensions, or an unknown geometry type, is an error
   (the C core divided by zero or overran a stack buffer for the former)
-- encoding enforces each geometry type's structure (the C core encoded e.g. one-point
-  linestrings, which `SPEC.md` forbids); such output from the C core still decodes
+- encoding and decoding enforce each geometry type's structure (the C core encoded and decoded
+  e.g. one-point linestrings, which `SPEC.md` forbids)
 
 ## Performance notes
 
