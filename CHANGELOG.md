@@ -11,6 +11,35 @@ Release tags:
 
 ---
 
+## [0.7.0] — unreleased
+
+An API cleanup ahead of 1.0, so that every language works the same way. The encoded format does
+not change: anything 0.6 encoded decodes the same in 0.7.
+
+### All languages
+- Encoding enforces the structure `SPEC.md` requires of each geometry type: one point for a
+  Point, at least two points per linestring, one group for a Polygon, one point per MultiPoint
+  part, one linestring per MultiLineString part. Anything else is an invalid argument; before, it
+  was encoded (the C core did the same). Decoding still accepts such data.
+- Decoding a geometry with an unknown geometry type (outside 1-6) is malformed input; before,
+  the type code was passed through. Encoding one is an invalid argument (codes up to 63 were
+  accepted).
+
+### Rust (`wkp` crate) — breaking
+- `encode_geometry` takes a `GeometryType` instead of a `u8`, and its counts in the same order as
+  `Frame`: segment point counts, then group segment counts (they were the other way round).
+- `Header::geometry_type` is a `GeometryType` (was `u8`). `GeometryType` has `code()`,
+  `TryFrom<u8>` and `From<GeometryType> for u8`.
+- `Error`, `GeometryType`, `Header` and `Frame` are `#[non_exhaustive]`: match `Error` and
+  `GeometryType` with a wildcard arm, and build a `Frame` from `Frame::default()`.
+- `set_simd_enabled` is only available with the new `test-hooks` feature (for tests and
+  benchmarks; not covered by semver).
+- `Header::default()` has version 1 (was 0).
+- Added `encode_frame` (the inverse of `decode_geometry`), `VERSION`, `MAX_PRECISION`, and
+  `std::error::Error` for `Error`. Every public item is documented.
+
+---
+
 ## [0.6.1] — 2026-10-22
 
 ### Fixed

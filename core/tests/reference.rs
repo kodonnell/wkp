@@ -2,7 +2,7 @@
 //! on random and adversarial input (every byte value, long continuation runs, separators in odd
 //! places, truncation). Also checks that encoding round-trips through the reference decoder.
 
-use wkp::{decode_f64, decode_geometry, encode_f64, encode_geometry, Error, Frame};
+use wkp::{decode_f64, decode_geometry, encode_f64, encode_geometry, Error, Frame, GeometryType};
 
 #[path = "support/spec_decoder.rs"]
 mod spec_decoder;
@@ -208,9 +208,17 @@ fn simd_encoder_matches_scalar() {
         let groups = [segments.len()];
         let p = precisions[0];
         wkp::set_simd_enabled(true);
-        let a = encode_geometry(3, &coords, dims, p, &groups, &segments, &mut with);
+        let a = encode_geometry(GeometryType::Polygon, &coords, dims, p, &segments, &groups, &mut with);
         wkp::set_simd_enabled(false);
-        let b = encode_geometry(3, &coords, dims, p, &groups, &segments, &mut without);
+        let b = encode_geometry(
+            GeometryType::Polygon,
+            &coords,
+            dims,
+            p,
+            &segments,
+            &groups,
+            &mut without,
+        );
         assert_eq!((a, &with), (b, &without), "encode_geometry case {case} dims {dims}");
     }
     wkp::set_simd_enabled(true);
@@ -247,7 +255,16 @@ fn encoders_round_trip_through_reference() {
         // Split into 1..=3 segments in one group (a polygon-like frame).
         let cut = 1 + rng.below(n as u64) as usize;
         let segments: Vec<usize> = if cut < n { vec![cut, n - cut] } else { vec![n] };
-        encode_geometry(3, &coords, dims, precision, &[segments.len()], &segments, &mut out).unwrap();
+        encode_geometry(
+            GeometryType::Polygon,
+            &coords,
+            dims,
+            precision,
+            &segments,
+            &[segments.len()],
+            &mut out,
+        )
+        .unwrap();
         let (bits, segs, groups) = ref_decode_geometry(&out).unwrap();
         assert_eq!(
             (bits, segs, groups),

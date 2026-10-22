@@ -12,7 +12,7 @@ use core::ffi::c_char;
 use core::mem::ManuallyDrop;
 use core::{ptr, slice};
 
-use wkp::{Error, Frame};
+use wkp::{Error, Frame, GeometryType};
 
 pub type wkp_status = i32;
 pub const WKP_STATUS_OK: wkp_status = 0;
@@ -67,6 +67,7 @@ fn status(e: Error) -> wkp_status {
     match e {
         Error::InvalidArgument => WKP_STATUS_INVALID_ARGUMENT,
         Error::MalformedInput => WKP_STATUS_MALFORMED_INPUT,
+        _ => WKP_STATUS_INTERNAL_ERROR,
     }
 }
 
@@ -199,8 +200,11 @@ pub unsafe extern "C" fn wkp_encode_geometry_frame(
         let coords = slice_or_empty(coords, coord_value_count).ok_or(WKP_STATUS_INVALID_ARGUMENT)?;
         let groups = slice_or_empty(group_segment_counts, group_count).ok_or(WKP_STATUS_INVALID_ARGUMENT)?;
         let segs = slice_or_empty(segment_point_counts, segment_count).ok_or(WKP_STATUS_INVALID_ARGUMENT)?;
-        let geometry_type = u8::try_from(geometry_type).map_err(|_| WKP_STATUS_INVALID_ARGUMENT)?;
-        wkp::encode_geometry(geometry_type, coords, dimensions, precision, groups, segs, buf).map_err(status)
+        let geometry_type = u8::try_from(geometry_type)
+            .ok()
+            .and_then(GeometryType::from_code)
+            .ok_or(WKP_STATUS_INVALID_ARGUMENT)?;
+        wkp::encode_geometry(geometry_type, coords, dimensions, precision, segs, groups, buf).map_err(status)
     })
 }
 
@@ -253,12 +257,10 @@ pub unsafe extern "C" fn wkp_decode_geometry_frame(
     let Some(encoded) = slice_or_empty(encoded, encoded_size) else {
         return WKP_STATUS_INVALID_ARGUMENT;
     };
-    let mut frame = Frame {
-        header: Default::default(),
-        coords: take(&mut ctx.f64_, &mut ctx.f64_cap),
-        segment_point_counts: take(&mut ctx.sizes_a, &mut ctx.sizes_a_cap),
-        group_segment_counts: take(&mut ctx.sizes_b, &mut ctx.sizes_b_cap),
-    };
+    let mut frame = Frame::default();
+    frame.coords = take(&mut ctx.f64_, &mut ctx.f64_cap);
+    frame.segment_point_counts = take(&mut ctx.sizes_a, &mut ctx.sizes_a_cap);
+    frame.group_segment_counts = take(&mut ctx.sizes_b, &mut ctx.sizes_b_cap);
     let r = wkp::decode_geometry(encoded, &mut frame);
     let h = frame.header;
     let (nc, ns, ng) = (
@@ -276,7 +278,7 @@ pub unsafe extern "C" fn wkp_decode_geometry_frame(
         version: h.version as i32,
         precision: h.precision as i32,
         dimensions: h.dimensions as i32,
-        geometry_type: h.geometry_type as i32,
+        geometry_type: h.geometry_type.code() as i32,
         coords: if nc > 0 { ctx.f64_ } else { ptr::null() },
         coord_value_count: nc,
         segment_point_counts: if ns > 0 { ctx.sizes_a } else { ptr::null() },
@@ -308,7 +310,7 @@ pub unsafe extern "C" fn wkp_decode_geometry_header(
             *out_version = h.version as i32;
             *out_precision = h.precision as i32;
             *out_dimensions = h.dimensions as i32;
-            *out_geometry_type = h.geometry_type as i32;
+            *out_geometry_type = h.geometry_type.code() as i32;
             WKP_STATUS_OK
         }
         Err(e) => status(e),
@@ -335,7 +337,7 @@ pub unsafe extern "C" fn wkp_basic_self_test(out_failed_check: *mut i32) -> wkp_
     if wkp::decode_f64(&buf, 2, &[5], &mut decoded).is_err() || decoded != values {
         return fail(5);
     }
-    if wkp::encode_geometry(2, &values, 2, 5, &[1], &[3], &mut buf).is_err()
+    if wkp::encode_geometry(GeometryType::LineString, &values, 2, 5, &[3], &[1], &mut buf).is_err()
         || buf != b"@DAA_p~iF~ps|U_ulLnnqC_mqNvxq`@"
     {
         return fail(8);

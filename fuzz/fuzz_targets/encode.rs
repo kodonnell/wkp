@@ -5,7 +5,7 @@
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;
-use wkp::{encode_f64, encode_geometry, set_simd_enabled};
+use wkp::{encode_f64, encode_geometry, set_simd_enabled, GeometryType};
 
 #[path = "../../core/tests/support/spec_decoder.rs"]
 mod spec_decoder;
@@ -73,7 +73,7 @@ fuzz_target!(|data: &[u8]| {
     let groups = [segments.len()];
     for (k, simd) in [true, false].into_iter().enumerate() {
         set_simd_enabled(simd);
-        results[k] = encode_geometry(3, &values, dims, precision, &groups, &segments, &mut out[k]);
+        results[k] = encode_geometry(GeometryType::Polygon, &values, dims, precision, &segments, &groups, &mut out[k]);
     }
     assert_eq!(
         (&results[0], &out[0]),

@@ -32,6 +32,11 @@ jobs:
       - name: Clippy
         run: cargo clippy --locked --workspace --all-targets -- -D warnings
 
+      # The core library alone, as published: without its dev-dependency on itself, which turns
+      # on the test-hooks feature for every build above.
+      - name: Clippy (core library as published)
+        run: cargo clippy --locked -p wkp --lib -- -D warnings
+
       - name: Check versions
         run: python3 scripts/check_versions.py
 

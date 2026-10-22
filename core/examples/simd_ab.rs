@@ -6,7 +6,7 @@ use std::hint::black_box;
 use std::path::Path;
 use std::time::Instant;
 
-use wkp::{decode_geometry, encode_geometry, set_simd_enabled, Frame};
+use wkp::{decode_geometry, encode_geometry, set_simd_enabled, Frame, GeometryType};
 
 fn once(batch: usize, f: &mut impl FnMut()) -> f64 {
     let t = Instant::now();
@@ -110,9 +110,20 @@ fn main() {
     for (name, coords, dims, p) in cases {
         let segments = [coords.len() / dims];
         let mut geom = Vec::new();
-        encode_geometry(2, coords, dims, p, &[1], &segments, &mut geom).unwrap();
+        encode_geometry(GeometryType::LineString, coords, dims, p, &segments, &[1], &mut geom).unwrap();
         let (d0, d1) = ab(|| decode_geometry(black_box(&geom), &mut frame).unwrap());
-        let (e0, e1) = ab(|| encode_geometry(2, black_box(coords), dims, p, &[1], &segments, &mut out).unwrap());
+        let (e0, e1) = ab(|| {
+            encode_geometry(
+                GeometryType::LineString,
+                black_box(coords),
+                dims,
+                p,
+                &segments,
+                &[1],
+                &mut out,
+            )
+            .unwrap()
+        });
         println!(
             "{name:<19} {:>5.2} {d0:>8.2} -> {d1:>7.2}us {:>4.2}x {e0:>8.2} -> {e1:>7.2}us {:>4.2}x",
             geom.len() as f64 / coords.len() as f64,

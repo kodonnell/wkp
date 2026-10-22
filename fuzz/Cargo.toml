@@ -9,7 +9,7 @@ cargo-fuzz = true
 
 [dependencies]
 libfuzzer-sys = "0.4"
-wkp = { path = "../core" }
+wkp = { path = "../core", features = ["test-hooks"] }
 
 # Not part of the main workspace: it needs nightly and cargo-fuzz.
 [workspace]

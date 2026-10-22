@@ -9,3 +9,11 @@ repository.workspace = true
 readme = "README.md"
 keywords = ["polyline", "geometry", "gis", "encoding", "geospatial"]
 categories = ["encoding", "science::geo", "no-std"]
+
+[features]
+# `set_simd_enabled`, for this crate's tests, the fuzzers and benchmarks. Not covered by semver.
+test-hooks = []
+
+[dev-dependencies]
+# Turns `test-hooks` on for this crate's own tests and examples (cargo publish drops this entry).
+wkp = { path = ".", features = ["test-hooks"] }

@@ -8,7 +8,7 @@
 //!   input, where status 0 means it decoded, 1 invalid argument (a bad header), 2 malformed
 //!   input.
 
-use wkp::{decode_f64, decode_geometry, encode_f64, encode_geometry, Error, Frame};
+use wkp::{decode_f64, decode_geometry, encode_f64, encode_geometry, Error, Frame, GeometryType};
 
 fn list<T: std::str::FromStr>(s: &str) -> Vec<T>
 where
@@ -28,7 +28,7 @@ fn bits(v: &[f64]) -> Vec<u64> {
 fn matches_c_core_golden_vectors() {
     let data = include_str!("data/c_core_golden.tsv");
     let (mut out, mut values, mut frame) = (Vec::new(), Vec::new(), Frame::default());
-    let mut counts = [0; 3];
+    let mut counts = [0; 4];
     for (i, line) in data.lines().enumerate() {
         let f: Vec<&str> = line.split('\t').collect();
         let ctx = format!("line {}: {line}", i + 1);
@@ -42,20 +42,27 @@ fn matches_c_core_golden_vectors() {
                 counts[0] += 1;
             }
             "geom" => {
-                let (geometry_type, dims, precision) =
-                    (f[1].parse().unwrap(), f[2].parse().unwrap(), f[3].parse().unwrap());
+                let geometry_type = GeometryType::from_code(f[1].parse().unwrap()).unwrap();
+                let (dims, precision) = (f[2].parse().unwrap(), f[3].parse().unwrap());
                 let (groups, segments) = (list::<usize>(f[4]), list::<usize>(f[5]));
-                encode_geometry(
+                let encoded = encode_geometry(
                     geometry_type,
                     &list::<f64>(f[6]),
                     dims,
                     precision,
-                    &groups,
                     &segments,
+                    &groups,
                     &mut out,
-                )
-                .unwrap();
-                assert_eq!(out, f[7].as_bytes(), "{ctx}");
+                );
+                // The C core's generator also made geometries SPEC.md forbids (e.g. one-point
+                // linestrings), which the encoder now rejects. Their output must still decode.
+                if spec_structure(geometry_type, &segments, &groups) {
+                    encoded.unwrap();
+                    assert_eq!(out, f[7].as_bytes(), "{ctx}");
+                } else {
+                    assert_eq!(encoded, Err(Error::InvalidArgument), "{ctx}");
+                    counts[3] += 1;
+                }
                 decode_geometry(f[7].as_bytes(), &mut frame).unwrap();
                 assert_eq!(bits(&frame.coords), bits(&list(f[8])), "{ctx}");
                 assert_eq!(
@@ -75,7 +82,7 @@ fn matches_c_core_golden_vectors() {
                             h.version as i32,
                             h.precision as i32,
                             h.dimensions as i32,
-                            h.geometry_type as i32,
+                            h.geometry_type.code() as i32,
                         ];
                         assert_eq!(header, list::<i32>(f[3]), "{ctx}");
                         assert_eq!(frame.segment_point_counts, list::<usize>(f[4]), "{ctx}");
@@ -93,5 +100,19 @@ fn matches_c_core_golden_vectors() {
             kind => panic!("unknown kind {kind} at {ctx}"),
         }
     }
-    assert_eq!(counts, [200, 200, 200]);
+    // The last count is the geometries the encoder rejects (checked in tests/data).
+    assert_eq!(counts, [200, 200, 200, 18]);
+}
+
+/// SPEC.md section 5's structure rules, written out independently of the encoder.
+fn spec_structure(geometry_type: GeometryType, segments: &[usize], groups: &[usize]) -> bool {
+    let one_segment_each = groups.iter().all(|&g| g == 1);
+    match geometry_type {
+        GeometryType::Point => groups == [1] && segments == [1],
+        GeometryType::LineString => groups == [1] && segments[0] >= 2,
+        GeometryType::Polygon => groups.len() == 1,
+        GeometryType::MultiPoint => one_segment_each && segments.iter().all(|&s| s == 1),
+        GeometryType::MultiLineString => one_segment_each && segments.iter().all(|&s| s >= 2),
+        _ => true,
+    }
 }

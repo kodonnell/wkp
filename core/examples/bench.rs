@@ -6,7 +6,7 @@ use std::hint::black_box;
 use std::path::Path;
 use std::time::Instant;
 
-use wkp::{decode_f64, decode_geometry, encode_f64, encode_geometry, Frame};
+use wkp::{decode_f64, decode_geometry, encode_f64, encode_geometry, Frame, GeometryType};
 
 /// Median per-call time in microseconds over `rounds` batches of ~20ms each.
 fn time_us(rounds: usize, mut f: impl FnMut()) -> f64 {
@@ -80,14 +80,23 @@ fn main() {
         let mut enc_f = Vec::new();
         let mut enc_g = Vec::new();
         encode_f64(coords, dims, &[p], &mut enc_f).unwrap();
-        encode_geometry(2, coords, dims, p, &[1], &segments, &mut enc_g).unwrap();
+        encode_geometry(GeometryType::LineString, coords, dims, p, &segments, &[1], &mut enc_g).unwrap();
         let t = [
             time_us(rounds, || encode_f64(black_box(coords), dims, &[p], &mut out).unwrap()),
             time_us(rounds, || {
                 decode_f64(black_box(&enc_f), dims, &[p], &mut values).unwrap()
             }),
             time_us(rounds, || {
-                encode_geometry(2, black_box(coords), dims, p, &[1], &segments, &mut out).unwrap()
+                encode_geometry(
+                    GeometryType::LineString,
+                    black_box(coords),
+                    dims,
+                    p,
+                    &segments,
+                    &[1],
+                    &mut out,
+                )
+                .unwrap()
             }),
             time_us(rounds, || decode_geometry(black_box(&enc_g), &mut frame).unwrap()),
         ];

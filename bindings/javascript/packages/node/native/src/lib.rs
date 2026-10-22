@@ -9,7 +9,7 @@ use std::{mem, ptr};
 
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
-use wkp::Frame;
+use wkp::{Frame, GeometryType};
 
 thread_local! {
     // Reused output buffers (one set per JS thread). Results are copied into JS-owned memory, so
@@ -97,7 +97,7 @@ impl FromNapiValue for Encoded {
 fn core_err(e: wkp::Error) -> Error {
     let status = match e {
         wkp::Error::InvalidArgument => Status::InvalidArg,
-        wkp::Error::MalformedInput => Status::GenericFailure,
+        _ => Status::GenericFailure,
     };
     Error::new(status, format!("WKP core error: {e}"))
 }
@@ -147,7 +147,7 @@ pub fn run_self_test() -> Result<bool> {
     let mut frame = Frame::default();
     let ok = wkp::encode_f64(&values, 2, &[5], &mut buf).is_ok()
         && buf == b"_p~iF~ps|U_ulLnnqC_mqNvxq`@"
-        && wkp::encode_geometry(2, &values, 2, 5, &[1], &[3], &mut buf).is_ok()
+        && wkp::encode_geometry(GeometryType::LineString, &values, 2, 5, &[3], &[1], &mut buf).is_ok()
         && buf == b"@DAA_p~iF~ps|U_ulLnnqC_mqNvxq`@"
         && wkp::decode_geometry(&buf, &mut frame).is_ok()
         && frame.coords == values;
@@ -222,7 +222,10 @@ pub fn encode_geometry_frame_f64<'env>(
     group_segment_counts: &[u32],
     segment_point_counts: &[u32],
 ) -> Result<BufferSlice<'env>> {
-    let geometry_type = u8::try_from(geometry_type).map_err(|_| core_err(wkp::Error::InvalidArgument))?;
+    let geometry_type = u8::try_from(geometry_type)
+        .ok()
+        .and_then(GeometryType::from_code)
+        .ok_or_else(|| core_err(wkp::Error::InvalidArgument))?;
     let groups = to_usize(group_segment_counts);
     let segments = to_usize(segment_point_counts);
     BYTES.with_borrow_mut(|out| {
@@ -231,8 +234,8 @@ pub fn encode_geometry_frame_f64<'env>(
             coords,
             dimensions as usize,
             precision,
-            &groups,
             &segments,
+            &groups,
             out,
         )
         .map_err(core_err)?;
@@ -248,7 +251,7 @@ pub fn decode_geometry_header(encoded: Encoded) -> Result<Vec<u32>> {
         h.version as u32,
         h.precision as u32,
         h.dimensions as u32,
-        h.geometry_type as u32,
+        h.geometry_type.code() as u32,
     ])
 }
 
@@ -277,7 +280,7 @@ pub fn decode_geometry_frame_flat<'env>(
             h.version as u32,
             h.precision as u32,
             h.dimensions as u32,
-            h.geometry_type as u32,
+            h.geometry_type.code() as u32,
             typed_array_copy(env, &f.coords, TypedArrayType::Float64)?,
             typed_array_copy(env, &segs, TypedArrayType::Uint32)?,
             typed_array_copy(env, &groups, TypedArrayType::Uint32)?,

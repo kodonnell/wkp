@@ -3,7 +3,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use wkp::{decode_f64, decode_geometry, encode_f64, encode_geometry, Frame};
+use wkp::{decode_f64, decode_geometry, encode_f64, encode_geometry, Frame, GeometryType};
 
 fn fixture_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../data/integration_tests")
@@ -65,7 +65,7 @@ fn assert_close(got: &[f64], want: &[f64], ctx: &str) {
 /// A geometry parsed from WKT into the flat frame form used by the encoder.
 #[derive(Debug, PartialEq)]
 struct Wkt {
-    geometry_type: u8,
+    geometry_type: GeometryType,
     dims: usize,
     coords: Vec<f64>,
     groups: Vec<usize>,
@@ -134,7 +134,7 @@ fn parse_wkt(s: &str) -> Wkt {
     let mut rest = &s[open..];
     let root = parse_node(&mut rest);
     let mut w = Wkt {
-        geometry_type: 0,
+        geometry_type: GeometryType::Point,
         dims: 0,
         coords: Vec::new(),
         groups: Vec::new(),
@@ -142,17 +142,25 @@ fn parse_wkt(s: &str) -> Wkt {
     };
     match kind.as_str() {
         "POINT" | "LINESTRING" => {
-            w.geometry_type = if kind == "POINT" { 1 } else { 2 };
+            w.geometry_type = if kind == "POINT" {
+                GeometryType::Point
+            } else {
+                GeometryType::LineString
+            };
             push_segment(&root, &mut w);
             w.groups.push(1);
         }
         "POLYGON" => {
-            w.geometry_type = 3;
+            w.geometry_type = GeometryType::Polygon;
             list(&root).iter().for_each(|ring| push_segment(ring, &mut w));
             w.groups.push(list(&root).len());
         }
         "MULTIPOINT" | "MULTILINESTRING" => {
-            w.geometry_type = if kind == "MULTIPOINT" { 4 } else { 5 };
+            w.geometry_type = if kind == "MULTIPOINT" {
+                GeometryType::MultiPoint
+            } else {
+                GeometryType::MultiLineString
+            };
             for part in list(&root) {
                 match part {
                     // MULTIPOINT (1 2, 3 4) form.
@@ -163,7 +171,7 @@ fn parse_wkt(s: &str) -> Wkt {
             }
         }
         "MULTIPOLYGON" => {
-            w.geometry_type = 6;
+            w.geometry_type = GeometryType::MultiPolygon;
             for polygon in list(&root) {
                 list(polygon).iter().for_each(|ring| push_segment(ring, &mut w));
                 w.groups.push(list(polygon).len());
@@ -210,8 +218,8 @@ fn geometry_encode() {
             &w.coords,
             w.dims,
             f[0].parse().unwrap(),
-            &w.groups,
             &w.segments,
+            &w.groups,
             &mut out,
         )
         .unwrap();
@@ -243,7 +251,7 @@ fn wkt_parser_topology() {
     );
     assert_eq!(
         (w.geometry_type, w.dims, w.groups, w.segments),
-        (6, 2, vec![1, 2], vec![4, 4, 4])
+        (GeometryType::MultiPolygon, 2, vec![1, 2], vec![4, 4, 4])
     );
     let w = parse_wkt("MULTIPOINT (1 2, 3 4)");
     assert_eq!(

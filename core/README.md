@@ -9,18 +9,25 @@ All functions write into caller-provided buffers (cleared first), so reusing the
 `Frame` across calls avoids reallocating.
 
 ```rust
-use wkp::{decode_f64, decode_geometry, decode_header, encode_f64, encode_geometry, Frame};
+use wkp::{decode_f64, decode_geometry, encode_f64, encode_frame, encode_geometry, Frame, GeometryType};
 
 // Geometry with a header: LINESTRING (38.5 -120.2, 40.7 -120.95, 43.252 -126.453) at 5dp.
+// Topology: points per segment ([3]), then segments per group ([1]).
 let coords = [38.5, -120.2, 40.7, -120.95, 43.252, -126.453];
 let mut out = Vec::new();
-encode_geometry(2 /* LINESTRING */, &coords, 2, 5, &[1], &[3], &mut out)?;
+encode_geometry(GeometryType::LineString, &coords, 2, 5, &[3], &[1], &mut out)?;
 assert_eq!(out, b"@DAA_p~iF~ps|U_ulLnnqC_mqNvxq`@");
 
 let mut frame = Frame::default();
 decode_geometry(&out, &mut frame)?;
+assert_eq!(frame.header.geometry_type, GeometryType::LineString);
 assert_eq!(frame.coords, coords);
-assert_eq!((frame.group_segment_counts, frame.segment_point_counts), (vec![1], vec![3]));
+assert_eq!((frame.segment_point_counts.clone(), frame.group_segment_counts.clone()), (vec![3], vec![1]));
+
+// encode_frame is the inverse of decode_geometry.
+let mut again = Vec::new();
+encode_frame(&frame, &mut again)?;
+assert_eq!(again, out);
 
 // Headerless float streams, one precision for all dimensions or one per dimension.
 encode_f64(&coords, 2, &[5], &mut out)?;
@@ -29,12 +36,18 @@ decode_f64(&out, 2, &[5], &mut values)?;
 ```
 
 Topology is flat: `segment_point_counts` gives the points in each ring/linestring/point, and
-`group_segment_counts` the segments in each polygon/part. See `bindings/c/README.md` for how each
-geometry type maps onto it.
+`group_segment_counts` the segments in each polygon/part. `GeometryType`'s docs say how each type
+maps onto it. Encoding enforces the structure `SPEC.md` requires of each type (one point for a
+Point, at least two per linestring, no empty parts); decoding does not, so data from older,
+laxer encoders stays readable.
 
-Errors are `Error::InvalidArgument` (bad arguments: inconsistent counts, dimensions outside
-1..=16, precisions outside 0..=63, non-finite values or |value × 10^precision| ≥ 2^58) and
-`Error::MalformedInput` (the encoded data isn't valid WKP).
+Errors are `Error::InvalidArgument` (bad arguments: inconsistent counts or structure, dimensions
+outside 1..=16, precisions outside 0..=63, non-finite values or |value × 10^precision| ≥ 2^58)
+and `Error::MalformedInput` (the encoded data isn't valid WKP, including an unknown geometry
+type). `Error`, `GeometryType`, `Header` and `Frame` are `#[non_exhaustive]`.
+
+`set_simd_enabled` (to compare the SIMD and scalar paths) is behind the `test-hooks` feature,
+which is for this crate's tests, fuzzers and benchmarks and not covered by semver.
 
 ## Compatibility with the C implementation
 
@@ -45,8 +58,10 @@ differences are for inputs the C core handled badly:
 - non-finite values, values too large to encode losslessly, and precisions outside 0..=63 are
   rejected rather than producing garbage
 - chars above `~` (126) are rejected while decoding
-- a geometry header with 0 or more than 16 dimensions is an error (the C core divided by zero or
-  overran a stack buffer)
+- a geometry header with 0 or more than 16 dimensions, or an unknown geometry type, is an error
+  (the C core divided by zero or overran a stack buffer for the former)
+- encoding enforces each geometry type's structure (the C core encoded e.g. one-point
+  linestrings, which `SPEC.md` forbids); such output from the C core still decodes
 
 ## Performance notes
 

@@ -10,8 +10,29 @@
 //! All encode/decode functions write into caller-provided `Vec`s, which are cleared first.
 //! Reusing the same `Vec`s (or [`Frame`]) across calls avoids reallocating, which is the
 //! equivalent of the C API's `wkp_context`.
+//!
+//! ```
+//! use wkp::{decode_geometry, encode_frame, encode_geometry, Frame, GeometryType};
+//!
+//! // LINESTRING (38.5 -120.2, 40.7 -120.95, 43.252 -126.453) at 5 decimal places: one segment of
+//! // three points, in one group.
+//! let coords = [38.5, -120.2, 40.7, -120.95, 43.252, -126.453];
+//! let mut out = Vec::new();
+//! encode_geometry(GeometryType::LineString, &coords, 2, 5, &[3], &[1], &mut out)?;
+//! assert_eq!(out, b"@DAA_p~iF~ps|U_ulLnnqC_mqNvxq`@");
+//!
+//! let mut frame = Frame::default();
+//! decode_geometry(&out, &mut frame)?;
+//! assert_eq!(frame.coords, coords);
+//!
+//! let mut again = Vec::new();
+//! encode_frame(&frame, &mut again)?;
+//! assert_eq!(again, out);
+//! # Ok::<(), wkp::Error>(())
+//! ```
 
 #![no_std]
+#![warn(missing_docs)]
 
 extern crate alloc;
 
@@ -19,9 +40,17 @@ use alloc::vec::Vec;
 use core::fmt;
 use core::ptr;
 
+/// Version of this crate.
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+/// Most dimensions per point (or per value group in a float stream).
 pub const MAX_DIMS: usize = 16;
+/// Largest precision (decimal places).
+pub const MAX_PRECISION: i32 = HEADER_MAX;
+/// The format version written in geometry headers; the only one decoders accept.
 pub const GEOMETRY_VERSION: u8 = 1;
+/// Separates segments (rings) within a group.
 pub const SEP_RING: u8 = b',';
+/// Separates groups (parts).
 pub const SEP_MULTI: u8 = b';';
 const HEADER_OFFSET: u8 = 63;
 const HEADER_MAX: i32 = 63;
@@ -32,9 +61,14 @@ const MAX_SCALED: f64 = (1u64 << 58) as f64;
 /// Worst-case encoded chars for one value.
 const MAX_VARINT_LEN: usize = 12;
 
+/// Why an encode or decode failed.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Error {
+    /// An argument is out of range or inconsistent: a precision, dimension count or value the
+    /// format cannot hold, or counts that do not match the coordinates.
     InvalidArgument,
+    /// The encoded input is not valid WKP.
     MalformedInput,
 }
 
@@ -47,20 +81,33 @@ impl fmt::Display for Error {
     }
 }
 
+impl core::error::Error for Error {}
+
+/// `Result` with this crate's [`Error`].
 pub type Result<T> = core::result::Result<T, Error>;
 
+/// The kind of geometry, as stored in a header. Its numeric code is the `repr(u8)` value.
 #[repr(u8)]
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum GeometryType {
+    /// One point: one group with one segment of one point.
+    #[default]
     Point = 1,
+    /// One group with one segment of two or more points.
     LineString = 2,
+    /// One group with one segment per ring (shell first).
     Polygon = 3,
+    /// One group per point, each with one segment of one point.
     MultiPoint = 4,
+    /// One group per linestring, each with one segment.
     MultiLineString = 5,
+    /// One group per polygon, each with one segment per ring.
     MultiPolygon = 6,
 }
 
 impl GeometryType {
+    /// The type for a header code, or `None` for an unknown code.
     pub fn from_code(code: u8) -> Option<Self> {
         Some(match code {
             1 => Self::Point,
@@ -72,24 +119,69 @@ impl GeometryType {
             _ => return None,
         })
     }
+
+    /// The header code.
+    pub fn code(self) -> u8 {
+        self as u8
+    }
 }
 
-#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
+impl TryFrom<u8> for GeometryType {
+    type Error = Error;
+
+    /// Unknown codes are [`Error::InvalidArgument`].
+    fn try_from(code: u8) -> Result<Self> {
+        Self::from_code(code).ok_or(Error::InvalidArgument)
+    }
+}
+
+impl From<GeometryType> for u8 {
+    fn from(geometry_type: GeometryType) -> u8 {
+        geometry_type.code()
+    }
+}
+
+/// The four header fields of an encoded geometry.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct Header {
+    /// Format version; always [`GEOMETRY_VERSION`].
     pub version: u8,
+    /// Decimal places kept.
     pub precision: u8,
+    /// Values per point.
     pub dimensions: u8,
-    /// Raw type code. Codes outside 1..=6 are passed through, as in the C core.
-    pub geometry_type: u8,
+    /// The kind of geometry.
+    pub geometry_type: GeometryType,
 }
 
-/// Decoded geometry in flat form. Reuse one across calls to avoid reallocating.
+/// Version [`GEOMETRY_VERSION`]; everything else zero (and [`GeometryType::Point`]).
+impl Default for Header {
+    fn default() -> Self {
+        Header {
+            version: GEOMETRY_VERSION,
+            precision: 0,
+            dimensions: 0,
+            geometry_type: GeometryType::Point,
+        }
+    }
+}
+
+/// A geometry in flat form: interleaved coordinates plus topology. Groups are polygons or parts;
+/// segments are rings, linestrings or points (see [`GeometryType`] for each type's layout).
+///
+/// [`decode_geometry`] fills one; reuse it across calls to avoid reallocating. To encode one,
+/// set its fields and call [`encode_frame`].
 #[derive(Clone, Debug, Default, PartialEq)]
+#[non_exhaustive]
 pub struct Frame {
+    /// The header fields. `version` must be [`GEOMETRY_VERSION`] to encode.
     pub header: Header,
-    /// Point-major, dimension-interleaved coordinates.
+    /// Point-major, dimension-interleaved coordinates: `[x0, y0, x1, y1, ...]`.
     pub coords: Vec<f64>,
+    /// Points in each segment.
     pub segment_point_counts: Vec<usize>,
+    /// Segments in each group.
     pub group_segment_counts: Vec<usize>,
 }
 
@@ -333,9 +425,10 @@ fn normalize_precisions(dims: usize, precisions: &[i32]) -> Result<[f64; MAX_DIM
     Ok(factors)
 }
 
-/// Encodes a raw float stream (no header). `precisions` is either one value for all
-/// dimensions or one per dimension, each in `0..=63`.
+/// Encodes a raw float stream (no header): `values` are flat and interleaved, `dims` per point.
+/// `precisions` is either one value for all dimensions or one per dimension, each in `0..=63`.
 pub fn encode_f64(values: &[f64], dims: usize, precisions: &[i32], out: &mut Vec<u8>) -> Result<()> {
+    out.clear();
     let factors = normalize_precisions(dims, precisions)?;
     if values.len() % dims != 0 {
         return Err(Error::InvalidArgument);
@@ -355,22 +448,43 @@ pub fn encode_f64(values: &[f64], dims: usize, precisions: &[i32], out: &mut Vec
     r
 }
 
+/// Whether the counts have the structure SPEC.md section 5 requires of `geometry_type`, given
+/// that every count is non-zero and the group counts sum to the number of segments.
+fn valid_structure(
+    geometry_type: GeometryType,
+    segment_point_counts: &[usize],
+    group_segment_counts: &[usize],
+) -> bool {
+    use GeometryType::*;
+    let one_segment_per_group = || group_segment_counts.iter().all(|&g| g == 1);
+    match geometry_type {
+        Point => group_segment_counts == [1] && segment_point_counts == [1],
+        LineString => group_segment_counts == [1] && segment_point_counts[0] >= 2,
+        Polygon => group_segment_counts.len() == 1,
+        MultiPoint => one_segment_per_group() && segment_point_counts.iter().all(|&s| s == 1),
+        MultiLineString => one_segment_per_group() && segment_point_counts.iter().all(|&s| s >= 2),
+        MultiPolygon => true,
+    }
+}
+
 /// Encodes a geometry with a `VPDT` header. Topology is given as point counts per segment
-/// (ring/linestring/point) and segment counts per group (polygon/part).
+/// (ring/linestring/point) and segment counts per group (polygon/part), and must have the
+/// structure SPEC.md requires of the type: e.g. one point for [`GeometryType::Point`], at least
+/// two per linestring, no empty segments or groups. Anything else is [`Error::InvalidArgument`].
 pub fn encode_geometry(
-    geometry_type: u8,
+    geometry_type: GeometryType,
     coords: &[f64],
     dims: usize,
     precision: i32,
-    group_segment_counts: &[usize],
     segment_point_counts: &[usize],
+    group_segment_counts: &[usize],
     out: &mut Vec<u8>,
 ) -> Result<()> {
+    out.clear();
     if dims == 0
         || dims > MAX_DIMS
         || coords.len() % dims != 0
         || !(0..=HEADER_MAX).contains(&precision)
-        || geometry_type as i32 > HEADER_MAX
         || group_segment_counts.is_empty()
         || segment_point_counts.is_empty()
         // An empty group or segment encodes to an empty run, which decoders reject (SPEC.md).
@@ -380,7 +494,9 @@ pub fn encode_geometry(
         return Err(Error::InvalidArgument);
     }
     let summed_segments = group_segment_counts.iter().try_fold(0usize, |a, &b| a.checked_add(b));
-    if summed_segments != Some(segment_point_counts.len()) {
+    if summed_segments != Some(segment_point_counts.len())
+        || !valid_structure(geometry_type, segment_point_counts, group_segment_counts)
+    {
         return Err(Error::InvalidArgument);
     }
     let total_points = segment_point_counts.iter().try_fold(0usize, |a, &b| a.checked_add(b));
@@ -436,7 +552,7 @@ pub fn encode_geometry(
         GEOMETRY_VERSION + HEADER_OFFSET,
         precision as u8 + HEADER_OFFSET,
         dims as u8 + HEADER_OFFSET,
-        geometry_type + HEADER_OFFSET,
+        geometry_type.code() + HEADER_OFFSET,
     ];
     let r = dispatch_dims!(
         dims,
@@ -453,6 +569,25 @@ pub fn encode_geometry(
         out.clear();
     }
     r
+}
+
+/// Encodes a [`Frame`] (as filled by [`decode_geometry`], or built by hand): the inverse of
+/// [`decode_geometry`]. Its header's version must be [`GEOMETRY_VERSION`]; see
+/// [`encode_geometry`] for the other requirements.
+pub fn encode_frame(frame: &Frame, out: &mut Vec<u8>) -> Result<()> {
+    if frame.header.version != GEOMETRY_VERSION {
+        out.clear();
+        return Err(Error::InvalidArgument);
+    }
+    encode_geometry(
+        frame.header.geometry_type,
+        &frame.coords,
+        frame.header.dimensions as usize,
+        frame.header.precision as i32,
+        &frame.segment_point_counts,
+        &frame.group_segment_counts,
+        out,
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -667,6 +802,7 @@ mod simd {
     }
 
     /// Turns the SIMD paths off (or back on, where the CPU supports them) for this process.
+    #[cfg(feature = "test-hooks")]
     pub fn set_enabled(enabled: bool) {
         STATE.store(if enabled { 0 } else { DISABLED }, Ordering::Relaxed);
     }
@@ -922,9 +1058,10 @@ mod simd {
     }
 }
 
-/// Enables or disables the SIMD decoder (on by default where the CPU supports it). Both paths
-/// produce identical results; this exists for testing and benchmarking.
-#[doc(hidden)]
+/// Enables or disables the SIMD paths for this process (on by default where the CPU supports
+/// them). Both paths produce identical results; this exists for testing and benchmarking, behind
+/// the `test-hooks` feature, which is not covered by semver.
+#[cfg(feature = "test-hooks")]
 pub fn set_simd_enabled(enabled: bool) {
     #[cfg(target_arch = "x86_64")]
     simd::set_enabled(enabled);
@@ -946,7 +1083,8 @@ unsafe fn integrate(buf: *mut f64, n: usize, factors: &[f64; MAX_DIMS], dims: us
     }
 }
 
-/// Decodes a raw float stream (no header) into `out` as flat interleaved values.
+/// Decodes a raw float stream (no header) into `out` as flat interleaved values. `dims` and
+/// `precisions` must be those it was encoded with: the stream does not record them.
 pub fn decode_f64(encoded: &[u8], dims: usize, precisions: &[i32], out: &mut Vec<f64>) -> Result<()> {
     let factors = normalize_precisions(dims, precisions)?;
     out.clear();
@@ -964,8 +1102,9 @@ pub fn decode_f64(encoded: &[u8], dims: usize, precisions: &[i32], out: &mut Vec
     Ok(())
 }
 
-/// Decodes the 4-char `VPDT` header. Input that is too short, has a char outside `?`..`~`, or
-/// has an unsupported version is [`Error::MalformedInput`].
+/// Decodes the 4-char `VPDT` header. Input that is too short, has a char outside `?`..`~`, an
+/// unsupported version, dimensions outside `1..=16` or an unknown geometry type is
+/// [`Error::MalformedInput`].
 pub fn decode_header(encoded: &[u8]) -> Result<Header> {
     if encoded.len() < 4 {
         return Err(Error::MalformedInput);
@@ -978,18 +1117,22 @@ pub fn decode_header(encoded: &[u8]) -> Result<Header> {
         }
         *f = v;
     }
-    if fields[0] != GEOMETRY_VERSION {
+    // The C core trusted the dimensions field, so a crafted header could divide by zero or
+    // overrun its stack arrays.
+    if fields[0] != GEOMETRY_VERSION || fields[2] == 0 || fields[2] as usize > MAX_DIMS {
         return Err(Error::MalformedInput);
     }
     Ok(Header {
         version: fields[0],
         precision: fields[1],
         dimensions: fields[2],
-        geometry_type: fields[3],
+        geometry_type: GeometryType::from_code(fields[3]).ok_or(Error::MalformedInput)?,
     })
 }
 
-/// Decodes a geometry into `frame`, reusing its buffers.
+/// Decodes a geometry into `frame`, reusing its buffers. Decoding checks the syntax but, unlike
+/// encoding, not each type's structure (e.g. a one-point linestring decodes), so data written
+/// by older, laxer encoders stays readable.
 pub fn decode_geometry(encoded: &[u8], frame: &mut Frame) -> Result<()> {
     let header = decode_header(encoded)?;
     frame.header = header;
@@ -1007,8 +1150,7 @@ pub fn decode_geometry(encoded: &[u8], frame: &mut Frame) -> Result<()> {
 
 fn decode_geometry_body(src: &[u8], header: Header, frame: &mut Frame) -> Result<()> {
     let dims = header.dimensions as usize;
-    // The C core trusts this field, so a crafted header can divide by zero or overrun its
-    // stack arrays. Reject it here.
+    // decode_header has checked dims; everything below relies on it, so it is checked here too.
     if dims == 0 || dims > MAX_DIMS || src.len() <= 4 {
         return Err(Error::MalformedInput);
     }
@@ -1097,7 +1239,7 @@ mod tests {
         decode_f64(&out, 2, &[5], &mut dec).unwrap();
         assert_eq!(dec, values);
 
-        encode_geometry(2, &values, 2, 5, &[1], &[3], &mut out).unwrap();
+        encode_geometry(GeometryType::LineString, &values, 2, 5, &[3], &[1], &mut out).unwrap();
         assert_eq!(out, b"@DAA_p~iF~ps|U_ulLnnqC_mqNvxq`@");
         let mut frame = Frame::default();
         decode_geometry(&out, &mut frame).unwrap();
@@ -1110,7 +1252,7 @@ mod tests {
     fn multilinestring_fixture() {
         let coords = [0.0, 0.0, 1.0, 1.0, 2.0, 2.0, 2.0, 2.0, 3.0, 3.0, 4.0, 5.0];
         let mut out = Vec::new();
-        encode_geometry(5, &coords, 2, 5, &[1, 1], &[3, 3], &mut out).unwrap();
+        encode_geometry(GeometryType::MultiLineString, &coords, 2, 5, &[3, 3], &[1, 1], &mut out).unwrap();
         assert_eq!(out, b"@DAD??_ibE_ibE_ibE_ibE;??_ibE_ibE_ibE_seK");
         let mut frame = Frame::default();
         decode_geometry(&out, &mut frame).unwrap();
@@ -1131,15 +1273,84 @@ mod tests {
         let coords = [1.0, 2.0];
         let mut out = Vec::new();
         for (groups, segments) in [(&[1][..], &[0][..]), (&[1, 0], &[1]), (&[2], &[1, 0]), (&[0, 1], &[1])] {
-            let r = encode_geometry(4, &coords, 2, 5, groups, segments, &mut out);
+            let r = encode_geometry(GeometryType::MultiPoint, &coords, 2, 5, segments, groups, &mut out);
             assert_eq!(r, Err(Error::InvalidArgument), "{groups:?} {segments:?}");
             assert!(out.is_empty());
         }
     }
 
     #[test]
+    fn enforces_each_types_structure() {
+        use GeometryType::*;
+        let mut out = Vec::new();
+        let coords = [0.0; 8]; // 4 points in 2D
+                               // (type, segment point counts, group segment counts, valid)
+        let cases: [(GeometryType, &[usize], &[usize], bool); 14] = [
+            (Point, &[1], &[1], true),
+            (Point, &[2], &[1], false),
+            (Point, &[1, 1], &[2], false),
+            (LineString, &[4], &[1], true),
+            (LineString, &[1], &[1], false),
+            (LineString, &[2, 2], &[1, 1], false),
+            (Polygon, &[2, 2], &[2], true),
+            (Polygon, &[2, 2], &[1, 1], false),
+            (MultiPoint, &[1, 1, 1, 1], &[1, 1, 1, 1], true),
+            (MultiPoint, &[2, 2], &[1, 1], false),
+            (MultiLineString, &[2, 2], &[1, 1], true),
+            (MultiLineString, &[3, 1], &[1, 1], false),
+            (MultiLineString, &[2, 2], &[2], false),
+            (MultiPolygon, &[1, 1, 2], &[2, 1], true),
+        ];
+        for (geometry_type, segments, groups, valid) in cases {
+            let n = segments.iter().sum::<usize>() * 2;
+            let r = encode_geometry(geometry_type, &coords[..n], 2, 5, segments, groups, &mut out);
+            assert_eq!(r.is_ok(), valid, "{geometry_type:?} {segments:?} {groups:?}");
+        }
+    }
+
+    #[test]
+    fn encode_frame_inverts_decode_geometry() {
+        let mut out = Vec::new();
+        let coords = [
+            0.0, 0.0, 4.0, 0.0, 4.0, 4.0, 0.0, 0.0, 1.0, 1.0, 2.0, 1.0, 2.0, 2.0, 1.0, 1.0,
+        ];
+        encode_geometry(GeometryType::Polygon, &coords, 2, 6, &[4, 4], &[2], &mut out).unwrap();
+        let mut frame = Frame::default();
+        decode_geometry(&out, &mut frame).unwrap();
+        assert_eq!(frame.header.geometry_type, GeometryType::Polygon);
+        let mut again = Vec::new();
+        encode_frame(&frame, &mut again).unwrap();
+        assert_eq!(again, out);
+
+        frame.header.version = 2;
+        assert_eq!(encode_frame(&frame, &mut again), Err(Error::InvalidArgument));
+        assert!(again.is_empty());
+    }
+
+    #[test]
+    fn geometry_type_codes() {
+        for code in 0..=255u8 {
+            match GeometryType::try_from(code) {
+                Ok(t) => assert_eq!((u8::from(t), t.code()), (code, code)),
+                Err(e) => assert!(!(1..=6).contains(&code) && e == Error::InvalidArgument),
+            }
+        }
+    }
+
+    #[test]
     fn bad_header_is_malformed_input() {
-        for bad in [&b""[..], b"@DA", b"ADAA??", b"@D\x7fA??", b"@D\x20A??"] {
+        // Too short; version 2; bad chars; dimensions 0 and 17; geometry types 0 and 7.
+        for bad in [
+            &b""[..],
+            b"@DA",
+            b"ADAA??",
+            b"@D\x7fA??",
+            b"@D\x20A??",
+            b"@D?A??",
+            b"@DPA??",
+            b"@DA???",
+            b"@DAF??",
+        ] {
             assert_eq!(decode_header(bad), Err(Error::MalformedInput), "{bad:?}");
             assert_eq!(
                 decode_geometry(bad, &mut Frame::default()),

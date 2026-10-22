@@ -4,7 +4,7 @@ use numpy::{PyArray1, PyArray2, PyArrayMethods, PyReadonlyArray2, PyUntypedArray
 use pyo3::exceptions::{PyRuntimeError, PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyDict, PyString, PyTuple};
-use wkp::Frame;
+use wkp::{Frame, GeometryType};
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -87,7 +87,7 @@ fn header_tuple(h: wkp::Header) -> (i32, i32, i32, i32) {
         h.version as i32,
         h.precision as i32,
         h.dimensions as i32,
-        h.geometry_type as i32,
+        h.geometry_type.code() as i32,
     )
 }
 
@@ -107,7 +107,7 @@ fn self_test() -> PyResult<()> {
     let mut frame = Frame::default();
     let ok = wkp::encode_f64(&values, 2, &[5], &mut buf).is_ok()
         && buf == b"_p~iF~ps|U_ulLnnqC_mqNvxq`@"
-        && wkp::encode_geometry(2, &values, 2, 5, &[1], &[3], &mut buf).is_ok()
+        && wkp::encode_geometry(GeometryType::LineString, &values, 2, 5, &[3], &[1], &mut buf).is_ok()
         && buf == b"@DAA_p~iF~ps|U_ulLnnqC_mqNvxq`@"
         && wkp::decode_geometry(&buf, &mut frame).is_ok()
         && frame.coords == values;
@@ -172,7 +172,10 @@ fn encode_geometry_frame<'py>(
     let segment_point_counts = counts(segment_point_counts)?;
     let dims = coords.shape()[1];
     let coords = contiguous(&coords)?;
-    let geometry_type = u8::try_from(geometry_type).map_err(|_| core_err(wkp::Error::InvalidArgument))?;
+    let geometry_type = u8::try_from(geometry_type)
+        .ok()
+        .and_then(GeometryType::from_code)
+        .ok_or_else(|| core_err(wkp::Error::InvalidArgument))?;
     let bytes = &mut ctx.bytes;
     run(py, coords.len(), || {
         wkp::encode_geometry(
@@ -180,8 +183,8 @@ fn encode_geometry_frame<'py>(
             coords,
             dims,
             precision,
-            &group_segment_counts,
             &segment_point_counts,
+            &group_segment_counts,
             bytes,
         )
     })
