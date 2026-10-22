@@ -45,7 +45,14 @@ export interface DecodedGeometry {
     geometry: Geometry;
 }
 
-export declare class Context { }
+/**
+ * Reusable encode/decode buffers. In @wkpjs/node this holds nothing (the addon keeps buffers per
+ * thread) and dispose() does nothing; in @wkpjs/web it owns wasm memory until dispose().
+ */
+export declare class Context {
+    constructor(initialCapacity?: number);
+    dispose(): void;
+}
 
 export declare const GeometryType: {
     readonly POINT: 1;

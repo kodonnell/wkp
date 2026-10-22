@@ -513,121 +513,102 @@ export async function createWkp(options) {
         return { ptrs, lengths };
     };
 
+    // A Context's wasm pointer lives under a symbol only this module can name, so its public
+    // surface is just dispose() (and the lookup is as fast as an ordinary property).
+    const PTR = Symbol('wkp context');
+
     class Context {
+        /** Buffers start at `initialCapacity` bytes and grow as needed. */
         constructor(initialCapacity = 4096) {
             if (!Number.isInteger(initialCapacity) || initialCapacity <= 0) {
                 throw new TypeError('initialCapacity must be a positive integer');
             }
-            this.initialCapacity = initialCapacity;
-            this._disposed = false;
-            this._ptr = native.wkp_ctx_new();
-            native.wkp_ctx_input(this._ptr, initialCapacity);
+            this[PTR] = native.wkp_ctx_new();
+            native.wkp_ctx_input(this[PTR], initialCapacity);
         }
 
-        _checkNotDisposed() {
-            if (this._disposed || !this._ptr) {
-                throw new Error('Context has been disposed');
-            }
-        }
-
-        // Encoder output, straight from wasm memory: the string is the only copy.
-        _stringResult(status) {
-            checkStatus(status);
-            const out = readOutput(this._ptr);
-            return TEXT_DECODER.decode(new Uint8Array(memory.buffer, out.dataPtr, out.dataLen));
-        }
-
-        encodeF64(values, dimensions, precisions) {
-            this._checkNotDisposed();
-            const v = normalizeValues(values);
-            const p = normalizePrecisions(precisions);
-            const { ptrs: [valuesPtr, precisionsPtr] } = stage(this._ptr, [v, p]);
-            return this._stringResult(native.wkp_encode_f64(this._ptr, valuesPtr, v.length, dimensions, precisionsPtr, p.length));
-        }
-
-        decodeF64(encoded, dimensions, precisions) {
-            this._checkNotDisposed();
-            const e = normalizeEncoded(encoded);
-            const p = normalizePrecisions(precisions);
-            const { ptrs: [encodedPtr, precisionsPtr], lengths: [encodedLen] } = stage(this._ptr, [e, p]);
-            checkStatus(native.wkp_decode_f64(this._ptr, encodedPtr, encodedLen, dimensions, precisionsPtr, p.length));
-            const out = readOutput(this._ptr);
-            return new Float64Array(memory.buffer, out.dataPtr, out.dataLen).slice();
-        }
-
-        _encodeFrame(geometryType, coords, dimensions, precision, segmentPointCounts, groupSegmentCounts) {
-            this._checkNotDisposed();
-            // wasm would truncate a fraction silently.
-            if (!Number.isInteger(precision)) {
-                throw new TypeError('precision must be an integer');
-            }
-            const { ptrs: [coordsPtr, segmentsPtr, groupsPtr] } = stage(this._ptr, [coords, segmentPointCounts, groupSegmentCounts]);
-            return this._stringResult(native.wkp_encode_geometry(
-                this._ptr,
-                geometryType,
-                coordsPtr,
-                coords.length,
-                dimensions,
-                precision,
-                segmentsPtr,
-                segmentPointCounts.length,
-                groupsPtr,
-                groupSegmentCounts.length
-            ));
-        }
-
-        encodeGeometry(geometry, precision) {
-            const dimensions = geometryDimensions(geometry);
-            const frame = buildGeometryFrame(geometry, dimensions, GeometryType);
-            return this._encodeFrame(frame.geometryType, frame.coords, dimensions, precision, frame.segmentPointCounts, frame.groupSegmentCounts);
-        }
-
-        encodeGeometryFromFrame(frame) {
-            return this._encodeFrame(
-                frame.geometryType,
-                frame.coords,
-                frame.dimensions,
-                frame.precision,
-                frame.segmentPointCounts,
-                frame.groupSegmentCounts
-            );
-        }
-
-        _decodeGeometryFrameRaw(encoded) {
-            this._checkNotDisposed();
-            const e = normalizeEncoded(encoded);
-            const { ptrs: [encodedPtr], lengths: [encodedLen] } = stage(this._ptr, [e]);
-            checkStatus(native.wkp_decode_geometry(this._ptr, encodedPtr, encodedLen));
-            const out = readOutput(this._ptr);
-            return {
-                version: out.version,
-                precision: out.precision,
-                dimensions: out.dimensions,
-                geometryType: out.geometryType,
-                coords: new Float64Array(memory.buffer, out.dataPtr, out.dataLen).slice(),
-                segmentPointCounts: new Uint32Array(memory.buffer, out.segmentsPtr, out.segmentsLen).slice(),
-                groupSegmentCounts: new Uint32Array(memory.buffer, out.groupsPtr, out.groupsLen).slice()
-            };
-        }
-
-        decodeGeometry(encoded) {
-            const raw = this._decodeGeometryFrameRaw(encoded);
-            return {
-                version: raw.version,
-                precision: raw.precision,
-                dimensions: raw.dimensions,
-                geometry: frameToGeometry(raw.geometryType, raw.dimensions, raw.coords, raw.segmentPointCounts, raw.groupSegmentCounts, GeometryType)
-            };
-        }
-
+        /** Frees the context's wasm memory. Using it afterwards throws. */
         dispose() {
-            if (this._disposed) {
-                return;
+            if (this[PTR]) {
+                native.wkp_ctx_free(this[PTR]);
+                this[PTR] = 0;
             }
-            this._disposed = true;
-            native.wkp_ctx_free(this._ptr);
-            this._ptr = 0;
         }
+    }
+    if (typeof Symbol.dispose === 'symbol') {
+        Context.prototype[Symbol.dispose] = Context.prototype.dispose;
+    }
+
+    // The wasm pointer of a live Context.
+    function ptrOf(ctx) {
+        if (!(ctx instanceof Context)) {
+            throw new TypeError('ctx must be a Context instance');
+        }
+        const ptr = ctx[PTR];
+        if (!ptr) {
+            throw new Error('Context has been disposed');
+        }
+        return ptr;
+    }
+
+    // Encoder output, straight from wasm memory: the string is the only copy.
+    function stringResult(ptr, status) {
+        checkStatus(status);
+        const out = readOutput(ptr);
+        return TEXT_DECODER.decode(new Uint8Array(memory.buffer, out.dataPtr, out.dataLen));
+    }
+
+    function encodeF64(ptr, values, dimensions, precisions) {
+        const v = normalizeValues(values);
+        const p = normalizePrecisions(precisions);
+        const { ptrs: [valuesPtr, precisionsPtr] } = stage(ptr, [v, p]);
+        return stringResult(ptr, native.wkp_encode_f64(ptr, valuesPtr, v.length, dimensions, precisionsPtr, p.length));
+    }
+
+    function decodeF64(ptr, encoded, dimensions, precisions) {
+        const e = normalizeEncoded(encoded);
+        const p = normalizePrecisions(precisions);
+        const { ptrs: [encodedPtr, precisionsPtr], lengths: [encodedLen] } = stage(ptr, [e, p]);
+        checkStatus(native.wkp_decode_f64(ptr, encodedPtr, encodedLen, dimensions, precisionsPtr, p.length));
+        const out = readOutput(ptr);
+        return new Float64Array(memory.buffer, out.dataPtr, out.dataLen).slice();
+    }
+
+    function encodeGeometryFrame(ptr, geometryType, coords, dimensions, precision, segmentPointCounts, groupSegmentCounts) {
+        // wasm would truncate a fraction silently.
+        if (!Number.isInteger(precision)) {
+            throw new TypeError('precision must be an integer');
+        }
+        const { ptrs: [coordsPtr, segmentsPtr, groupsPtr] } = stage(ptr, [coords, segmentPointCounts, groupSegmentCounts]);
+        return stringResult(ptr, native.wkp_encode_geometry(
+            ptr,
+            geometryType,
+            coordsPtr,
+            coords.length,
+            dimensions,
+            precision,
+            segmentsPtr,
+            segmentPointCounts.length,
+            groupsPtr,
+            groupSegmentCounts.length
+        ));
+    }
+
+    // The decoded frame's fields, copied out of wasm memory.
+    function decodeGeometryRaw(ptr, encoded) {
+        const e = normalizeEncoded(encoded);
+        const { ptrs: [encodedPtr], lengths: [encodedLen] } = stage(ptr, [e]);
+        checkStatus(native.wkp_decode_geometry(ptr, encodedPtr, encodedLen));
+        const out = readOutput(ptr);
+        return {
+            version: out.version,
+            precision: out.precision,
+            dimensions: out.dimensions,
+            geometryType: out.geometryType,
+            coords: new Float64Array(memory.buffer, out.dataPtr, out.dataLen).slice(),
+            segmentPointCounts: new Uint32Array(memory.buffer, out.segmentsPtr, out.segmentsLen).slice(),
+            groupSegmentCounts: new Uint32Array(memory.buffer, out.groupsPtr, out.groupsLen).slice()
+        };
     }
 
     function coreVersion() {
@@ -653,17 +634,10 @@ export async function createWkp(options) {
 
     function decodeHeader(encoded) {
         const e = normalizeEncoded(encoded);
-        const { ptrs: [encodedPtr, outPtr], lengths: [encodedLen] } = stage(_defaultCtx._ptr, [e, new Uint32Array(4)]);
+        const { ptrs: [encodedPtr, outPtr], lengths: [encodedLen] } = stage(ptrOf(_defaultCtx), [e, new Uint32Array(4)]);
         checkStatus(native.wkp_decode_header(encodedPtr, encodedLen, outPtr));
         const [version, precision, dimensions, geometryType] = new Uint32Array(memory.buffer, outPtr, 4);
         return { version, precision, dimensions, geometryType };
-    }
-
-    function asContext(ctx) {
-        if (!(ctx instanceof Context)) {
-            throw new TypeError('ctx must be a Context instance');
-        }
-        return ctx;
     }
 
     // ---------------------------------------------------------------------------
@@ -755,51 +729,57 @@ export async function createWkp(options) {
     // ---------------------------------------------------------------------------
 
     function decode(encoded, ctx = _defaultCtx) {
-        return asContext(ctx).decodeGeometry(encoded);
-    }
-
-    function decodeFrame(encoded, ctx = _defaultCtx) {
-        // Use the private raw-frame method that preserves flat typed arrays.
-        const raw = asContext(ctx)._decodeGeometryFrameRaw(encoded);
-        return new GeometryFrame({
+        const raw = decodeGeometryRaw(ptrOf(ctx), encoded);
+        return {
             version: raw.version,
             precision: raw.precision,
             dimensions: raw.dimensions,
-            geometryType: raw.geometryType,
-            coords: raw.coords,
-            segmentPointCounts: raw.segmentPointCounts,
-            groupSegmentCounts: raw.groupSegmentCounts,
-        });
+            geometry: frameToGeometry(raw.geometryType, raw.dimensions, raw.coords, raw.segmentPointCounts, raw.groupSegmentCounts, GeometryType)
+        };
+    }
+
+    function decodeFrame(encoded, ctx = _defaultCtx) {
+        return new GeometryFrame(decodeGeometryRaw(ptrOf(ctx), encoded));
     }
 
     function encode(geometry, precision, ctx = _defaultCtx) {
-        return asContext(ctx).encodeGeometry(geometry, precision);
+        const ptr = ptrOf(ctx);
+        const dimensions = geometryDimensions(geometry);
+        const frame = buildGeometryFrame(geometry, dimensions, GeometryType);
+        return encodeGeometryFrame(ptr, frame.geometryType, frame.coords, dimensions, precision, frame.segmentPointCounts, frame.groupSegmentCounts);
     }
 
     function encodeFrame(frame, ctx = _defaultCtx) {
         if (!(frame instanceof GeometryFrame)) {
             throw new TypeError('frame must be a GeometryFrame instance');
         }
-        return asContext(ctx).encodeGeometryFromFrame(frame);
+        return encodeGeometryFrame(
+            ptrOf(ctx),
+            frame.geometryType,
+            frame.coords,
+            frame.dimensions,
+            frame.precision,
+            frame.segmentPointCounts,
+            frame.groupSegmentCounts
+        );
     }
 
     function encodeFloats(floats, precisions, ctx = _defaultCtx) {
         const precisionList = normalizePrecisionList(precisions);
         const dimensions = precisionList.length;
         const values = flattenFloatRows(floats, dimensions);
-        return asContext(ctx).encodeF64(values, dimensions, precisionList);
+        return encodeF64(ptrOf(ctx), values, dimensions, precisionList);
     }
 
     function decodeFloatsArray(encoded, precisions, ctx = _defaultCtx) {
         const precisionList = normalizePrecisionList(precisions);
-        const dimensions = precisionList.length;
-        return asContext(ctx).decodeF64(encoded, dimensions, precisionList);
+        return decodeF64(ptrOf(ctx), encoded, precisionList.length, precisionList);
     }
 
     function decodeFloats(encoded, precisions, ctx = _defaultCtx) {
         const precisionList = normalizePrecisionList(precisions);
         const dimensions = precisionList.length;
-        const decoded = asContext(ctx).decodeF64(encoded, dimensions, precisionList);
+        const decoded = decodeF64(ptrOf(ctx), encoded, dimensions, precisionList);
         return toRows(decoded, 0, decoded.length / dimensions, dimensions);
     }
 

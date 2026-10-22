@@ -122,7 +122,17 @@ core.runSelfTest();
 
 const GeometryType = Object.freeze({ ...core.geometryTypes() });
 
-class Context { }
+/**
+ * For parity with @wkpjs/web. The addon reuses one set of native buffers per thread, so a Node
+ * Context holds nothing; it marks which calls share a context, and dispose() does nothing.
+ */
+class Context {
+    /** Does nothing here; frees the context's memory in @wkpjs/web. */
+    dispose() { }
+}
+if (typeof Symbol.dispose === 'symbol') {
+    Context.prototype[Symbol.dispose] = Context.prototype.dispose;
+}
 
 // Module-level default context — shared within this realm (process or worker thread).
 // JS is single-threaded per realm, so this is safe. Each worker thread gets its own

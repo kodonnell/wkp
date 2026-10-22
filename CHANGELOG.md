@@ -55,6 +55,19 @@ not change: anything 0.6 encoded decodes the same in 0.7.
   the type code was passed through. Encoding one is an invalid argument (codes up to 63 were
   accepted).
 
+### JavaScript — breaking
+- Both packages have an `exports` map: import the package itself (and `package.json`; for
+  `@wkpjs/web` also `dist/wkp_core.wasm`). Deep imports such as `@wkpjs/web/src/version.js` no
+  longer resolve.
+- `@wkpjs/web`'s `Context` only exposes `dispose()` (and `Symbol.dispose` where supported); its
+  undocumented `encodeF64`, `decodeF64`, `encodeGeometry`, `encodeGeometryFromFrame`,
+  `decodeGeometry`, `initialCapacity` and `_`-prefixed members are gone. Use the top-level
+  functions with a `ctx` argument.
+- `@wkpjs/node`'s `Context` has a `dispose()` that does nothing, so code written for
+  `@wkpjs/web` runs unchanged.
+- `@wkpjs/web` ships TypeScript types (`src/index.d.ts`) and no longer ships its build
+  `scripts/`. Both packages' types are type-checked in CI.
+
 ### Rust (`wkp` crate) — breaking
 - `encode_geometry` takes a `GeometryType` instead of a `u8`, and its counts in the same order as
   `Frame`: segment point counts, then group segment counts (they were the other way round).

@@ -117,6 +117,14 @@ jobs:
           node scripts/sync-version.mjs --check
           npm run check:runtime-compatibility
 
+      # The published type declarations, under the strictest settings.
+      - name: Type-check .d.ts files
+        working-directory: bindings/javascript/packages
+        run: |
+          for f in node/index.d.ts web/src/index.d.ts; do
+            npx --yes -p typescript@5.6.3 tsc --noEmit --strict "$f"
+          done
+
   # The musl (Alpine) addons, in Alpine itself. The glibc addons cannot load there, so a pass also
   # shows the loader picked the musl build.
   js-test-alpine:
@@ -192,8 +200,8 @@ jobs:
               grep -qx "package/$entry" <<<"$listing" || { echo "$tarball is missing $entry"; echo "$listing"; exit 1; }
             done
           }
-          check 'wkpjs-web-*.tgz' src/index.js src/version.generated.js dist/wkp_core.wasm
-          check 'wkpjs-node-*.tgz' index.js \
+          check 'wkpjs-web-*.tgz' src/index.js src/index.d.ts src/version.generated.js dist/wkp_core.wasm
+          check 'wkpjs-node-*.tgz' index.js index.d.ts \
             prebuilds/linux-x64/wkp.node prebuilds/linux-arm64/wkp.node \
             prebuilds/linux-x64-musl/wkp.node prebuilds/linux-arm64-musl/wkp.node \
             prebuilds/darwin-x64/wkp.node prebuilds/darwin-arm64/wkp.node \
