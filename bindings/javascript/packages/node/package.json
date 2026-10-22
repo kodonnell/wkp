@@ -1,7 +1,7 @@
 {
   "name": "@wkpjs/node",
-  "version": "0.6.1",
-  "wkpCoreCompatibility": "0.6.0",
+  "version": "0.7.0",
+  "wkpCoreCompatibility": "0.7.0",
   "description": "Node.js bindings for WKP core via Node-API",
   "repository": {
     "type": "git",

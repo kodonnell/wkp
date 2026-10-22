@@ -11,7 +11,7 @@ Release tags:
 
 ---
 
-## [0.7.0] — unreleased
+## [0.7.0] — 2026-10-22
 
 An API cleanup ahead of 1.0, so that every language works the same way. The encoded format does
 not change: anything 0.6 encoded decodes the same in 0.7.

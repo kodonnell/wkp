@@ -11,7 +11,7 @@
 
     <PackageId>Wkp</PackageId>
     <!-- Kept in sync with the Cargo workspace version by scripts/check_versions.py. -->
-    <Version>0.6.1</Version>
+    <Version>0.7.0</Version>
     <Authors>kodonnell</Authors>
     <Description>Well Known Polylines - fast and compact encoding of geometries to strings using the Google Polylines algorithm.</Description>
     <PackageTags>wkp;polyline;google-polyline;geometry;gis;geospatial;encoding</PackageTags>

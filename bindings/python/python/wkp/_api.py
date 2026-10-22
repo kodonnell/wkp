@@ -17,7 +17,7 @@ from shapely.geometry import GeometryCollection, LineString, MultiLineString, Mu
 from . import _core
 
 __core_version__ = _core.core_version()
-__core_compatibility__ = "0.6.x"
+__core_compatibility__ = "0.7.x"
 
 class WkpError(ValueError):
     """An input wkp cannot encode or decode. ``code`` is ``"INVALID_ARGUMENT"`` (an argument is

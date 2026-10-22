@@ -1,7 +1,7 @@
 {
   "name": "@wkpjs/web",
-  "version": "0.6.1",
-  "wkpCoreCompatibility": "0.6.0",
+  "version": "0.7.0",
+  "wkpCoreCompatibility": "0.7.0",
   "description": "WebAssembly bindings for WKP core",
   "repository": {
     "type": "git",
