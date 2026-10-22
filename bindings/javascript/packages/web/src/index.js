@@ -534,10 +534,11 @@ export async function createWkp(options) {
             }
         }
 
-        _bytesResult(status) {
+        // Encoder output, straight from wasm memory: the string is the only copy.
+        _stringResult(status) {
             checkStatus(status);
             const out = readOutput(this._ptr);
-            return new Uint8Array(memory.buffer, out.dataPtr, out.dataLen).slice();
+            return TEXT_DECODER.decode(new Uint8Array(memory.buffer, out.dataPtr, out.dataLen));
         }
 
         encodeF64(values, dimensions, precisions) {
@@ -545,7 +546,7 @@ export async function createWkp(options) {
             const v = normalizeValues(values);
             const p = normalizePrecisions(precisions);
             const { ptrs: [valuesPtr, precisionsPtr] } = stage(this._ptr, [v, p]);
-            return this._bytesResult(native.wkp_encode_f64(this._ptr, valuesPtr, v.length, dimensions, precisionsPtr, p.length));
+            return this._stringResult(native.wkp_encode_f64(this._ptr, valuesPtr, v.length, dimensions, precisionsPtr, p.length));
         }
 
         decodeF64(encoded, dimensions, precisions) {
@@ -558,34 +559,31 @@ export async function createWkp(options) {
             return new Float64Array(memory.buffer, out.dataPtr, out.dataLen).slice();
         }
 
-        _encodeFrame(geometryType, coords, dimensions, precision, groupSegmentCounts, segmentPointCounts) {
+        _encodeFrame(geometryType, coords, dimensions, precision, segmentPointCounts, groupSegmentCounts) {
             this._checkNotDisposed();
             // wasm would truncate a fraction silently.
             if (!Number.isInteger(precision)) {
                 throw new TypeError('precision must be an integer');
             }
-            const { ptrs: [coordsPtr, groupsPtr, segmentsPtr] } = stage(this._ptr, [coords, groupSegmentCounts, segmentPointCounts]);
-            checkStatus(native.wkp_encode_geometry(
+            const { ptrs: [coordsPtr, segmentsPtr, groupsPtr] } = stage(this._ptr, [coords, segmentPointCounts, groupSegmentCounts]);
+            return this._stringResult(native.wkp_encode_geometry(
                 this._ptr,
                 geometryType,
                 coordsPtr,
                 coords.length,
                 dimensions,
                 precision,
-                groupsPtr,
-                groupSegmentCounts.length,
                 segmentsPtr,
-                segmentPointCounts.length
+                segmentPointCounts.length,
+                groupsPtr,
+                groupSegmentCounts.length
             ));
-            // Straight from wasm memory: the string is the only copy.
-            const out = readOutput(this._ptr);
-            return TEXT_DECODER.decode(new Uint8Array(memory.buffer, out.dataPtr, out.dataLen));
         }
 
         encodeGeometry(geometry, precision) {
             const dimensions = geometryDimensions(geometry);
             const frame = buildGeometryFrame(geometry, dimensions, EncodedGeometryType);
-            return this._encodeFrame(frame.geometryType, frame.coords, dimensions, precision, frame.groupSegmentCounts, frame.segmentPointCounts);
+            return this._encodeFrame(frame.geometryType, frame.coords, dimensions, precision, frame.segmentPointCounts, frame.groupSegmentCounts);
         }
 
         encodeGeometryFromFrame(frame) {
@@ -594,8 +592,8 @@ export async function createWkp(options) {
                 frame.coords,
                 frame.dimensions,
                 frame.precision,
-                frame.groupSegmentCounts,
-                frame.segmentPointCounts
+                frame.segmentPointCounts,
+                frame.groupSegmentCounts
             );
         }
 

@@ -590,8 +590,8 @@ function encode(geometry, precision, ctx = _defaultCtx) {
         frame.coords,
         dimensions,
         precision,
-        frame.groupSegmentCounts,
-        frame.segmentPointCounts
+        frame.segmentPointCounts,
+        frame.groupSegmentCounts
     );
 }
 
@@ -608,8 +608,8 @@ function encodeFrame(frame, ctx = _defaultCtx) {
         frame.coords,
         frame.dimensions,
         frame.precision,
-        frame.groupSegmentCounts,
-        frame.segmentPointCounts
+        frame.segmentPointCounts,
+        frame.groupSegmentCounts
     );
 }
 

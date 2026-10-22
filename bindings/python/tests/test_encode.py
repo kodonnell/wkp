@@ -31,14 +31,14 @@ def test_multi_matches_polyline_package():
     """
     out = [(round((random() - 0.5) * 1000, 2), round(random() * 2)) for i in range(10)]
     encoded = wkp.encode_floats(out, [2, 2])
-    assert encoded.decode("ascii") == polyline.encode(out, 2)
+    assert encoded == polyline.encode(out, 2)
 
 
-def test_encode_decode_bytes_roundtrip():
+def test_encode_returns_str_and_bytes_decode_too():
     out = [(round((random() - 0.5) * 1000, 2), round(random() * 1000, 3), round(random() * 1000, 4)) for i in range(10)]
     encoded = wkp.encode_floats(out, [2, 3, 4])
-    assert isinstance(encoded, bytes)
-    decoded = wkp.decode_floats(encoded, [2, 3, 4])
+    assert isinstance(encoded, str)
+    decoded = wkp.decode_floats(encoded.encode("ascii"), [2, 3, 4])
     np.testing.assert_array_equal(decoded, np.asarray(out))
 
 

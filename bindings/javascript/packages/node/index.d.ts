@@ -56,7 +56,7 @@ export declare const EncodedGeometryType: {
     readonly MULTIPOLYGON: 6;
 };
 
-export type Encoded = string | Buffer | Uint8Array;
+/** Encoded WKP: an ASCII string or its bytes (a Uint8Array, including a Node Buffer). */
 
 export interface GeometryFrameInit {
     version: number;
@@ -84,13 +84,13 @@ export declare class GeometryFrame {
     static fromBuffer(buffer: ArrayBuffer | ArrayBufferView): GeometryFrame;
 }
 
-/** Encoded output is ASCII, returned as a Buffer. */
-export function encode(geometry: Geometry, precision: number, ctx?: Context): Buffer;
+/** Encoded output is an ASCII string. */
+export function encode(geometry: Geometry, precision: number, ctx?: Context): string;
 export function decode(encoded: Encoded, ctx?: Context): DecodedGeometry;
 export function decodeHeader(encoded: Encoded): [number, number, number, number];
 export function decodeFrame(encoded: Encoded, ctx?: Context): GeometryFrame;
-export function encodeFrame(frame: GeometryFrame, ctx?: Context): Buffer;
-export function encodeFloats(floats: number[][], precisions: number | number[], ctx?: Context): Buffer;
+export function encodeFrame(frame: GeometryFrame, ctx?: Context): string;
+export function encodeFloats(floats: number[][], precisions: number | number[], ctx?: Context): string;
 export function decodeFloats(encoded: Encoded, precisions: number | number[], ctx?: Context): number[][];
 /** Flat interleaved values: [x0, y0, x1, y1, ...]. */
 export function decodeFloatsArray(encoded: Encoded, precisions: number | number[], ctx?: Context): Float64Array;

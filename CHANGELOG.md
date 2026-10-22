@@ -17,6 +17,16 @@ An API cleanup ahead of 1.0, so that every language works the same way. The enco
 not change: anything 0.6 encoded decodes the same in 0.7.
 
 ### All languages
+- **Encoders return strings everywhere** (WKP is ASCII text, usually stored in JSON or text
+  columns): Python `encode` / `encode_frame` / `encode_floats` return `str` (were `bytes`),
+  `@wkpjs/node` returns `string` (was `Buffer`), and `@wkpjs/web`'s `encodeFloats` returns
+  `string` (was `Uint8Array`; its `encode` already returned a string). .NET and C++ already
+  returned strings. Decoders still accept bytes too. In Node this also makes encoding faster
+  (3D lines: 25% at 100 points, 4% at 1000, as creating a `Buffer` from native code has a fixed
+  cost); in Python the difference is within noise (0-3%).
+  - Python: drop `.decode("ascii")` on results; use `.encode("ascii")` where you need `bytes`.
+  - Node: `.toString()` on the result still works; Buffer-only methods do not. Use
+    `Buffer.from(s, 'latin1')` where you need bytes.
 - Encoding enforces the structure `SPEC.md` requires of each geometry type: one point for a
   Point, at least two points per linestring, one group for a Polygon, one point per MultiPoint
   part, one linestring per MultiLineString part. Anything else is an invalid argument; before, it

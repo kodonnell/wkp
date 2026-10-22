@@ -72,7 +72,7 @@ def main() -> None:
     # --- Geometry paths ---
     header("Geometry encode / decode")
 
-    row("encode (->bytes)", timeit_ms(lambda: wkp.encode(linestring, 5), warmup, n))
+    row("encode (->str)", timeit_ms(lambda: wkp.encode(linestring, 5), warmup, n))
     row("decode (->Shapely)", timeit_ms(lambda: wkp.decode(enc_geom), warmup, n))
     row("decode_frame (->numpy)", timeit_ms(lambda: wkp.decode_frame(enc_geom), warmup, n))
 

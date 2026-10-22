@@ -96,7 +96,7 @@ test('integration floats encode fixtures (node)', () => {
 
         const precisions = JSON.parse(precisionText);
         const rows = JSON.parse(rowsText);
-        const actual = encodeFloats(rows, precisions).toString('ascii');
+        const actual = encodeFloats(rows, precisions);
 
         assert.equal(actual, expected, `${item.file}:${item.lineNo}`);
     }
@@ -130,7 +130,7 @@ test('integration geometry encode fixtures (node)', () => {
 
         const precision = Number.parseInt(precisionText, 10);
         const geojson = parseWktToGeoJson(wkt);
-        const actual = encode(geojson, precision).toString('ascii');
+        const actual = encode(geojson, precision);
 
         assert.equal(actual, expected, `${item.file}:${item.lineNo}`);
     }

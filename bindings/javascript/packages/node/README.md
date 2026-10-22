@@ -52,7 +52,7 @@ node bindings/javascript/packages/node/benchmark/bench_flat_api.mjs --points=500
 ### Geometry encode / decode
 
 ```js
-encode(geometry, precision, ctx?)     // → Buffer (ASCII)
+encode(geometry, precision, ctx?)     // → string
 decode(encoded, ctx?)                 // → { geometry, version, precision, dimensions }
 decodeHeader(encoded)                 // → [version, precision, dimensions, geometryType]
 ```
@@ -61,7 +61,7 @@ decodeHeader(encoded)                 // → [version, precision, dimensions, ge
 
 ```js
 decodeFrame(encoded, ctx?)            // → GeometryFrame
-encodeFrame(frame, ctx?)              // → Buffer (ASCII)
+encodeFrame(frame, ctx?)              // → string
 ```
 
 `GeometryFrame` fields: `version`, `precision`, `dimensions`, `geometryType`, `coords` (Float64Array, flat `[x0,y0,x1,y1,…]`), `segmentPointCounts` (Uint32Array), `groupSegmentCounts` (Uint32Array).
@@ -71,7 +71,7 @@ Methods: `toGeometry()` → GeoJSON, `toBuffer()` → ArrayBuffer (transferable)
 ### Float helpers
 
 ```js
-encodeFloats(floats, precisions, ctx?)                 // → Buffer (ASCII)
+encodeFloats(floats, precisions, ctx?)                 // → string
 decodeFloatsArray(encoded, precisions, ctx?)            // → Float64Array (flat [x0,y0,x1,y1,...])
 decodeFloats(encoded, precisions, ctx?)                 // → Array<Array<number>>
 ```

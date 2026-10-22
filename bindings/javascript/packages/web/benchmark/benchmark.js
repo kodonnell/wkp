@@ -66,19 +66,19 @@ async function run() {
     const ctx = new wkp.Context();
     log('WASM module loaded.');
 
-    const warmEncoded = wkp.encode(ctx, geometry, precision);
-    wkp.decode(ctx, warmEncoded);
+    const warmEncoded = wkp.encode(geometry, precision, ctx);
+    wkp.decode(warmEncoded, ctx);
 
     const encodeTimes = [];
     const decodeTimes = [];
     let encodedBytes = warmEncoded.length;
 
     for (let i = 0; i < iterations; i += 1) {
-        const encodeRun = runTimed(() => wkp.encode(ctx, geometry, precision));
+        const encodeRun = runTimed(() => wkp.encode(geometry, precision, ctx));
         encodedBytes = encodeRun.result.length;
         encodeTimes.push(encodeRun.elapsedMs);
 
-        const decodeRun = runTimed(() => wkp.decode(ctx, encodeRun.result));
+        const decodeRun = runTimed(() => wkp.decode(encodeRun.result, ctx));
         decodeTimes.push(decodeRun.elapsedMs);
 
         if ((i + 1) % Math.max(1, Math.floor(iterations / 10)) === 0) {

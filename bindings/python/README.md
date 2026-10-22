@@ -49,13 +49,13 @@ pytest bindings/python/tests
 ### Geometry encode / decode
 
 ```python
-encode(geom, precision, *, ctx=None) -> bytes
+encode(geom, precision, *, ctx=None) -> str
 decode(encoded, *, ctx=None) -> DecodedGeometry
 decode_header(encoded) -> (version, precision, dimensions, geometry_type)
 ```
 
 `encoded` can be `bytes`, `str` (e.g. read from a text column or JSON) or any other bytes-like
-object. Encoders return `bytes`; use `.decode("ascii")` for a `str`.
+object. Encoders return `str` (use `.encode("ascii")` if you need `bytes`).
 
 Supported geometries are Point, LineString (and LinearRing, which decodes as a LineString),
 Polygon, MultiPoint, MultiLineString and MultiPolygon, in 2D or 3D (XYZ). Geometries with M
@@ -72,7 +72,7 @@ values must be finite. Anything else raises `ValueError`.
 
 ```python
 decode_frame(encoded, *, ctx=None) -> GeometryFrame
-encode_frame(frame, *, ctx=None) -> bytes
+encode_frame(frame, *, ctx=None) -> str
 ```
 
 `GeometryFrame` fields: `version`, `precision`, `dimensions`, `geometry_type`, `coords` (numpy float64 array, shape `(n_points, dimensions)`), `segment_point_counts`, `group_segment_counts`.
@@ -82,7 +82,7 @@ Methods: `to_geometry() -> Shapely geometry`, `to_buffer() -> bytes`, `GeometryF
 ### Float helpers
 
 ```python
-encode_floats(floats, precisions, *, ctx=None) -> bytes
+encode_floats(floats, precisions, *, ctx=None) -> str
 decode_floats_array(encoded, precisions, *, ctx=None) -> np.ndarray  # flat (N*dims,) float64
 decode_floats(encoded, precisions, *, ctx=None) -> np.ndarray        # shaped (N, dims) float64
 ```

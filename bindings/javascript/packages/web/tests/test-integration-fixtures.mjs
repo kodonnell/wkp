@@ -99,7 +99,7 @@ test('integration floats encode fixtures (web)', async () => {
 
         const precisions = JSON.parse(precisionText);
         const rows = JSON.parse(rowsText);
-        const actual = new TextDecoder().decode(wkp.encodeFloats(rows, precisions));
+        const actual = wkp.encodeFloats(rows, precisions);
 
         assert.equal(actual, expected, `${item.file}:${item.lineNo}`);
     }

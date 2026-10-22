@@ -452,19 +452,19 @@ def decode(encoded, *, ctx=None) -> DecodedGeometry:
     )
 
 
-def encode_frame(frame: GeometryFrame, *, ctx=None) -> bytes:
-    """Encode a :class:`GeometryFrame` to WKP bytes."""
+def encode_frame(frame: GeometryFrame, *, ctx=None) -> str:
+    """Encode a :class:`GeometryFrame` to a WKP string."""
     ctx = _resolve_context(ctx)
     coords = _as_f64_c(frame.coords)
     if coords.ndim != 2:
         raise ValueError("frame.coords must be a 2D array")
     grp = np.asarray(frame.group_segment_counts, dtype=np.uint64)
     seg = np.asarray(frame.segment_point_counts, dtype=np.uint64)
-    return _core.encode_geometry_frame(ctx, frame.geometry_type, coords, frame.precision, grp, seg)
+    return _core.encode_geometry_frame(ctx, frame.geometry_type, coords, frame.precision, seg, grp)
 
 
-def encode(geom, precision: int, *, ctx=None) -> bytes:
-    """Encode a Shapely geometry to WKP bytes."""
+def encode(geom, precision: int, *, ctx=None) -> str:
+    """Encode a Shapely geometry to a WKP string."""
     ctx = _resolve_context(ctx)
     if not isinstance(precision, int):
         raise TypeError("precision must be an int")
@@ -476,7 +476,7 @@ def encode(geom, precision: int, *, ctx=None) -> bytes:
 
     try:
         return _core.encode_geometry_frame(
-            ctx, geom_type, coords, precision, group_segment_counts, segment_point_counts
+            ctx, geom_type, coords, precision, segment_point_counts, group_segment_counts
         )
     except ValueError:
         # An XYM geometry reads as XYZ with NaN Z values, which the core rejects. Checked only
@@ -486,7 +486,9 @@ def encode(geom, precision: int, *, ctx=None) -> bytes:
         raise
 
 
-def encode_floats(floats, precisions, *, ctx=None) -> bytes:
+def encode_floats(floats, precisions, *, ctx=None) -> str:
+    """Encode rows of floats (one column per dimension) to a headerless WKP string.
+    ``precisions`` has one int per column; a single int means one column."""
     ctx = _resolve_context(ctx)
     p = _normalize_precisions(precisions)
     dimensions = len(p)

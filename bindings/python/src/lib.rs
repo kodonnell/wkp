@@ -82,6 +82,13 @@ fn array2<'py>(py: Python<'py>, values: &[f64], dims: usize) -> Bound<'py, PyArr
     arr
 }
 
+/// Encoder output (always ASCII) as a str.
+fn ascii_str<'py>(py: Python<'py>, bytes: &[u8]) -> Bound<'py, PyString> {
+    debug_assert!(bytes.is_ascii());
+    // SAFETY: the encoders only emit ASCII.
+    PyString::new(py, unsafe { std::str::from_utf8_unchecked(bytes) })
+}
+
 fn header_tuple(h: wkp::Header) -> (i32, i32, i32, i32) {
     (
         h.version as i32,
@@ -131,14 +138,14 @@ fn encode_f64<'py>(
     values: PyReadonlyArray2<'py, f64>,
     dimensions: usize,
     precisions: Vec<i32>,
-) -> PyResult<Bound<'py, PyBytes>> {
+) -> PyResult<Bound<'py, PyString>> {
     let values = contiguous(&values)?;
     let bytes = &mut ctx.bytes;
     run(py, values.len(), || {
         wkp::encode_f64(values, dimensions, &precisions, bytes)
     })
     .map_err(core_err)?;
-    Ok(PyBytes::new(py, &ctx.bytes))
+    Ok(ascii_str(py, &ctx.bytes))
 }
 
 #[pyfunction]
@@ -165,11 +172,11 @@ fn encode_geometry_frame<'py>(
     geometry_type: i32,
     coords: PyReadonlyArray2<'py, f64>,
     precision: i32,
-    group_segment_counts: &Bound<'py, PyAny>,
     segment_point_counts: &Bound<'py, PyAny>,
-) -> PyResult<Bound<'py, PyBytes>> {
-    let group_segment_counts = counts(group_segment_counts)?;
+    group_segment_counts: &Bound<'py, PyAny>,
+) -> PyResult<Bound<'py, PyString>> {
     let segment_point_counts = counts(segment_point_counts)?;
+    let group_segment_counts = counts(group_segment_counts)?;
     let dims = coords.shape()[1];
     let coords = contiguous(&coords)?;
     let geometry_type = u8::try_from(geometry_type)
@@ -189,7 +196,7 @@ fn encode_geometry_frame<'py>(
         )
     })
     .map_err(core_err)?;
-    Ok(PyBytes::new(py, &ctx.bytes))
+    Ok(ascii_str(py, &ctx.bytes))
 }
 
 fn decode_into(py: Python<'_>, ctx: &mut Context, encoded: &Bound<'_, PyAny>) -> PyResult<()> {

@@ -32,7 +32,7 @@ def _parse_floats_encode_case(line: str) -> tuple[list[int], str, str]:
 def test_floats_encode_cases(case):
     fpath, idx, line = case
     precisions, to_encode, expected = _parse_floats_encode_case(line)
-    actual = wkp.encode_floats(to_encode, precisions).decode("ascii")
+    actual = wkp.encode_floats(to_encode, precisions)
     assert actual == expected
 
 
@@ -73,7 +73,7 @@ def test_geometry_encode_cases(case):
     precision, wkt, case_output = _parse_geometry_encode_input(line)
     geom = shapely.from_wkt(wkt)
 
-    actual = wkp.encode(geom, precision=precision).decode("ascii")
+    actual = wkp.encode(geom, precision=precision)
 
     assert actual == case_output
 

@@ -40,17 +40,18 @@ def test_decode_accepts_str_and_bytes_like():
     out = [(174.776, -41.289, 12.5), (174.777, -41.29, 13.25)]
     encoded = encode_floats(out, [6, 6, 2])
     want = decode_floats(encoded, [6, 6, 2])
-    for value in (encoded.decode("ascii"), bytearray(encoded), memoryview(encoded)):
+    raw = encoded.encode("ascii")
+    for value in (raw, bytearray(raw), memoryview(raw)):
         np.testing.assert_array_equal(decode_floats(value, [6, 6, 2]), want)
     geom = wkp.encode(LineString(out), 6)
-    for value in (geom, geom.decode("ascii"), bytearray(geom)):
+    for value in (geom.encode("ascii"), bytearray(geom.encode("ascii"))):
         assert wkp.decode(value).geometry.equals_exact(wkp.decode(geom).geometry, 0)
         assert wkp.decode_header(value) == wkp.decode_header(geom)
         np.testing.assert_array_equal(wkp.decode_frame(value).coords, wkp.decode_frame(geom).coords)
 
 
 def test_decode_rejects_non_ascii_str():
-    geom = wkp.encode(LineString([(0, 0), (1, 1)]), 6).decode("ascii")
+    geom = wkp.encode(LineString([(0, 0), (1, 1)]), 6)
     # U+013F would be '?' (a valid WKP char) if only its low byte were kept.
     for bad in (geom + "Ŀ", "\U0001f600" + geom):
         with pytest.raises(ValueError):

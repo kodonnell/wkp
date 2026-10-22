@@ -186,16 +186,30 @@ pub fn geometry_types() -> GeometryTypes {
     }
 }
 
+/// Encoder output, returned to JS as a string. Points into the thread-local output buffer, which
+/// nothing touches before napi copies it.
+pub struct Ascii(*const u8, usize);
+
+impl ToNapiValue for Ascii {
+    unsafe fn to_napi_value(env: napi::sys::napi_env, val: Self) -> Result<napi::sys::napi_value> {
+        let mut result = ptr::null_mut();
+        // Latin-1 is a plain byte copy into a one-byte JS string (no UTF-8 decoding); the encoders
+        // only emit ASCII, which Latin-1 maps to itself.
+        check_status!(unsafe { napi::sys::napi_create_string_latin1(env, val.0.cast(), val.1 as isize, &mut result) })?;
+        Ok(result)
+    }
+}
+
+fn ascii(out: &[u8]) -> Ascii {
+    debug_assert!(out.is_ascii());
+    Ascii(out.as_ptr(), out.len())
+}
+
 #[napi]
-pub fn encode_f64<'env>(
-    env: &'env Env,
-    values: &[f64],
-    dimensions: u32,
-    precisions: Vec<i32>,
-) -> Result<BufferSlice<'env>> {
+pub fn encode_f64(values: &[f64], dimensions: u32, precisions: Vec<i32>) -> Result<Ascii> {
     BYTES.with_borrow_mut(|out| {
         wkp::encode_f64(values, dimensions as usize, &precisions, out).map_err(core_err)?;
-        BufferSlice::copy_from(env, out.as_slice())
+        Ok(ascii(out))
     })
 }
 
@@ -213,15 +227,14 @@ pub fn decode_f64<'env>(
 }
 
 #[napi]
-pub fn encode_geometry_frame_f64<'env>(
-    env: &'env Env,
+pub fn encode_geometry_frame_f64(
     geometry_type: u32,
     coords: &[f64],
     dimensions: u32,
     precision: i32,
-    group_segment_counts: &[u32],
     segment_point_counts: &[u32],
-) -> Result<BufferSlice<'env>> {
+    group_segment_counts: &[u32],
+) -> Result<Ascii> {
     let geometry_type = u8::try_from(geometry_type)
         .ok()
         .and_then(GeometryType::from_code)
@@ -239,7 +252,7 @@ pub fn encode_geometry_frame_f64<'env>(
             out,
         )
         .map_err(core_err)?;
-        BufferSlice::copy_from(env, out.as_slice())
+        Ok(ascii(out))
     })
 }
 

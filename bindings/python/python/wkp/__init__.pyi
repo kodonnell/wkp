@@ -111,8 +111,8 @@ def encode(
     precision: int,
     *,
     ctx: Context | None = None,
-) -> bytes:
-    """Encode a Shapely geometry to WKP bytes."""
+) -> str:
+    """Encode a Shapely geometry to a WKP string."""
     ...
 
 
@@ -121,7 +121,7 @@ def decode(
     *,
     ctx: Context | None = None,
 ) -> DecodedGeometry:
-    """Decode WKP bytes to a Shapely geometry."""
+    """Decode a WKP string (or bytes) to a Shapely geometry."""
     ...
 
 
@@ -131,7 +131,7 @@ def decode_frame(
     ctx: Context | None = None,
 ) -> GeometryFrame:
     """
-    Decode WKP bytes to a :class:`GeometryFrame` without Shapely conversion.
+    Decode a WKP string (or bytes) to a :class:`GeometryFrame` without Shapely conversion.
 
     More efficient than :func:`decode` when you only need the raw coordinate
     arrays (e.g. for numpy / bulk processing / buffer transfer).
@@ -143,8 +143,8 @@ def encode_frame(
     frame: GeometryFrame,
     *,
     ctx: Context | None = None,
-) -> bytes:
-    """Encode a :class:`GeometryFrame` to WKP bytes."""
+) -> str:
+    """Encode a :class:`GeometryFrame` to a WKP string."""
     ...
 
 
@@ -164,8 +164,12 @@ def encode_floats(
     precisions: Union[int, Sequence[int]],
     *,
     ctx: Context | None = None,
-) -> bytes:
-    """Encode a 2-D array of floats with per-column precisions."""
+) -> str:
+    """
+    Encode a 2-D array of floats (one column per dimension) to a headerless WKP string.
+
+    ``precisions`` has one int per column; a single int means one column.
+    """
     ...
 
 

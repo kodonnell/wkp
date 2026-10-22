@@ -137,10 +137,10 @@ pub unsafe extern "C" fn wkp_encode_geometry(
     coord_count: usize,
     dimensions: usize,
     precision: i32,
-    group_segment_counts: *const usize,
-    group_count: usize,
     segment_point_counts: *const usize,
     segment_count: usize,
+    group_segment_counts: *const usize,
+    group_count: usize,
 ) -> i32 {
     let ctx = &mut *ctx;
     let Some(geometry_type) = u8::try_from(geometry_type).ok().and_then(GeometryType::from_code) else {
