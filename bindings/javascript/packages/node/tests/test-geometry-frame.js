@@ -191,3 +191,14 @@ test('decode accepts strings, Buffers, Uint8Arrays and views at an offset alike'
     assert.throws(() => decode(new Int8Array(4)), TypeError);
     assert.throws(() => decode(42), TypeError);
 });
+
+test('fromBuffer rejects bad buffers and encodeFrame other versions', () => {
+    const { WkpError } = require('..');
+    const frame = decodeFrame(encode({ type: 'LineString', coordinates: [[0, 0], [1, 1]] }, 5));
+    const buf = new Uint8Array(frame.toBuffer());
+    for (const bad of [buf.subarray(0, 10), buf.subarray(0, buf.length - 1), new Uint8Array([...buf, 0])]) {
+        assert.throws(() => GeometryFrame.fromBuffer(bad), (e) => e instanceof WkpError && e.code === 'MALFORMED_INPUT');
+    }
+    frame.version = 2;
+    assert.throws(() => encodeFrame(frame), (e) => e instanceof WkpError && e.code === 'INVALID_ARGUMENT');
+});

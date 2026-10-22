@@ -55,6 +55,17 @@ not change: anything 0.6 encoded decodes the same in 0.7.
   the type code was passed through. Encoding one is an invalid argument (codes up to 63 were
   accepted).
 
+- Frames are checked before encoding: a frame whose `version` is not 1 is an invalid argument
+  everywhere (.NET already did this), and in Python so is one whose `dimensions` does not match
+  its coordinates' columns (it was silently ignored). `GeometryFrame.from_buffer` / `fromBuffer`
+  reject a buffer whose length does not match its header with `MALFORMED_INPUT` (they raised
+  `struct.error` / `RangeError`, or read garbage).
+
+### Python
+- The implementation moved to `wkp._api`; `import wkp` exposes only the API (`dir(wkp)` no
+  longer lists `np`, `shapely`, `re`, ...). Classes still report themselves as `wkp.X`, and
+  pickle under those names.
+
 ### JavaScript — breaking
 - Both packages have an `exports` map: import the package itself (and `package.json`; for
   `@wkpjs/web` also `dist/wkp_core.wasm`). Deep imports such as `@wkpjs/web/src/version.js` no

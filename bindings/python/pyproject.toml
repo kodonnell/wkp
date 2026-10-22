@@ -50,6 +50,12 @@ dev = [
     "types-shapely",
 ]
 
+# For stubtest: wkp/__init__.pyi types the public API; the implementation module behind it is not
+# annotated for mypy.
+[[tool.mypy.overrides]]
+module = "wkp._api"
+ignore_errors = true
+
 [tool.maturin]
 python-source = "python"
 module-name = "wkp._core"

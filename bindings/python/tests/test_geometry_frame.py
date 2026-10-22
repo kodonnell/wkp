@@ -202,3 +202,32 @@ def test_to_buffer_rejects_counts_over_uint32():
     frame = wkp.GeometryFrame(1, 5, 2, 1, np.zeros((1, 2)), np.array([2**32], dtype=np.uint64), np.array([1]))
     with pytest.raises(ValueError, match="uint32"):
         frame.to_buffer()
+
+
+def test_encode_frame_checks_dimensions_and_version():
+    frame = wkp.decode_frame(wkp.encode(LineString([(0, 0), (1, 1)]), precision=5))
+    frame.dimensions = 3
+    with pytest.raises(wkp.WkpError, match="columns"):
+        wkp.encode_frame(frame)
+    frame.dimensions = 2
+    frame.version = 2
+    with pytest.raises(wkp.WkpError, match="version"):
+        wkp.encode_frame(frame)
+
+
+def test_from_buffer_rejects_bad_buffers():
+    buf = wkp.decode_frame(wkp.encode(LineString([(0, 0), (1, 1)]), precision=5)).to_buffer()
+    for bad in (buf[:10], buf[:-1], buf + b"\0"):
+        with pytest.raises(wkp.WkpError) as e:
+            wkp.GeometryFrame.from_buffer(bad)
+        assert e.value.code == "MALFORMED_INPUT"
+
+
+def test_frames_and_errors_pickle_as_wkp_names():
+    import pickle
+
+    frame = wkp.decode_frame(wkp.encode(LineString([(0, 0), (1, 1)]), precision=5))
+    assert type(frame).__module__ == "wkp"
+    assert pickle.loads(pickle.dumps(frame)) == frame
+    header = pickle.loads(pickle.dumps(wkp.decode_header(wkp.encode(Point(1, 2), 5))))
+    assert header == (1, 5, 2, wkp.GeometryType.POINT)

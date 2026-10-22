@@ -49,8 +49,8 @@ def main() -> int:
         exact[f"bindings/javascript/{package}"] = json.loads(read(f"bindings/javascript/{package}"))["version"]
 
     compatible = {
-        "bindings/python/python/wkp/__init__.py": find(
-            "bindings/python/python/wkp/__init__.py", r'__core_compatibility__\s*=\s*"([^"]+)"'
+        "bindings/python/python/wkp/_api.py": find(
+            "bindings/python/python/wkp/_api.py", r'__core_compatibility__\s*=\s*"([^"]+)"'
         ),
     }
     for package in ("node", "web"):

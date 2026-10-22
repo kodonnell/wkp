@@ -57,7 +57,7 @@ jobs:
       # The type stubs (__init__.pyi) must match the module as installed.
       - name: Check type stubs
         working-directory: ${{ runner.temp }}
-        run: python -m mypy.stubtest wkp
+        run: python -m mypy.stubtest wkp --mypy-config-file "$GITHUB_WORKSPACE/bindings/python/pyproject.toml"
 
   build_sdist:
     name: Build source distribution

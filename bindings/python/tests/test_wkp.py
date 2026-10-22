@@ -196,3 +196,8 @@ def test_errors_are_wkp_errors_with_a_code():
         wkp.encode_floats([[1.0, 2.0]], [5, 5, 5])
     with pytest.raises(TypeError):
         wkp.encode(Point(1, 2), "5")
+
+
+def test_module_exposes_only_its_api():
+    public = {name for name in dir(wkp) if not name.startswith("_")}
+    assert public == set(wkp.__all__)

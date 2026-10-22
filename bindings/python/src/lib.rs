@@ -263,6 +263,7 @@ fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     }
     let kwargs = PyDict::new(py);
     // Public as wkp.GeometryType, which is also where pickle finds it.
+    kwargs.set_item("module", "wkp")?;
     let enum_cls = py
         .import("enum")?
         .getattr("IntEnum")?

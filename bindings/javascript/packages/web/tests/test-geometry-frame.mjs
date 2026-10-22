@@ -188,3 +188,14 @@ test('decode accepts strings and byte arrays alike, and rejects non-ASCII string
     assert.equal(wkp.decodeFrame(longEncoded).coords.length, 60000);
     assert.equal(wkp.decodeFloatsArray(wkp.encodeFloats([[1.5, 2.5, 3.5]], [5, 5, 5]), [5, 5, 5]).length, 3);
 });
+
+test('fromBuffer rejects bad buffers and encodeFrame other versions (web)', async () => {
+    const wkp = await createWkp();
+    const frame = wkp.decodeFrame(wkp.encode({ type: 'LineString', coordinates: [[0, 0], [1, 1]] }, 5));
+    const buf = new Uint8Array(frame.toBuffer());
+    for (const bad of [buf.subarray(0, 10), buf.subarray(0, buf.length - 1), new Uint8Array([...buf, 0])]) {
+        assert.throws(() => wkp.GeometryFrame.fromBuffer(bad), (e) => e instanceof wkp.WkpError && e.code === 'MALFORMED_INPUT');
+    }
+    frame.version = 2;
+    assert.throws(() => wkp.encodeFrame(frame), (e) => e instanceof wkp.WkpError && e.code === 'INVALID_ARGUMENT');
+});

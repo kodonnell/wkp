@@ -550,6 +550,9 @@ class GeometryFrame {
         const ab = buffer instanceof ArrayBuffer
             ? buffer
             : buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
+        if (ab.byteLength < FRAME_HEADER_SIZE) {
+            throw new WkpError('GeometryFrame buffer is shorter than its header', 'MALFORMED_INPUT');
+        }
         const view = new DataView(ab);
         let o = 0;
         const version = view.getInt32(o, true);       o += 4;
@@ -559,6 +562,9 @@ class GeometryFrame {
         const ncoords = Number(view.getBigUint64(o, true)); o += 8;
         const nseg = Number(view.getBigUint64(o, true));    o += 8;
         const ngrp = Number(view.getBigUint64(o, true));    o += 8;
+        if (ab.byteLength !== FRAME_HEADER_SIZE + ncoords * 8 + (nseg + ngrp) * 4) {
+            throw new WkpError('GeometryFrame buffer does not match its header', 'MALFORMED_INPUT');
+        }
         const coords = new Float64Array(ab, o, ncoords);
         o += ncoords * 8;
         const segmentPointCounts = new Uint32Array(ab, o, nseg);
@@ -631,6 +637,9 @@ function encodeFrame(frame, ctx = _defaultCtx) {
     }
     if (!Number.isInteger(frame.precision)) {
         throw new TypeError('precision must be an integer');
+    }
+    if (frame.version !== 1) {
+        throw new WkpError(`only format version 1 can be encoded, not ${frame.version}`, 'INVALID_ARGUMENT');
     }
     return core.encodeGeometryFrameF64(
         frame.geometryType,
