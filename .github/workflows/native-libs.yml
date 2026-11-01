@@ -35,7 +35,7 @@ jobs:
           - { os: windows-latest, target: aarch64-pc-windows-msvc, rid: win-arm64, node: win32-arm64, lib: wkp.dll, zig: false }
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
@@ -45,7 +45,7 @@ jobs:
       # setup-python avoids the runner's externally-managed system Python.
       - name: Set up Python
         if: matrix.zig
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: "3.12"
 
@@ -55,7 +55,7 @@ jobs:
 
       - name: Set up Node
         if: inputs.kind == 'node'
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 24
 
@@ -84,7 +84,7 @@ jobs:
           cp "target/${{ matrix.target }}/release/$lib" "$out/${lib/wkp/wkp_native}"
 
       - name: Upload
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: native-${{ inputs.kind }}-${{ inputs.kind == 'node' && matrix.node || matrix.rid }}
           path: ${{ inputs.kind == 'node' && 'bindings/javascript/packages/node/prebuilds/' || 'bindings/csharp/src/Wkp/runtimes/' }}
